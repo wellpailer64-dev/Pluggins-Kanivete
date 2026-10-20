@@ -92,6 +92,85 @@ class App:
                 "ocupada": bool(self._sessao and self._sessao.ocupada), "comandos": self._comandos,
                 "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": e.get("quem") or "claude"}
 
+    # ── contas do Claude (contas.py): salvas, com apelido e e-mail; troca MANUAL ──
+    def _contas(self):
+        e = _ler_estado()
+        lista = e.get("contas") or []
+        if not any(c["id"] == "principal" for c in lista):
+            lista.insert(0, {"id": "principal", "apelido": "Principal"})
+        return lista, e.get("conta") or "principal"
+
+    def contas_listar(self):
+        lista, ativa = self._contas()
+        return {"lista": lista, "ativa": ativa}
+
+    def conta_atualizar(self, conta_id=None):
+        """lê e-mail, plano e cotas (sem gastar tokens) de uma conta ou de todas; guarda no estado"""
+        import contas
+        lista, ativa = self._contas()
+        for c in lista:
+            if conta_id and c["id"] != conta_id:
+                continue
+            st = contas.status(c["id"])
+            c.update(email=st.get("email", ""), plano=st.get("plano", ""), logado=st.get("logado", False))
+            if c["logado"]:
+                c["cotas"] = contas.cotas(c["id"])
+        _gravar_estado(contas=lista)
+        return {"lista": lista, "ativa": ativa}
+
+    def conta_adicionar(self, apelido):
+        import contas, re as _re
+        apelido = (apelido or "").strip() or "Conta"
+        lista, ativa = self._contas()
+        base = _re.sub(r"[^a-z0-9]+", "-", apelido.lower()).strip("-") or "conta"
+        cid, n = base, 2
+        while any(c["id"] == cid for c in lista) or cid == "principal":
+            cid, n = f"{base}-{n}", n + 1
+        lista.append({"id": cid, "apelido": apelido})
+        _gravar_estado(contas=lista)
+        contas.abrir_login(cid, apelido)
+        return {"id": cid, "lista": lista, "ativa": ativa}
+
+    def conta_entrar_de_novo(self, conta_id):
+        import contas
+        lista, _ = self._contas()
+        c = next((x for x in lista if x["id"] == conta_id), None)
+        return bool(c) and contas.abrir_login(conta_id, c["apelido"])
+
+    def conta_renomear(self, conta_id, apelido):
+        lista, ativa = self._contas()
+        for c in lista:
+            if c["id"] == conta_id and (apelido or "").strip():
+                c["apelido"] = apelido.strip()[:40]
+        _gravar_estado(contas=lista)
+        return {"lista": lista, "ativa": ativa}
+
+    def conta_remover(self, conta_id):
+        import contas
+        lista, ativa = self._contas()
+        if conta_id == "principal":
+            return {"lista": lista, "ativa": ativa}
+        contas.remover(conta_id)
+        lista = [c for c in lista if c["id"] != conta_id]
+        if ativa == conta_id:
+            ativa = "principal"
+            self._encerrar()
+        _gravar_estado(contas=lista, conta=ativa)
+        return {"lista": lista, "ativa": ativa}
+
+    def conta_usar(self, conta_id):
+        """troca manual: a próxima mensagem já vai pela conta escolhida, na MESMA conversa"""
+        lista, ativa = self._contas()
+        if conta_id == ativa or not any(c["id"] == conta_id for c in lista):
+            return {"lista": lista, "ativa": ativa}
+        if self._sessao and self._sessao.ocupada:
+            raise RuntimeError("espere a resposta terminar para trocar de conta")
+        self._encerrar()
+        c = next(c for c in lista if c["id"] == conta_id)
+        self._limite = c.get("cotas")
+        _gravar_estado(conta=conta_id, limite=self._limite)
+        return {"lista": lista, "ativa": conta_id}
+
     # ── falar direto com um ajudante ("Quem responde": Codex ou Kani) ──
     def quem(self, nome):
         _gravar_estado(quem=nome if nome in ("claude", "codex", "kani") else "claude")
@@ -165,6 +244,7 @@ class App:
             sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
             self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
+            self._sessao.conta = _ler_estado().get("conta") or None
         self._bola_estado("trabalhando")
         try:
             self._sessao.enviar(texto)
@@ -187,6 +267,7 @@ class App:
             sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
             self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
+            self._sessao.conta = _ler_estado().get("conta") or None
         if not self._sessao.vivo():
             try:
                 self._sessao._abrir()
@@ -259,7 +340,12 @@ class App:
                 _gravar_estado(sessoes=ss)
         elif t == "limite":
             self._limite = {k: ev.get(k) for k in ("h5", "h5_zera", "sem", "sem_zera")}
-            _gravar_estado(limite=self._limite)
+            # a cota ao vivo também vai para a conta em uso (o painel de contas mostra sem consultar)
+            lista, ativa = self._contas()
+            for c in lista:
+                if c["id"] == ativa:
+                    c["cotas"] = dict(self._limite, lido=int(time.time()))
+            _gravar_estado(limite=self._limite, contas=lista)
         elif t == "comandos":
             self._comandos = ev.get("lista") or []
         elif t == "ajudante" and ev.get("fase") == "fim" and ev.get("cota") and ev.get("quem") == "codex":

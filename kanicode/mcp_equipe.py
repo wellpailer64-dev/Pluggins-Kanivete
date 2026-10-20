@@ -6,10 +6,15 @@ linha "evento <json>"), que mostra o avatar animado do ajudante no canto, com te
 
 Uso: python mcp_equipe.py <pasta do projeto>
 """
-import json, os, socket, sys, threading
+import json, os, socket, subprocess, sys, threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# o canal com o Claude Code é UTF-8; o padrão do Windows (cp1252) embaralhava os acentos do contrato e um caractere
+# fora dele (→, ✓…) derrubava a resposta em silêncio — o Claude ficava esperando para sempre
+sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import ajudantes   # noqa: E402
+import licoes      # noqa: E402
 
 PORTA = 47613
 PASTA = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
@@ -19,12 +24,21 @@ FERRAMENTAS = [
      "description": ("Delegar uma tarefa ao Codex (OpenAI, na conta ChatGPT Plus do Pailer: NÃO gasta a cota do Claude). "
                      "Use para trabalho médio e bem definido: escrever um teste, uma função, um script, refatorar um trecho, "
                      "investigar um bug num arquivo. Escreva um CONTRATO claro: objetivo, arquivos que pode mexer, o que não "
-                     "pode, critério de pronto, armadilhas conhecidas. Ele trabalha na pasta do projeto. Depois REVISE o que "
-                     "ele fez (git diff / leia os arquivos) antes de dar por pronto. editar=false = só lê e responde."),
+                     "pode, critério de pronto. As REGRAS do projeto e as LIÇÕES já aprendidas parecidas com a tarefa vão "
+                     "junto sozinhas. Com editar=true, ao terminar o KaniCode confere sozinho: lista os arquivos mudados (com "
+                     "o resumo do diff), checa a sintaxe de cada um e roda o comando de 'teste', se você der um. Leia o "
+                     "relatório e só abra os arquivos se algo falhar ou parecer estranho. editar=false = só lê e responde."),
      "inputSchema": {"type": "object", "properties": {
          "contrato": {"type": "string", "description": "a tarefa completa, em português"},
-         "editar": {"type": "boolean", "description": "true = pode criar/editar arquivos na pasta do projeto", "default": False}},
+         "editar": {"type": "boolean", "description": "true = pode criar/editar arquivos na pasta do projeto", "default": False},
+         "teste": {"type": "string", "description": "comando para conferir no fim (ex.: py -3.13 testes/teste_x.py); roda na pasta do projeto"}},
          "required": ["contrato"]}},
+    {"name": "licao",
+     "description": ("Guardar uma LIÇÃO deste projeto (uma armadilha, um jeito certo de fazer) depois de revisar um trabalho "
+                     "ou de errar e acertar. Ela entra sozinha nos próximos contratos do Codex parecidos. Uma frase, concreta, "
+                     "com o como-fazer (ex.: 'Comparar monitor: desligue vePrSegEm e aqueça os dois estados')."),
+     "inputSchema": {"type": "object", "properties": {
+         "texto": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["texto"]}},
     {"name": "kani",
      "description": ("Pedir algo à Kani: modelo LOCAL pequeno (Qwen 3.5 4B), grátis e sem cota. Boa para tarefas simples "
                      "sobre um texto que você passa no contexto: resumir, classificar, extrair, reescrever curto, traduzir. "
@@ -60,12 +74,95 @@ def _responder(id_, result=None, erro=None):
         sys.stdout.flush()
 
 
+def _git(*args):
+    try:
+        return subprocess.run(["git", *args], cwd=PASTA, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=60, creationflags=0x08000000).stdout
+    except Exception:
+        return ""
+
+
+def _mudados():
+    """arquivos modificados/novos na pasta (git status), com o conteúdo de cada um marcado por hash para comparar"""
+    out = {}
+    for l in _git("status", "--porcelain", "-uall").splitlines():
+        caminho = l[3:].strip().strip('"')
+        if " -> " in caminho:
+            caminho = caminho.split(" -> ")[-1]
+        try:
+            with open(os.path.join(PASTA, caminho), "rb") as f:
+                out[caminho] = hash(f.read())
+        except OSError:
+            out[caminho] = None
+    return out
+
+
+def _sintaxe(caminho):
+    """None = ok; texto = erro"""
+    p = os.path.join(PASTA, caminho)
+    ext = os.path.splitext(p)[1].lower()
+    cmd = ([sys.executable.replace("pythonw.exe", "python.exe"), "-m", "py_compile", p] if ext == ".py"
+           else ["node", "--check", p] if ext in (".js", ".mjs") else None)
+    if ext == ".json":
+        try:
+            with open(p, encoding="utf-8") as f:
+                json.load(f)
+            return None
+        except Exception as e:
+            return str(e)[:300]
+    if not cmd:
+        return None
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=0x08000000)
+    return None if r.returncode == 0 else (r.stderr or r.stdout)[-400:]
+
+
+def _revisar(antes, teste):
+    """o que o Codex mudou + sintaxe + teste: o relatório que o Claude lê no lugar dos arquivos"""
+    depois = _mudados()
+    mexidos = sorted(k for k, h in depois.items() if antes.get(k, "∅") != h)
+    linhas = ["REVISÃO AUTOMÁTICA DO KANICODE:"]
+    if not mexidos:
+        linhas.append("- nenhum arquivo mudou")
+    else:
+        stat = _git("diff", "--stat", "--", *mexidos).strip().splitlines()
+        linhas.append(f"- {len(mexidos)} arquivo(s) mudado(s): " + ", ".join(mexidos))
+        if stat:
+            linhas.append("- diff: " + stat[-1].strip())
+        _avisar({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": f"conferindo a sintaxe de {len(mexidos)} arquivo(s)"})
+        erros = [(m, e) for m in mexidos if os.path.isfile(os.path.join(PASTA, m)) for e in [_sintaxe(m)] if e]
+        linhas.append("- sintaxe: ok" if not erros else "- sintaxe com ERRO: " + "; ".join(f"{m}: {e}" for m, e in erros))
+    if teste:
+        _avisar({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "rodando o teste: " + teste[:60]})
+        try:
+            r = subprocess.run(teste, cwd=PASTA, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=900, creationflags=0x08000000)
+            saida = (r.stdout + r.stderr).strip().splitlines()
+            linhas.append(f"- teste ({teste}): {'PASSOU' if r.returncode == 0 else 'FALHOU (código ' + str(r.returncode) + ')'}")
+            linhas += ["    " + l for l in saida[-15:]]
+        except subprocess.TimeoutExpired:
+            linhas.append(f"- teste ({teste}): passou de 15 min, interrompido")
+    return "\n".join(linhas)
+
+
 def _chamar(id_, nome, args):
     try:
         if nome == "codex":
-            r = ajudantes.codex(args.get("contrato", ""), PASTA, bool(args.get("editar")), ao_evento=_avisar)
-            texto = r["texto"] + (f"\n\n[arquivos mexidos: {', '.join(map(str, r['arquivos']))}]" if r["arquivos"] else "") + \
-                f"\n[Codex: {r['tokens']} tokens, {r['ms'] / 1000:.0f} s]"
+            editar, teste = bool(args.get("editar")), (args.get("teste") or "").strip()
+            contrato = args.get("contrato", "")
+            extra = licoes.anexo(PASTA, contrato)
+            if extra:
+                contrato += "\n\n" + extra
+            antes = _mudados() if editar else {}
+            r = ajudantes.codex(contrato, PASTA, editar, ao_evento=_avisar)
+            texto = r["texto"] + f"\n\n[Codex: {r['tokens']} tokens, {r['ms'] / 1000:.0f} s]"
+            if editar:
+                texto += "\n\n" + _revisar(antes, teste)
+            if extra:
+                texto += f"\n\n[foram junto: regras do projeto + {len(licoes.relevantes(PASTA, args.get('contrato', '')))} lição(ões)]"
+        elif nome == "licao":
+            ok = licoes.gravar(PASTA, args.get("texto", ""), args.get("tags"))
+            _avisar({"t": "licao", "texto": args.get("texto", ""), "nova": ok})
+            r, texto = {"ok": True}, ("lição guardada" if ok else "essa lição já estava guardada")
         elif nome == "kani":
             r = ajudantes.kani(args.get("pedido", ""), args.get("contexto", ""), ao_evento=_avisar)
             texto = r["texto"] + f"\n[Kani (local): {r['tokens']} tokens, {r['ms'] / 1000:.0f} s]"
@@ -73,7 +170,10 @@ def _chamar(id_, nome, args):
             raise ValueError(f"ferramenta desconhecida: {nome}")
         _responder(id_, {"content": [{"type": "text", "text": texto}], "isError": not r["ok"]})
     except Exception as e:
-        _responder(id_, {"content": [{"type": "text", "text": f"falhou: {e}"}], "isError": True})
+        try:
+            _responder(id_, {"content": [{"type": "text", "text": f"falhou: {e}"}], "isError": True})
+        except Exception:   # nunca deixar o Claude sem resposta
+            _responder(id_, {"content": [{"type": "text", "text": "falhou (erro ao montar a resposta)"}], "isError": True})
 
 
 def main():

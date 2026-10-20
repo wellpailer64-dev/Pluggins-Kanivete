@@ -165,6 +165,40 @@
   .hab .item:hover { background: #1A201D; }
   .hab .item b { font-size: 13px; font-weight: 600; } .hab .item b code { font: 12px var(--mono); color: var(--lima); }
   .hab .item div { color: var(--fraco); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* contas do Claude */
+  .conta-bt { cursor: pointer; white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+  .conta-bt:hover { color: var(--texto); }
+  .contas { position: absolute; left: 10px; right: 10px; bottom: 34px; max-height: 70%; overflow-y: auto; background: var(--painel);
+            border: 1px solid var(--borda); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); padding: 12px; z-index: 7; }
+  .contas h4 { margin: 0 0 4px; font-size: 13px; color: var(--fraco); font-weight: 600; letter-spacing: .3px; }
+  .contas .dica { color: var(--fraco); font-size: 12px; margin: 0 0 10px; }
+  .ct { border: 1px solid var(--borda); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+  .ct.ativa { border-color: #4D6A22; background: #141B12; }
+  .ct .l1 { display: flex; align-items: center; gap: 8px; }
+  .ct .ap { font-weight: 600; font-size: 13.5px; cursor: text; }
+  .ct .tag { font: 11px var(--mono); color: var(--fundo); background: var(--lima); border-radius: 999px; padding: 0 7px; }
+  .ct .em { color: var(--fraco); font-size: 12px; margin: 1px 0 6px; }
+  .ct .q { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 8px; align-items: center; font-size: 12px; color: var(--fraco); }
+  .ct .q i { display: block; height: 5px; border-radius: 3px; background: #26302B; overflow: hidden; }
+  .ct .q i b { display: block; height: 100%; background: var(--lima); }
+  .ct .acoes { display: flex; gap: 6px; margin-top: 8px; }
+  .ct .acoes button, .contas .add { height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--borda); background: transparent;
+                                     color: var(--texto); cursor: pointer; font: 12.5px var(--sans); }
+  .ct .acoes .usar { background: var(--lima); color: var(--fundo); border-color: var(--lima); font-weight: 600; }
+  .ct .acoes .tirar:hover { color: var(--erro); border-color: #4A2326; }
+  .contas .add { width: 100%; height: 34px; border-style: dashed; color: var(--fraco); }
+  .contas .add:hover { color: var(--lima); border-color: #4D6A22; }
+  /* caixinha de pergunta (no lugar do prompt/confirm do navegador) */
+  .caixa { position: fixed; inset: 0; background: rgba(5, 7, 6, .55); display: grid; place-items: center; z-index: 20; }
+  .caixa > div { width: min(340px, 86vw); background: var(--painel); border: 1px solid var(--borda); border-radius: 12px; padding: 14px;
+                 box-shadow: 0 16px 40px rgba(0, 0, 0, .55); }
+  .caixa p { margin: 0 0 10px; font-size: 13.5px; }
+  .caixa input { width: 100%; background: var(--fundo); border: 1px solid var(--borda); border-radius: 8px; color: var(--texto);
+                 padding: 8px 10px; font: 13.5px var(--sans); outline: 0; margin-bottom: 10px; }
+  .caixa input:focus { border-color: #4D6A22; }
+  .caixa .bts { display: flex; gap: 8px; justify-content: flex-end; }
+  .caixa button { height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--borda); background: transparent; color: var(--texto); cursor: pointer; font: 13px var(--sans); }
+  .caixa button.ok { background: var(--lima); color: var(--fundo); border-color: var(--lima); font-weight: 600; }
   ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2A3530; border-radius: 4px; }
 </style>
 </head>
@@ -188,12 +222,14 @@
   </div>
   <div class="rodape">
     <span class="pasta" id="pasta" title="Pasta do projeto · clique para trocar">📁 …</span>
+    <span class="conta-bt" id="conta-bt" title="Conta do Claude em uso · clique para ver e trocar">👤 Principal</span>
     <span class="cota" id="c5" title="Sessão de 5 horas" hidden>5h <i><b></b></i><span></span></span>
     <span class="cota" id="csem" title="Semana" hidden>sem <i><b></b></i><span></span></span>
     <span class="quem-bt" id="quem-bt" title="Quem responde as suas mensagens"><i></i><span>Claude</span> ▾</span>
   </div>
   <div class="uso" id="uso" hidden></div>
   <div class="menu-quem" id="menu-quem" hidden></div>
+  <div class="contas" id="contas" hidden></div>
   <div class="hab" id="hab" hidden>
     <div class="cab">
       <p>Tudo o que sabemos fazer juntos. Clique num item para usar: ele vai para a caixa de mensagem, pronto para você completar.</p>
@@ -327,11 +363,13 @@
     WebFetch: ['🌐', 'abriu', 'Abrindo'], Task: ['🤝', 'delegou', 'Delegando'], Agent: ['🤝', 'delegou', 'Delegando'],
     TodoWrite: ['☑', 'anotou', 'Organizando as tarefas'], Skill: ['🧰', 'usou', 'Usando'],
     mcp__equipe__codex: ['🤝', 'pediu ao Codex', 'Codex trabalhando:'], mcp__equipe__kani: ['🤝', 'pediu à Kani', 'Kani trabalhando:'],
+    mcp__equipe__licao: ['📌', 'guardou a lição', 'Guardando uma lição:'],
     ToolSearch: ['🔎', 'carregou', 'Carregando'],
   };
   function alvo(nome, e) {
     e = e || {};
     if (nome === 'ToolSearch') return 'ferramentas (' + String(e.query || '').replace(/^select:/, '').replace(/mcp__equipe__/g, '') + ')';
+    if (nome === 'mcp__equipe__licao') return String(e.texto || '').slice(0, 120);
     return String(e.file_path ? base(e.file_path) : e.notebook_path ? base(e.notebook_path) : e.description || e.command || e.pattern
       || e.query || e.url || e.skill || e.contrato || e.pedido || (nome === 'TodoWrite' ? 'a lista de tarefas' : '')).replace(/\s+/g, ' ').slice(0, 120);
   }
@@ -569,6 +607,105 @@
     texto.value = i.usar; $('hab').hidden = true; ajustar(); texto.focus();
   });
 
+  // ── contas do Claude: salvas com apelido e e-mail, cota de cada uma, troca manual com um clique ──
+  const CT = { dados: null, espera: 0 };
+  // pergunta no visual da janela: com valor = campo de texto (devolve o texto ou null); sem = sim/não (true/false)
+  function perguntar(texto, valor, okTxt = 'OK') {
+    return new Promise(res => {
+      const c = document.createElement('div');
+      c.className = 'caixa';
+      c.innerHTML = `<div><p>${esc(texto)}</p>${valor != null ? `<input value="${esc(valor)}">` : ''}
+        <div class="bts"><button class="nao">Cancelar</button><button class="ok">${esc(okTxt)}</button></div></div>`;
+      document.body.appendChild(c);
+      const inp = c.querySelector('input');
+      const fim = v => { c.remove(); res(v); };
+      c.querySelector('.ok').onclick = () => fim(inp ? inp.value.trim() : true);
+      c.querySelector('.nao').onclick = () => fim(inp ? null : false);
+      c.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') c.querySelector('.ok').click(); if (e.key === 'Escape') c.querySelector('.nao').click(); });
+      (inp || c.querySelector('.ok')).focus();
+      if (inp) inp.select();
+    });
+  }
+  function contaBotao() {
+    const d = CT.dados; if (!d) return;
+    const c = d.lista.find(x => x.id === d.ativa) || {};
+    $('conta-bt').textContent = '👤 ' + (c.apelido || 'Principal');
+    $('conta-bt').title = `Conta do Claude em uso: ${c.apelido || 'Principal'}${c.email ? ' · ' + c.email : ''} · clique para ver e trocar`;
+  }
+  function contasDesenhar() {
+    const d = CT.dados; if (!d) return;
+    const q = (nome, uso, zera) => uso == null ? '' :
+      `<span>${nome}</span><i><b style="width:${Math.round(uso * 100)}%;background:${uso >= .85 ? 'var(--erro)' : uso >= .65 ? 'var(--aviso)' : 'var(--lima)'}"></b></i><span>${Math.round(uso * 100)}% · zera em ${esc(falta(zera))}</span>`;
+    $('contas').innerHTML = `<h4>CONTAS DO CLAUDE</h4>
+      <p class="dica">Ficam salvas e logadas. A conversa continua a mesma ao trocar. A troca é sempre sua (um clique).</p>
+      ${d.lista.map(c => {
+        const ct = c.cotas || {}, at = c.id === d.ativa;
+        return `<div class="ct${at ? ' ativa' : ''}" data-id="${c.id}">
+          <div class="l1"><span class="ap" data-ren title="Clique para dar outro nome">${esc(c.apelido)}</span>${at ? '<span class="tag">em uso</span>' : ''}
+            <span style="flex:1"></span><small style="color:var(--fraco)">${esc((c.plano || '').toUpperCase())}</small></div>
+          <div class="em">${c.email ? esc(c.email) : c.logado === false ? '⚠ ainda não entrou: clique em Entrar' : 'conferindo…'}</div>
+          <div class="q">${q('5h', ct.h5, ct.h5_zera)}${q('semana', ct.sem, ct.sem_zera)}</div>
+          <div class="acoes">
+            ${at ? '' : `<button class="usar" data-acao="usar">Usar esta</button>`}
+            ${c.logado === false ? `<button data-acao="entrar">Entrar</button>` : ''}
+            <button data-acao="atualizar" title="Ler de novo e-mail e cotas (não gasta tokens)">↻</button>
+            ${c.id === 'principal' ? '' : `<button class="tirar" data-acao="tirar" title="Esquecer esta conta (sai do KaniCode)">Remover</button>`}
+          </div></div>`;
+      }).join('')}
+      <button class="add" id="ct-add">＋ Entrar com outra conta</button>`;
+  }
+  async function contasAbrir() {
+    const p = $('contas');
+    if (!p.hidden) { p.hidden = true; return; }
+    p.hidden = false;
+    CT.dados = await api().contas_listar(); contasDesenhar();
+    CT.dados = await api().conta_atualizar(); contasDesenhar(); contaBotao();
+  }
+  $('contas').addEventListener('click', async e => {
+    if (e.target.id === 'ct-add') {
+      const nome = await perguntar('Que nome você quer dar para esta conta? (ex.: Trabalho, Pessoal 2)', '', 'Entrar');
+      if (nome == null) return;
+      const r = await api().conta_adicionar(nome);
+      CT.dados = { lista: r.lista, ativa: r.ativa }; contasDesenhar();
+      bolha('sis', `Abri o login oficial do Claude numa janela à parte. Entre com a conta "${nome || 'Conta'}" no navegador; quando terminar, ela aparece aqui sozinha.`);
+      contasEsperarLogin(r.id);
+      return;
+    }
+    const card = e.target.closest('.ct'); if (!card) return;
+    const id = card.dataset.id;
+    if (e.target.closest('[data-ren]')) {
+      const atual = (CT.dados.lista.find(x => x.id === id) || {}).apelido;
+      const nome = await perguntar('Novo nome para a conta:', atual, 'Salvar');
+      if (nome) { CT.dados = await api().conta_renomear(id, nome); contasDesenhar(); contaBotao(); }
+      return;
+    }
+    const acao = e.target.closest('[data-acao]')?.dataset.acao;
+    if (acao === 'usar') {
+      try { CT.dados = await api().conta_usar(id); } catch (x) { bolha('erro', String(x.message || x)); return; }
+      contasDesenhar(); contaBotao();
+      const c = CT.dados.lista.find(x => x.id === id);
+      cotas(c.cotas); bolha('sis', `Agora usando a conta "${c.apelido}"${c.email ? ' (' + c.email + ')' : ''}. A conversa continua a mesma.`);
+      som('permitido');
+    } else if (acao === 'entrar') { await api().conta_entrar_de_novo(id); contasEsperarLogin(id); }
+    else if (acao === 'atualizar') { e.target.textContent = '…'; CT.dados = await api().conta_atualizar(id); contasDesenhar(); }
+    else if (acao === 'tirar') {
+      if (!await perguntar('Esquecer esta conta no KaniCode? Ela continua existindo na Anthropic; só sai daqui.', null, 'Remover')) return;
+      CT.dados = await api().conta_remover(id); contasDesenhar(); contaBotao();
+    }
+  });
+  // depois do login na janela à parte: confere a cada 4 s (até 5 min) e mostra o e-mail quando entrar
+  async function contasEsperarLogin(id) {
+    const fim = Date.now() + 300000;
+    while (Date.now() < fim) {
+      await new Promise(r => setTimeout(r, 4000));
+      const d = await api().conta_atualizar(id);
+      const c = d.lista.find(x => x.id === id);
+      CT.dados = d; if (!$('contas').hidden) contasDesenhar();
+      if (c && c.logado) { bolha('sis', `✓ Conta "${c.apelido}" salva: ${c.email}.`); som('pronto'); return; }
+    }
+  }
+  $('conta-bt').addEventListener('click', contasAbrir);
+
   // ── comandos "/" ──
   const CM = { lista: [], sel: 0 };
   function comandosFiltrar() {
@@ -622,6 +759,7 @@
       case 'permissao': K.espera = true; cartao(ev); atividade('Esperando você decidir'); som('pergunta'); break;
       case 'limite': cotas(ev); break;
       case 'ajudante': ajudante(ev); break;
+      case 'licao': if (ev.nova) bolha('sis', '📌 Lição guardada para as próximas tarefas: ' + ev.texto); break;
       case 'ajudante_resposta':
         bolhaAjudante(ev.quem, ev.texto, ev.ok);
         ocupada(false);
@@ -678,6 +816,7 @@
     $('fixar').classList.toggle('on', i.fixa);
     K.pasta = i.pasta; K.modelo = i.modelo || K.modelo; K.comandos = i.comandos || K.comandos;
     K.cotaCodex = i.cota_codex || K.cotaCodex;
+    api().contas_listar().then(d => { CT.dados = d; contaBotao(); });
     quemDefinir(i.quem || 'claude', false);
     $('pasta').textContent = '📁 ' + base(i.pasta);
     $('pasta').title = i.pasta + ' · clique para trocar a pasta do projeto';
@@ -723,11 +862,13 @@
     if (!$('uso').hidden) { $('uso').hidden = true; return; }
     if (!$('hab').hidden) { $('hab').hidden = true; return; }
     if (!$('menu-quem').hidden) { $('menu-quem').hidden = true; return; }
+    if (!$('contas').hidden) { $('contas').hidden = true; return; }
     api() && api().esconder();
   });
   document.addEventListener('mousedown', e => {
     if (!$('uso').hidden && !e.target.closest('#uso, .cota')) $('uso').hidden = true;
     if (!$('menu-quem').hidden && !e.target.closest('#menu-quem, #quem-bt')) $('menu-quem').hidden = true;
+    if (!$('contas').hidden && !e.target.closest('#contas, #conta-bt')) $('contas').hidden = true;
   });
   conversa.addEventListener('click', e => { const a = e.target.closest('a'); if (a) e.preventDefault(); });
   $('recolher').addEventListener('click', () => api().esconder());

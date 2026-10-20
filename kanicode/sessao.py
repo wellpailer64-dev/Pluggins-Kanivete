@@ -22,7 +22,11 @@ PROMPT_KANICODE = ("Você está respondendo pelo KaniCode: uma janela pequena de
                    "EQUIPE: você tem dois ajudantes para economizar a cota do Claude do Pailer — mcp__equipe__codex (Codex, "
                    "conta ChatGPT Plus dele: tarefas médias e bem definidas, com contrato claro; revise o que ele fizer) e "
                    "mcp__equipe__kani (modelo local grátis: resumir, classificar, reescrever um texto que você passa). "
-                   "Delegue quando a tarefa couber neles; o Pailer vê os ajudantes trabalhando na janela.")
+                   "Delegue quando a tarefa couber neles; o Pailer vê os ajudantes trabalhando na janela. "
+                   "MODO EQUIPE: no contrato do Codex vão sozinhas as regras do projeto e as lições parecidas; passe "
+                   "'teste' (um comando) quando houver como conferir — a revisão automática volta com arquivos mudados, "
+                   "sintaxe e teste, e você só abre arquivo se algo falhar. Quando aprender uma armadilha (sua ou do Codex), "
+                   "guarde com mcp__equipe__licao, em uma frase com o como-fazer.")
 
 
 # o que sempre passa pelo Pailer (Bash e PowerShell): enviar/publicar, apagar, fechar programa, desligar
@@ -44,6 +48,7 @@ class Sessao:
         self._texto = []           # pedaços do texto da resposta em andamento (para guardar inteiro no fim)
         self.comandos = []         # comandos "/" (nome, descrição) que esta instalação do Claude Code tem
         self.modelo = None         # --model (None = o padrão do Claude Code)
+        self.conta = None          # conta do Claude (contas.py; None = a principal)
 
     # ── processo ──
     def _abrir(self):
@@ -58,12 +63,14 @@ class Sessao:
                "--mcp-config", json.dumps({"mcpServers": {"equipe": {
                    "command": sys.executable.replace("pythonw.exe", "python.exe"),
                    "args": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_equipe.py"), self.pasta]}}}),
-               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani"]
+               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani", "mcp__equipe__licao"]
         if self.modelo:
             cmd += ["--model", self.modelo]
         if self.sessao_id:
             cmd += ["--resume", self.sessao_id]
-        self.proc = subprocess.Popen(cmd, cwd=self.pasta, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        import contas
+        self.proc = subprocess.Popen(cmd, cwd=self.pasta, env=contas.ambiente(self.conta),
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      encoding="utf-8", errors="replace", bufsize=1, creationflags=0x08000000)   # sem console
         threading.Thread(target=self._ler, args=(self.proc,), daemon=True).start()
         threading.Thread(target=self._ler_erro, args=(self.proc,), daemon=True).start()
