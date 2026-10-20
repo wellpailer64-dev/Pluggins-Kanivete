@@ -27,6 +27,12 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
   mostra e fecha. `painel.js`: aba com status e "Abrir junto com o KANIVETE".
 - Medidas: o pywebview recebe pixels da INTERFACE (ele aplica o zoom do monitor); a bolinha nativa trabalha em pixels
   REAIS (`Bolinha.escala`). Nunca chamar SetProcessDpiAwareness à mão (dobra a escala).
-- Etapas: 1 esqueleto (feita) · 2 conversa com o Claude Code (`claude -p --input-format stream-json --output-format
+- `sessao.py` (etapa 2): uma conversa = um `claude -p --input-format stream-json --output-format stream-json
+  --include-partial-messages --verbose --permission-mode acceptEdits --permission-prompts none` aberto na pasta do
+  projeto, que fica vivo entre as mensagens; eventos simples para a janela (texto aos pedaços, ferr/ferr_fim, limite =
+  % da cota de 5 h, fim). Parar = `control_request interrupt` (3 s depois, mata). Sessão por pasta em `estado.json`
+  (`sessoes`), conversa da janela em `D:\Kanivete\KaniCode\conversas\<sessão>.jsonl`; reabrir = `--resume`.
+- Testar a janela: `py -3.13 kanicode.py --agente[=9350]` (CDP só nesse modo) — scripts em `D:\kanivete_testes\scripts\kc_*.py`.
+- Etapas: 1 esqueleto (feita) · 2 conversa com o Claude Code (feita) (`claude -p --input-format stream-json --output-format
   stream-json --include-partial-messages --resume`) · 3 permissões na janela (`--permission-prompts host`) · 4 Codex e
   Kani · 5 modo Equipe.

@@ -6,43 +6,67 @@
 <style>
   :root {
     --lima: #B6F23A; --fundo: #0E1110; --painel: #151A18; --borda: #26302B; --texto: #E6EDE8; --fraco: #8A988F;
-    --mono: "Cascadia Mono", Consolas, monospace; --sans: "Segoe UI", system-ui, sans-serif;
+    --erro: #FF8A8E; --mono: "Cascadia Mono", Consolas, monospace; --sans: "Segoe UI", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto); font: 14px/1.5 var(--sans); }
   body { display: flex; flex-direction: column; border: 1px solid var(--borda); }
   /* topo: arrastar a janela por aqui */
-  .topo { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px; background: var(--painel);
+  .topo { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 6px 0 12px; background: var(--painel);
           border-bottom: 1px solid var(--borda); user-select: none; }
   .marca { font: 700 13px var(--mono); color: var(--fundo); background: var(--lima); border-radius: 6px; padding: 2px 6px; }
   .nome { font-weight: 600; letter-spacing: .2px; }
   .esp { flex: 1; align-self: stretch; }
-  .bt { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--fraco); cursor: pointer;
-        font: 15px var(--sans); display: grid; place-items: center; }
+  .bt { min-width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--fraco); cursor: pointer;
+        font: 14px var(--sans); display: grid; place-items: center; padding: 0 6px; }
   .bt:hover { background: #1F2723; color: var(--texto); }
   .bt.on { color: var(--lima); }
-  .bt.sair:hover { background: #3A1C1E; color: #FF8A8E; }
+  .bt.sair:hover { background: #3A1C1E; color: var(--erro); }
   /* conversa */
-  .conversa { flex: 1; overflow-y: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 10px; }
-  .msg { max-width: 92%; padding: 8px 11px; border-radius: 10px; white-space: pre-wrap; word-wrap: break-word; }
-  .msg.eu { align-self: flex-end; background: #22301A; border: 1px solid #34481F; }
+  .conversa { flex: 1; overflow-y: auto; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 94%; padding: 8px 11px; border-radius: 10px; word-wrap: break-word; overflow-wrap: anywhere; }
+  .msg.eu { align-self: flex-end; background: #22301A; border: 1px solid #34481F; white-space: pre-wrap; }
   .msg.kc { align-self: flex-start; background: var(--painel); border: 1px solid var(--borda); }
+  .msg.kc p { margin: 0 0 6px; } .msg.kc p:last-child { margin-bottom: 0; }
+  .msg.kc ul, .msg.kc ol { margin: 2px 0 6px; padding-left: 20px; }
+  .msg.kc h1, .msg.kc h2, .msg.kc h3 { font-size: 14.5px; margin: 6px 0 4px; }
+  .msg.kc code { font: 12.5px var(--mono); background: #0B0E0D; border: 1px solid var(--borda); border-radius: 4px; padding: 0 4px; }
+  .msg.kc pre { background: #0B0E0D; border: 1px solid var(--borda); border-radius: 6px; padding: 8px; overflow-x: auto; margin: 4px 0 6px; }
+  .msg.kc pre code { border: 0; padding: 0; background: none; white-space: pre; }
+  .msg.kc a { color: var(--lima); }
+  .msg.kc table { border-collapse: collapse; font-size: 12.5px; margin: 4px 0; display: block; overflow-x: auto; }
+  .msg.kc td, .msg.kc th { border: 1px solid var(--borda); padding: 2px 6px; }
   .msg.sis { align-self: center; color: var(--fraco); font-size: 12.5px; background: none; border: 0; text-align: center; }
-  .passo { align-self: flex-start; font: 12.5px var(--mono); color: var(--fraco); padding: 2px 4px; }
-  .passo b { color: var(--lima); font-weight: 600; }
+  .msg.erro { align-self: stretch; color: var(--erro); background: #2A1517; border: 1px solid #4A2326; white-space: pre-wrap; font-size: 13px; }
+  /* passos (ferramentas) recolhidos */
+  .passo { align-self: stretch; font: 12.5px/1.45 var(--mono); color: var(--fraco); border-left: 2px solid var(--borda); padding: 1px 0 1px 8px; }
+  .passo summary { cursor: pointer; list-style: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .passo summary::-webkit-details-marker { display: none; }
+  .passo summary b { color: var(--texto); font-weight: 600; }
+  .passo.ok { border-left-color: #4D6A22; } .passo.falhou { border-left-color: #7A2F33; } .passo.falhou summary b { color: var(--erro); }
+  .passo pre { margin: 4px 0 2px; max-height: 220px; overflow: auto; white-space: pre-wrap; background: #0B0E0D; border: 1px solid var(--borda);
+               border-radius: 6px; padding: 6px 8px; color: #C7D2CB; }
+  .pensando { align-self: flex-start; color: var(--fraco); font: 12.5px var(--mono); }
+  .pensando::after { content: '▍'; color: var(--lima); animation: pisca 1s steps(1) infinite; margin-left: 2px; }
+  @keyframes pisca { 50% { opacity: 0; } }
   /* entrada */
-  .entrada { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 12px; border-top: 1px solid var(--borda); background: var(--painel); }
+  .entrada { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 8px; border-top: 1px solid var(--borda); background: var(--painel); }
   .campo { flex: 1; display: flex; align-items: flex-start; gap: 6px; background: var(--fundo); border: 1px solid var(--borda);
            border-radius: 10px; padding: 8px 10px; }
   .campo:focus-within { border-color: #4D6A22; }
   .seta { font: 700 14px var(--mono); color: var(--lima); line-height: 22px; }
   textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--texto); font: 14px/22px var(--sans);
-             max-height: 140px; min-height: 22px; padding: 0; }
-  .enviar { height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--lima); color: var(--fundo);
+             max-height: 160px; min-height: 22px; padding: 0; }
+  .enviar { height: 40px; min-width: 76px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--lima); color: var(--fundo);
             font: 600 14px var(--sans); cursor: pointer; }
   .enviar:disabled { opacity: .45; cursor: default; }
-  .rodape { display: flex; gap: 10px; padding: 0 12px 8px; background: var(--painel); font: 11.5px var(--mono); color: var(--fraco); }
-  .rodape span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .enviar.parar { background: #3A1C1E; color: var(--erro); }
+  .rodape { display: flex; align-items: center; gap: 10px; padding: 0 12px 8px; background: var(--painel); font: 11.5px var(--mono); color: var(--fraco); }
+  .rodape .pasta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; flex: 1; min-width: 0; }
+  .rodape .pasta:hover { color: var(--texto); }
+  .medidor { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .medidor i { display: block; width: 46px; height: 5px; border-radius: 3px; background: #26302B; overflow: hidden; }
+  .medidor i b { display: block; height: 100%; width: 0; background: var(--lima); }
   ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2A3530; border-radius: 4px; }
 </style>
 </head>
@@ -50,51 +74,202 @@
   <div class="topo pywebview-drag-region">
     <span class="marca">Kc</span><span class="nome">KaniCode</span>
     <span class="esp pywebview-drag-region"></span>
+    <button class="bt" id="nova" title="Conversa nova nesta pasta (a anterior fica guardada)">＋</button>
     <button class="bt" id="fixar" title="Sempre por cima">📌</button>
     <button class="bt" id="recolher" title="Recolher na bolinha (Esc)">—</button>
     <button class="bt sair" id="sair" title="Sair do KaniCode">✕</button>
   </div>
-  <div class="conversa" id="conversa">
-    <div class="msg sis">KaniCode · etapa 1 (esqueleto)<br>A conversa com o Claude chega na etapa 2.</div>
-    <div class="msg kc">Oi, Pailer! Por enquanto eu sou só a casca: bolinha, janela e o canal com o KANIVETE. Escreva algo para testar a caixa.</div>
-  </div>
+  <div class="conversa" id="conversa"></div>
   <div class="entrada">
-    <label class="campo"><span class="seta">&gt;</span><textarea id="texto" rows="1" placeholder="Escreva para o Claude…  (Enter envia, Shift+Enter quebra a linha)"></textarea></label>
+    <label class="campo"><span class="seta">&gt;</span><textarea id="texto" rows="1" placeholder="Fale com o Claude…  (Enter envia · Shift+Enter quebra a linha)"></textarea></label>
     <button class="enviar" id="enviar" disabled>Enviar</button>
   </div>
-  <div class="rodape"><span id="pasta">📁 sem projeto</span><span style="flex:1"></span><span>Claude</span></div>
+  <div class="rodape">
+    <span class="pasta" id="pasta" title="Pasta do projeto · clique para trocar">📁 …</span>
+    <span class="medidor" id="medidor" title="Uso da sua cota de 5 horas do Claude" hidden><i><b id="medidor-b"></b></i><span id="medidor-t"></span></span>
+    <span id="quem">Claude</span>
+  </div>
 <script>
   const $ = id => document.getElementById(id);
   const api = () => window.pywebview && pywebview.api;
   const conversa = $('conversa'), texto = $('texto'), enviar = $('enviar');
-  function bolha(tipo, t) {
+  const K = { ocupada: false, bolha: null, bruto: '', ferr: {}, pensando: null, pasta: '' };
+
+  // ── Markdown simples (o que o Claude usa: parágrafos, listas, títulos, código, negrito, links, tabelas) ──
+  const esc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function linha(t) {
+    return esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+      .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>').replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2">$1</a>');
+  }
+  function md(src) {
+    const out = [], L = src.replace(/\r/g, '').split('\n');
+    let i = 0;
+    while (i < L.length) {
+      const l = L[i];
+      if (/^```/.test(l)) {
+        const cod = []; i++;
+        while (i < L.length && !/^```/.test(L[i])) cod.push(L[i++]);
+        i++; out.push('<pre><code>' + esc(cod.join('\n')) + '</code></pre>'); continue;
+      }
+      if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < L.length && /^\s*\|[\s:|-]+\|\s*$/.test(L[i + 1])) {
+        const cel = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => linha(c.trim()));
+        let h = '<table><tr>' + cel(l).map(c => '<th>' + c + '</th>').join('') + '</tr>'; i += 2;
+        while (i < L.length && /^\s*\|.*\|\s*$/.test(L[i])) h += '<tr>' + cel(L[i++]).map(c => '<td>' + c + '</td>').join('') + '</tr>';
+        out.push(h + '</table>'); continue;
+      }
+      const tit = l.match(/^(#{1,3})\s+(.*)/);
+      if (tit) { out.push(`<h${tit[1].length}>${linha(tit[2])}</h${tit[1].length}>`); i++; continue; }
+      if (/^\s*([-*]|\d+[.)])\s+/.test(l)) {
+        const num = /^\s*\d/.test(l), it = [];
+        while (i < L.length && /^\s*([-*]|\d+[.)])\s+/.test(L[i])) it.push('<li>' + linha(L[i++].replace(/^\s*([-*]|\d+[.)])\s+/, '')) + '</li>');
+        out.push((num ? '<ol>' : '<ul>') + it.join('') + (num ? '</ol>' : '</ul>')); continue;
+      }
+      if (!l.trim()) { i++; continue; }
+      const p = [];
+      while (i < L.length && L[i].trim() && !/^(```|#{1,3}\s|\s*([-*]|\d+[.)])\s+)/.test(L[i])) p.push(linha(L[i++]));
+      out.push('<p>' + p.join('<br>') + '</p>');
+    }
+    return out.join('');
+  }
+
+  // ── montar a conversa ──
+  const fim = () => { conversa.scrollTop = conversa.scrollHeight; };
+  const perto = () => conversa.scrollHeight - conversa.scrollTop - conversa.clientHeight < 80;
+  function bolha(tipo, html) {
     const d = document.createElement('div');
     d.className = 'msg ' + tipo;
-    d.textContent = t;
+    if (tipo === 'kc') d.innerHTML = html; else d.textContent = html;
     conversa.appendChild(d);
-    conversa.scrollTop = conversa.scrollHeight;
+    return d;
   }
-  function ajustar() { texto.style.height = 'auto'; texto.style.height = Math.min(texto.scrollHeight, 140) + 'px'; enviar.disabled = !texto.value.trim(); }
-  function mandar() {
+  function pensando(on) {
+    if (on && !K.pensando) { K.pensando = document.createElement('div'); K.pensando.className = 'pensando'; K.pensando.textContent = 'pensando'; conversa.appendChild(K.pensando); }
+    if (!on && K.pensando) { K.pensando.remove(); K.pensando = null; }
+    if (on) conversa.appendChild(K.pensando);
+  }
+  const base = p => String(p || '').split(/[\\/]/).pop();
+  function rotulo(nome, e) {
+    e = e || {};
+    const m = {
+      Read: ['📖', 'leu', base(e.file_path)], Edit: ['✏️', 'editou', base(e.file_path)], Write: ['📝', 'escreveu', base(e.file_path)],
+      MultiEdit: ['✏️', 'editou', base(e.file_path)], NotebookEdit: ['✏️', 'editou', base(e.notebook_path)],
+      Bash: ['▶', 'rodou', e.description || e.command], PowerShell: ['▶', 'rodou', e.description || e.command],
+      Grep: ['🔎', 'procurou', e.pattern], Glob: ['🔎', 'listou', e.pattern], WebSearch: ['🌐', 'pesquisou', e.query],
+      WebFetch: ['🌐', 'abriu', e.url], Task: ['🤝', 'delegou', e.description], Agent: ['🤝', 'delegou', e.description],
+      TodoWrite: ['☑', 'anotou', 'a lista de tarefas'],
+    }[nome] || ['⚙', nome, ''];
+    return `${m[0]} <b>${esc(m[1])}</b> ${esc(String(m[2] || '').slice(0, 120))}`;
+  }
+  function passo(id, nome, entrada) {
+    const d = document.createElement('details');
+    d.className = 'passo';
+    const corpo = nome === 'Edit' || nome === 'MultiEdit'
+      ? (entrada.edits || [entrada]).map(x => '− ' + (x.old_string || '').slice(0, 1500) + '\n+ ' + (x.new_string || '').slice(0, 1500)).join('\n\n')
+      : nome === 'Bash' || nome === 'PowerShell' ? (entrada.command || '') : nome === 'Write' ? (entrada.content || '').slice(0, 3000)
+      : JSON.stringify(entrada, null, 1).slice(0, 3000);
+    d.innerHTML = `<summary>${rotulo(nome, entrada)}</summary><pre class="ent">${esc(corpo)}</pre>`;
+    conversa.appendChild(d);
+    if (id) K.ferr[id] = d;
+    return d;
+  }
+  function passoFim(id, ok, saida) {
+    const d = K.ferr[id];
+    if (!d) return;
+    d.classList.add(ok ? 'ok' : 'falhou');
+    if (saida && saida.trim()) { const p = document.createElement('pre'); p.textContent = saida.slice(0, 3000); d.appendChild(p); }
+  }
+  function ocupada(on) {
+    K.ocupada = on;
+    enviar.textContent = on ? 'Parar' : 'Enviar';
+    enviar.classList.toggle('parar', on);
+    ajustar();
+    pensando(on && !K.bolha);
+  }
+  function medidor(l) {
+    if (!l || l.uso == null) return;
+    $('medidor').hidden = false;
+    const pct = Math.round(l.uso * 100);
+    $('medidor-b').style.width = pct + '%';
+    $('medidor-b').style.background = pct >= 85 ? 'var(--erro)' : pct >= 65 ? '#F0C04A' : 'var(--lima)';
+    const h = l.reinicia ? new Date(l.reinicia * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    $('medidor-t').textContent = pct + '%';
+    $('medidor').title = `Você usou ${pct}% da cota de 5 horas do Claude` + (h ? ` · zera às ${h}` : '');
+  }
+
+  // eventos da sessão (kanicode.py → sessao.py)
+  window.kcEv = ev => {
+    const colar = perto();
+    switch (ev.t) {
+      case 'texto_novo': K.bolha = null; K.bruto = ''; break;
+      case 'texto':
+        pensando(false);
+        if (!K.bolha) { K.bolha = bolha('kc', ''); K.bruto = ''; }
+        K.bruto += ev.d;
+        K.bolha.innerHTML = md(K.bruto);
+        break;
+      case 'ferr': pensando(false); K.bolha = null; passo(ev.id, ev.nome, ev.entrada); if (K.ocupada) pensando(true); break;
+      case 'ferr_fim': passoFim(ev.id, ev.ok, ev.saida); break;
+      case 'limite': medidor(ev); break;
+      case 'fim':
+        K.bolha = null; ocupada(false);
+        if (ev.erro) bolha('erro', 'A resposta parou no meio.');
+        break;
+      case 'saiu':
+        K.bolha = null; ocupada(false);
+        if (ev.erro) bolha('erro', 'O Claude Code fechou:\n' + ev.erro);
+        break;
+      case 'aviso': console.warn(ev.texto); break;
+    }
+    if (colar) fim();
+  };
+
+  function ajustar() {
+    texto.style.height = 'auto';
+    texto.style.height = Math.min(texto.scrollHeight, 160) + 'px';
+    enviar.disabled = !K.ocupada && !texto.value.trim();
+  }
+  async function mandar() {
+    if (K.ocupada) { api().parar(); return; }
     const t = texto.value.trim();
     if (!t) return;
-    bolha('eu', t);
-    texto.value = ''; ajustar();
-    setTimeout(() => bolha('kc', 'Recebi. (Na etapa 2 isto vai para o Claude Code de verdade.)'), 250);
+    bolha('eu', t); fim();
+    texto.value = '';
+    ocupada(true);
+    K.bolha = null;
+    const ok = await api().enviar(t);
+    if (!ok) ocupada(false);
   }
-  texto.addEventListener('input', ajustar);
-  texto.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mandar(); } });
-  enviar.addEventListener('click', mandar);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') api() && api().esconder(); });
-  $('recolher').addEventListener('click', () => api() && api().esconder());
-  $('sair').addEventListener('click', () => api() && api().sair());
-  $('fixar').addEventListener('click', async () => { const on = !$('fixar').classList.contains('on'); $('fixar').classList.toggle('on', await api().fixar(on)); });
-  window.addEventListener('pywebviewready', async () => {
+  async function carregar() {
     const i = await api().info();
     $('fixar').classList.toggle('on', i.fixa);
-    if (i.pasta) $('pasta').textContent = '📁 ' + i.pasta;
-    texto.focus();
-  });
+    K.pasta = i.pasta;
+    $('pasta').textContent = '📁 ' + base(i.pasta);
+    $('pasta').title = i.pasta + ' · clique para trocar a pasta do projeto';
+    medidor(i.limite);
+    conversa.innerHTML = '';
+    const h = await api().historico();
+    if (!h.length) bolha('sis', 'Conversa nova em ' + base(i.pasta) + '.\nEu edito e rodo comandos comuns aqui dentro sem perguntar.');
+    for (const ev of h) {
+      if (ev.t === 'eu') bolha('eu', ev.texto);
+      else if (ev.t === 'kc') bolha('kc', md(ev.texto));
+      else if (ev.t === 'ferr') passo(ev.id, ev.nome, ev.entrada);
+      else if (ev.t === 'ferr_fim') passoFim(ev.id, ev.ok, ev.saida);
+    }
+    ocupada(!!i.ocupada);
+    fim();
+  }
+
+  texto.addEventListener('input', ajustar);
+  texto.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (texto.value.trim()) mandar(); } });
+  enviar.addEventListener('click', mandar);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') api() && api().esconder(); });
+  conversa.addEventListener('click', e => { const a = e.target.closest('a'); if (a) { e.preventDefault(); } });
+  $('recolher').addEventListener('click', () => api().esconder());
+  $('sair').addEventListener('click', () => api().sair());
+  $('nova').addEventListener('click', async () => { if (K.ocupada) return; await api().nova(); carregar(); });
+  $('pasta').addEventListener('click', async () => { if (K.ocupada) return; const p = await api().escolher_pasta(); if (p) carregar(); });
+  $('fixar').addEventListener('click', async () => { const on = !$('fixar').classList.contains('on'); $('fixar').classList.toggle('on', await api().fixar(on)); });
+  window.addEventListener('pywebviewready', () => { carregar(); texto.focus(); });
 </script>
 </body>
 </html>

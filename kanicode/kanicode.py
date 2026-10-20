@@ -5,7 +5,7 @@ fecha o KaniCode. A bolinha verde-limão é nativa do Windows (bolinha.py: sem n
 a janela da conversa é uma janela do pywebview (ui/janela.html) que aparece/some com o clique na bolinha.
 Uma instância só: o canal de controle (127.0.0.1:PORTA, só aceita "ping", "mostrar" e "sair") avisa a que já está aberta.
 
-Rodar à mão: pyw -3.13 kanicode.py   (com as ferramentas do navegador: py -3.13 kanicode.py --console)
+Rodar à mão: pyw -3.13 kanicode.py   (ferramentas do navegador: --console; testes por CDP: --agente[=9350])
 """
 import json, os, socket, sys, threading, time
 
@@ -17,7 +17,9 @@ ESTADO = os.path.join(DADOS, "estado.json")
 PORTA = 47613
 BOLA = 64                 # tamanho da bolinha em pixels da interface (o Windows aplica o zoom do monitor)
 JW, JH = 440, 640         # janela da conversa, idem
-VERSAO = 1
+VERSAO = 2
+# pasta padrão das conversas: o KANIVETE (ao lado da pasta dos plugins)
+PROJETO_PADRAO = os.path.join(os.path.dirname(os.path.dirname(PASTA)), "CANIVETE DO PAILER")
 
 
 def _ler_estado():
@@ -56,6 +58,8 @@ class App:
         self._janela = None
         self._aberta = False
         self._saindo = False
+        self._sessao = None
+        self._limite = None
 
     # ── js_api ──
     def mostrar(self):
@@ -65,7 +69,8 @@ class App:
         self._janela.show()
         self._janela.restore()
         self._aberta = True
-        self._na_ui(lambda: self._bola and self._bola.definir(aberta=True))
+        ocupada = bool(self._sessao and self._sessao.ocupada)
+        self._na_ui(lambda: self._bola and self._bola.definir(aberta=True, estado="trabalhando" if ocupada else ""))
 
     def esconder(self):
         if self._janela:
@@ -82,10 +87,61 @@ class App:
 
     def info(self):
         e = _ler_estado()
-        return {"versao": VERSAO, "pasta": e.get("projeto") or "", "fixa": bool(e.get("fixa", True))}
+        return {"versao": VERSAO, "pasta": self._pasta(), "fixa": bool(e.get("fixa", True)), "limite": self._limite,
+                "ocupada": bool(self._sessao and self._sessao.ocupada)}
+
+    # ── conversa (sessao.py) ──
+    def enviar(self, texto):
+        texto = (texto or "").strip()
+        if not texto:
+            return False
+        if not self._sessao:
+            from sessao import Sessao
+            sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
+            self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
+        self._bola_estado("trabalhando")
+        try:
+            self._sessao.enviar(texto)
+        except Exception as e:
+            self._bola_estado("")
+            self._para_janela({"t": "saiu", "erro": str(e)})
+            return False
+        return True
+
+    def parar(self):
+        if self._sessao:
+            self._sessao.parar()
+        return True
+
+    def nova(self):
+        """conversa nova nesta pasta (a anterior continua guardada)"""
+        self._encerrar()
+        e = _ler_estado()
+        ss = e.get("sessoes") or {}
+        ss.pop(self._pasta(), None)
+        _gravar_estado(sessoes=ss)
+        return True
+
+    def historico(self):
+        sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
+        if not sid:
+            return []
+        from sessao import Sessao
+        return Sessao(self._pasta(), DADOS, None, sessao_id=sid).historico()
+
+    def escolher_pasta(self):
+        r = self._janela.create_file_dialog(webview.FOLDER_DIALOG, directory=self._pasta())
+        if not r:
+            return None
+        nova = r[0] if isinstance(r, (list, tuple)) else r
+        if os.path.normcase(nova) != os.path.normcase(self._pasta()):
+            self._encerrar()
+            _gravar_estado(projeto=nova)
+        return nova
 
     def sair(self):
         self._saindo = True
+        self._encerrar()
         self._na_ui(lambda: self._bola and self._bola.fechar())
         try:
             self._janela.destroy()
@@ -93,6 +149,41 @@ class App:
             pass
 
     # ── internos ──
+    def _pasta(self):
+        p = _ler_estado().get("projeto")
+        return p if p and os.path.isdir(p) else PROJETO_PADRAO
+
+    def _encerrar(self):
+        if self._sessao:
+            s, self._sessao = self._sessao, None
+            threading.Thread(target=s.fechar, daemon=True).start()
+        self._bola_estado("")
+
+    def _evento(self, ev):
+        t = ev.get("t")
+        if t == "inicio" and ev.get("sessao"):
+            ss = _ler_estado().get("sessoes") or {}
+            if ss.get(self._pasta()) != ev["sessao"]:
+                ss[self._pasta()] = ev["sessao"]
+                _gravar_estado(sessoes=ss)
+        elif t == "limite":
+            self._limite = {"uso": ev.get("uso"), "reinicia": ev.get("reinicia")}
+        elif t in ("fim", "saiu"):
+            # terminou: com a janela recolhida, a bolinha fica com a marca de "tem resposta"
+            self._bola_estado("" if self._aberta else "pergunta")
+            if t == "saiu":
+                self._sessao = None
+        self._para_janela(ev)
+
+    def _para_janela(self, ev):
+        try:
+            self._janela.evaluate_js("window.kcEv && kcEv(%s)" % json.dumps(ev, ensure_ascii=False))
+        except Exception:
+            pass
+
+    def _bola_estado(self, estado):
+        self._na_ui(lambda: self._bola and self._bola.definir(estado=estado))
+
     def _na_ui(self, fn):
         """roda fn na thread da interface do Windows (a bolinha só pode ser mexida lá)"""
         try:
@@ -178,6 +269,11 @@ class App:
 
 
 def main():
+    # --agente[=porta]: a janela da conversa aceita CDP em 127.0.0.1 (testes e o agente lendo a tela); nunca por padrão
+    ag = next((a for a in sys.argv if a.startswith("--agente")), None)
+    if ag:
+        porta = ag.split("=", 1)[1] if "=" in ag else "9350"
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"--remote-debugging-port={porta} --remote-allow-origins=http://127.0.0.1:{porta}"
     if avisar("mostrar"):   # já existe uma aberta: ela aparece e esta sai
         return
     try:
