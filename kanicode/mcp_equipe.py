@@ -18,6 +18,7 @@ import licoes      # noqa: E402
 
 PORTA = 47613
 PASTA = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+_ULTIMA = {"codex": None}   # última sessão do Codex nesta conversa ("continuar")
 
 FERRAMENTAS = [
     {"name": "codex",
@@ -31,7 +32,9 @@ FERRAMENTAS = [
      "inputSchema": {"type": "object", "properties": {
          "contrato": {"type": "string", "description": "a tarefa completa, em português"},
          "editar": {"type": "boolean", "description": "true = pode criar/editar arquivos na pasta do projeto", "default": False},
-         "teste": {"type": "string", "description": "comando para conferir no fim (ex.: py -3.13 testes/teste_x.py); roda na pasta do projeto"}},
+         "teste": {"type": "string", "description": "comando para conferir no fim (ex.: py -3.13 testes/teste_x.py); roda na pasta do projeto"},
+         "continuar": {"type": "boolean", "description": "true = continua a ÚLTIMA sessão do Codex neste projeto (ele lembra do que fez; use para mandar correções depois da revisão)", "default": False},
+         "prazo_min": {"type": "integer", "description": "minutos até o KaniCode encerrar o Codex (padrão 10)", "default": 10}},
          "required": ["contrato"]}},
     {"name": "licao",
      "description": ("Guardar uma LIÇÃO deste projeto (uma armadilha, um jeito certo de fazer) depois de revisar um trabalho "
@@ -82,13 +85,21 @@ def _git(*args):
         return ""
 
 
-def _mudados():
-    """arquivos modificados/novos na pasta (git status), com o conteúdo de cada um marcado por hash para comparar"""
+def _mudados(extras=()):
+    """arquivos já versionados que estão modificados (git diff: rápido) + os que o Codex disse que mexeu (os novos),
+    cada um com o hash do conteúdo para comparar antes × depois. `git status -uall` levava ~1 min neste projeto (muito
+    arquivo solto) e passava do limite: a revisão dizia "nenhum arquivo mudou" — medido 2026-10-20."""
+    nomes = set(_git("diff", "--name-only").splitlines())
+    for a in extras:
+        try:
+            nomes.add(os.path.relpath(os.path.join(PASTA, a), PASTA).replace("\\", "/"))
+        except ValueError:
+            pass
     out = {}
-    for l in _git("status", "--porcelain", "-uall").splitlines():
-        caminho = l[3:].strip().strip('"')
-        if " -> " in caminho:
-            caminho = caminho.split(" -> ")[-1]
+    for caminho in nomes:
+        caminho = caminho.strip().strip('"')
+        if not caminho:
+            continue
         try:
             with open(os.path.join(PASTA, caminho), "rb") as f:
                 out[caminho] = hash(f.read())
@@ -116,9 +127,12 @@ def _sintaxe(caminho):
     return None if r.returncode == 0 else (r.stderr or r.stdout)[-400:]
 
 
-def _revisar(antes, teste):
+TESTE_PRAZO = 180   # s: teste da revisão que passa disso é dado como TRAVADO (não como falha do código)
+
+
+def _revisar(antes, teste, arquivos_codex=()):
     """o que o Codex mudou + sintaxe + teste: o relatório que o Claude lê no lugar dos arquivos"""
-    depois = _mudados()
+    depois = _mudados(arquivos_codex)
     mexidos = sorted(k for k, h in depois.items() if antes.get(k, "∅") != h)
     linhas = ["REVISÃO AUTOMÁTICA DO KANICODE:"]
     if not mexidos:
@@ -133,14 +147,18 @@ def _revisar(antes, teste):
         linhas.append("- sintaxe: ok" if not erros else "- sintaxe com ERRO: " + "; ".join(f"{m}: {e}" for m, e in erros))
     if teste:
         _avisar({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "rodando o teste: " + teste[:60]})
+        p = subprocess.Popen(teste, cwd=PASTA, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             encoding="utf-8", errors="replace", creationflags=0x08000000)
         try:
-            r = subprocess.run(teste, cwd=PASTA, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               timeout=900, creationflags=0x08000000)
-            saida = (r.stdout + r.stderr).strip().splitlines()
-            linhas.append(f"- teste ({teste}): {'PASSOU' if r.returncode == 0 else 'FALHOU (código ' + str(r.returncode) + ')'}")
+            saida, _ = p.communicate(timeout=TESTE_PRAZO)
+            saida = (saida or "").strip().splitlines()
+            linhas.append(f"- teste ({teste}): {'PASSOU' if p.returncode == 0 else 'FALHOU (código ' + str(p.returncode) + ')'}")
             linhas += ["    " + l for l in saida[-15:]]
         except subprocess.TimeoutExpired:
-            linhas.append(f"- teste ({teste}): passou de 15 min, interrompido")
+            # shell=True: o teste é neto do cmd; taskkill /T derruba a árvore toda
+            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True, creationflags=0x08000000)
+            linhas.append(f"- teste ({teste}): TRAVOU (passou de {TESTE_PRAZO // 60} min) — não é falha confirmada do código; "
+                          "rode você mesmo para ver onde para")
     return "\n".join(linhas)
 
 
@@ -153,10 +171,17 @@ def _chamar(id_, nome, args):
             if extra:
                 contrato += "\n\n" + extra
             antes = _mudados() if editar else {}
-            r = ajudantes.codex(contrato, PASTA, editar, ao_evento=_avisar)
-            texto = r["texto"] + f"\n\n[Codex: {r['tokens']} tokens, {r['ms'] / 1000:.0f} s]"
+            retomar = _ULTIMA["codex"] if args.get("continuar") else None
+            if retomar:
+                contrato = args.get("contrato", "")   # a sessão dele já tem as regras e lições
+            r = ajudantes.codex(contrato, PASTA, editar, ao_evento=_avisar, retomar=retomar,
+                                prazo=max(60, int(args.get("prazo_min") or 10) * 60))
+            if r.get("sessao"):
+                _ULTIMA["codex"] = r["sessao"]
+            texto = r["texto"] + f"\n\n[Codex: {r['tokens']} tokens, {r['ms'] / 1000:.0f} s" + \
+                (" — PASSOU DO PRAZO e foi encerrado" if r.get("estourou") else "") + "]"
             if editar:
-                texto += "\n\n" + _revisar(antes, teste)
+                texto += "\n\n" + _revisar(antes, teste, r.get("arquivos") or ())
             if extra:
                 texto += f"\n\n[foram junto: regras do projeto + {len(licoes.relevantes(PASTA, args.get('contrato', '')))} lição(ões)]"
         elif nome == "licao":

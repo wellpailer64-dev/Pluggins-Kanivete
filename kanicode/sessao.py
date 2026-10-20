@@ -22,11 +22,16 @@ PROMPT_KANICODE = ("Você está respondendo pelo KaniCode: uma janela pequena de
                    "EQUIPE: você tem dois ajudantes para economizar a cota do Claude do Pailer — mcp__equipe__codex (Codex, "
                    "conta ChatGPT Plus dele: tarefas médias e bem definidas, com contrato claro; revise o que ele fizer) e "
                    "mcp__equipe__kani (modelo local grátis: resumir, classificar, reescrever um texto que você passa). "
-                   "Delegue quando a tarefa couber neles; o Pailer vê os ajudantes trabalhando na janela. "
+                   "QUANDO DELEGAR (medido 2026-10-20: mesma tarefa, você sozinho 96 s / US$ 0,84; com o Codex ~5-11 min / "
+                   "US$ 0,49): faça VOCÊ quando o Pailer está esperando ou a tarefa precisa do app rodando para conferir; "
+                   "delegue ao Codex quando poupar cota importa mais que tempo (conta perto do limite, fila de tarefas, ou o "
+                   "Pailer pedir 'modo equipe') e a tarefa é bem delimitada. "
                    "MODO EQUIPE: no contrato do Codex vão sozinhas as regras do projeto e as lições parecidas; passe "
                    "'teste' (um comando) quando houver como conferir — a revisão automática volta com arquivos mudados, "
                    "sintaxe e teste, e você só abre arquivo se algo falhar. Quando aprender uma armadilha (sua ou do Codex), "
-                   "guarde com mcp__equipe__licao, em uma frase com o como-fazer.")
+                   "guarde com mcp__equipe__licao, em uma frase com o como-fazer. O Codex não consegue rodar Python nem o app "
+                   "(o sandbox dele no Windows esconde): quem testa é a revisão; se ela falhar, mande a correção com "
+                   "continuar=true (mesma sessão dele, sem reler o projeto).")
 
 
 # o que sempre passa pelo Pailer (Bash e PowerShell): enviar/publicar, apagar, fechar programa, desligar

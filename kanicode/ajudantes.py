@@ -44,23 +44,43 @@ def _codex_cota(thread_id):
         return None
 
 
-def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None):
-    """roda uma tarefa no Codex (codex exec) na pasta; devolve {ok, texto, tokens, arquivos, comandos, cota, ms}"""
+# O isolamento (sandbox) do Codex no Windows esconde o Python e o app (py e até o caminho completo "não existem"):
+# medido 2026-10-20 — sem este aviso ele gastava minutos caçando um jeito de testar em vez de entregar.
+AVISO_AMBIENTE = ("AMBIENTE: no seu terminal isolado NÃO existe Python nem o app (py, python e o caminho completo falham) e "
+                  "não há acesso à porta 9333. NÃO tente rodar testes nem procure alternativas: escreva o código com cuidado, "
+                  "confira lendo, e termine. O KaniCode roda a sintaxe e o teste logo depois e devolve o resultado.")
+CODEX_PRAZO = 600   # s: passou disso, o KaniCode encerra o Codex e devolve o que tiver (nunca esperar sem fim)
+
+
+def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None, prazo=CODEX_PRAZO):
+    """roda uma tarefa no Codex (codex exec) na pasta; retomar = id da sessão anterior (continua sem reler tudo).
+    Devolve {ok, texto, tokens, arquivos, comandos, cota, ms, sessao, estourou}"""
     exe = shutil.which("codex")
     if not exe:
         raise RuntimeError("o Codex não está instalado (npm install -g @openai/codex)")
     t0 = time.time()
-    ao_evento({"t": "ajudante", "quem": "codex", "fase": "inicio", "texto": tarefa[:160]})
-    cmd = [exe, "exec", "--json", "--skip-git-repo-check", "-m", CODEX_MODELO, "-s", "workspace-write" if editar else "read-only", "-"]
+    ao_evento({"t": "ajudante", "quem": "codex", "fase": "inicio", "texto": ("continuando: " if retomar else "") + tarefa[:160]})
+    sand = ["-s", "workspace-write" if editar else "read-only"]
+    if retomar:
+        cmd = [exe, "exec", "resume", "--json", "--skip-git-repo-check", "-m", CODEX_MODELO, *sand, retomar, "-"]
+    else:
+        cmd = [exe, "exec", "--json", "--skip-git-repo-check", "-m", CODEX_MODELO, *sand, "-"]
     p = subprocess.Popen(cmd, cwd=pasta, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          encoding="utf-8", errors="replace", creationflags=_SEM_JANELA)
-    p.stdin.write(tarefa)
+    p.stdin.write(tarefa + "\n\n" + AVISO_AMBIENTE)
     p.stdin.close()
-    textos, arquivos, comandos, tokens, thread = [], [], [], 0, None
+    estourou = threading.Event()
+
+    def vigia():   # prazo: encerra o Codex (e o que ele abriu) e deixa a leitura terminar com o que já veio
+        while p.poll() is None:
+            if time.time() - t0 > prazo or (parar and parar.is_set()):
+                estourou.set()
+                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True, creationflags=_SEM_JANELA)
+                return
+            time.sleep(1)
+    threading.Thread(target=vigia, daemon=True).start()
+    textos, arquivos, comandos, tokens, thread = [], [], [], 0, retomar
     for linha in p.stdout:
-        if parar and parar.is_set():
-            p.kill()
-            break
         try:
             d = json.loads(linha)
         except ValueError:
@@ -87,8 +107,11 @@ def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None):
             ao_evento({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "terminando", "tokens": tokens})
     p.wait()
     erro = "" if p.returncode == 0 else (p.stderr.read() or "")[-400:]
-    res = {"ok": p.returncode == 0, "texto": "\n\n".join(textos) or erro, "tokens": tokens, "arquivos": arquivos,
-           "comandos": comandos, "cota": _codex_cota(thread), "ms": int((time.time() - t0) * 1000)}
+    if estourou.is_set():
+        erro = f"o Codex passou do prazo de {prazo // 60} min e foi encerrado (o que ele já escreveu ficou nos arquivos)"
+    res = {"ok": p.returncode == 0 and not estourou.is_set(), "texto": "\n\n".join(textos + ([erro] if estourou.is_set() else [])) or erro,
+           "tokens": tokens, "arquivos": arquivos, "comandos": comandos, "cota": _codex_cota(thread),
+           "ms": int((time.time() - t0) * 1000), "sessao": thread, "estourou": estourou.is_set()}
     ao_evento({"t": "ajudante", "quem": "codex", "fase": "fim", "ok": res["ok"], "tokens": tokens, "cota": res["cota"], "ms": res["ms"],
                "texto": (textos[-1] if textos else erro)[:200]})
     return res
