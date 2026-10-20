@@ -659,7 +659,13 @@
     if (!p.hidden) { p.hidden = true; return; }
     p.hidden = false;
     CT.dados = await api().contas_listar(); contasDesenhar();
-    CT.dados = await api().conta_atualizar(); contasDesenhar(); contaBotao();
+    CT.dados = await api().conta_atualizar(); contasDesenhar(); contaBotao(); cotasDaConta();
+  }
+  // o rodapé mostra a cota da conta EM USO (o login pode ter mudado fora do KaniCode, ex.: /login no terminal)
+  function cotasDaConta() {
+    const d = CT.dados; if (!d) return;
+    const c = d.lista.find(x => x.id === d.ativa);
+    if (c && c.cotas && c.cotas.h5 != null) cotas(c.cotas);
   }
   $('contas').addEventListener('click', async e => {
     if (e.target.id === 'ct-add') {
@@ -816,7 +822,8 @@
     $('fixar').classList.toggle('on', i.fixa);
     K.pasta = i.pasta; K.modelo = i.modelo || K.modelo; K.comandos = i.comandos || K.comandos;
     K.cotaCodex = i.cota_codex || K.cotaCodex;
-    api().contas_listar().then(d => { CT.dados = d; contaBotao(); });
+    api().contas_listar().then(d => { CT.dados = d; contaBotao(); })
+      .then(() => api().conta_atualizar(CT.dados.ativa)).then(d => { CT.dados = d; contaBotao(); cotasDaConta(); });
     quemDefinir(i.quem || 'claude', false);
     $('pasta').textContent = '📁 ' + base(i.pasta);
     $('pasta').title = i.pasta + ' · clique para trocar a pasta do projeto';
