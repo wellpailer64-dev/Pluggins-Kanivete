@@ -228,6 +228,11 @@ class App:
     def sair(self):
         self._saindo = True
         self._encerrar()
+        try:   # a Kani direta roda neste processo: sai da placa de vídeo junto
+            import ajudantes
+            ajudantes.kani_parar()
+        except Exception:
+            pass
         self._na_ui(lambda: self._bola and self._bola.fechar())
         try:
             self._janela.destroy()
