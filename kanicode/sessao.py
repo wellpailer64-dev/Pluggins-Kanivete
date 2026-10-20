@@ -5,14 +5,29 @@ JSON na entrada, e as respostas chegam aos pedaços na saída. Este módulo trad
 janela (ao_evento(dict)) e guarda a conversa em <DADOS>/conversas/<sessão>.jsonl para mostrar de novo ao reabrir.
 Retomar = --resume <sessão> (o Claude lembra de tudo; a janela relê o arquivo).
 
-Eventos: inicio{sessao, modelo} · texto{d} (pedaço) · texto_novo · ferr{id, nome, entrada} · ferr_fim{id, ok, saida} ·
-limite{uso, reinicia} · fim{custo, ms, tokens, erro} · saiu{erro}
+Eventos: inicio{sessao, modelo} · comandos{lista} · texto{d} (pedaço) · texto_novo · pensando · ferr{id, nome, entrada} ·
+ferr_fim{id, ok, saida} · uso{saida, contexto, novo} · limite{h5, h5_zera, sem, sem_zera} · permissao{id, ferr, entrada, motivo} ·
+fim{custo, ms, tokens, erro} · saiu{erro}
+
+Permissões (etapa 3): modo "auto" do Claude Code (o classificador dele libera o que é seguro dentro do projeto) + regras
+"ask" do KaniCode para o que o Pailer quer decidir (REGRAS_PERGUNTAR). O pedido chega pelo próprio canal
+(--permission-prompt-tool stdio + "initialize"): control_request can_use_tool → a janela mostra o cartão → responder().
+Apagar só dentro da pasta do projeto é liberado aqui mesmo, sem cartão.
 """
-import json, os, shutil, subprocess, threading, time
+import json, os, re, shlex, shutil, subprocess, threading, time
 
 PROMPT_KANICODE = ("Você está respondendo pelo KaniCode: uma janela pequena de conversa na área de trabalho do Pailer. "
-                   "Responda curto e em português do Brasil; evite tabelas largas (a janela tem ~440 px). "
+                   "Responda curto e em português do Brasil; evite tabelas largas (a janela tem ~500 px). "
                    "Pode editar arquivos e rodar comandos comuns dentro da pasta do projeto sem perguntar.")
+
+
+# o que sempre passa pelo Pailer (Bash e PowerShell): enviar/publicar, apagar, fechar programa, desligar
+_RISCO = ["git push", "git commit", "git reset", "git rebase", "git clean", "git checkout --", "git restore", "git branch -D",
+          "gh pr", "gh release", "gh repo", "gh api", "npm publish", "rm", "rmdir", "del", "rd", "Remove-Item", "taskkill",
+          "Stop-Process", "kill", "shutdown", "Restart-Computer", "Stop-Computer", "format", "curl -X POST", "Invoke-RestMethod",
+          "Invoke-WebRequest -Method Post"]
+REGRAS_PERGUNTAR = [f"{f}({c}:*)" for f in ("Bash", "PowerShell") for c in _RISCO]
+_APAGAR = re.compile(r"^\s*(rm|rmdir|del|rd|Remove-Item)\b", re.I)
 
 
 class Sessao:
@@ -23,6 +38,8 @@ class Sessao:
         self.ocupada = False
         self._trava = threading.Lock()
         self._texto = []           # pedaços do texto da resposta em andamento (para guardar inteiro no fim)
+        self.comandos = []         # comandos "/" (nome, descrição) que esta instalação do Claude Code tem
+        self.modelo = None         # --model (None = o padrão do Claude Code)
 
     # ── processo ──
     def _abrir(self):
@@ -30,14 +47,45 @@ class Sessao:
         if not exe:
             raise RuntimeError("não achei o Claude Code (comando claude) neste PC")
         cmd = [exe, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--include-partial-messages",
-               "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none",
+               "--verbose", "--permission-mode", "auto", "--permission-prompt-tool", "stdio",
+               "--settings", json.dumps({"permissions": {"ask": REGRAS_PERGUNTAR}}),
                "--append-system-prompt", PROMPT_KANICODE]
+        if self.modelo:
+            cmd += ["--model", self.modelo]
         if self.sessao_id:
             cmd += ["--resume", self.sessao_id]
         self.proc = subprocess.Popen(cmd, cwd=self.pasta, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      encoding="utf-8", errors="replace", bufsize=1, creationflags=0x08000000)   # sem console
         threading.Thread(target=self._ler, args=(self.proc,), daemon=True).start()
         threading.Thread(target=self._ler_erro, args=(self.proc,), daemon=True).start()
+        self._escrever({"type": "control_request", "request_id": "kc_ini", "request": {"subtype": "initialize"}})
+
+    def _escrever(self, obj):
+        self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        self.proc.stdin.flush()
+
+    def responder(self, pedido_id, permitir, entrada=None, motivo=""):
+        """resposta do Pailer a um cartão de permissão"""
+        if not self.vivo():
+            return False
+        r = {"behavior": "allow", "updatedInput": entrada or {}} if permitir else \
+            {"behavior": "deny", "message": motivo or "O Pailer recusou pelo KaniCode."}
+        with self._trava:
+            self._escrever({"type": "control_response", "response": {"subtype": "success", "request_id": pedido_id, "response": r}})
+        self._guardar({"t": "permissao_fim", "id": pedido_id, "ok": bool(permitir)})
+        return True
+
+    def _apagar_dentro(self, cmd):
+        """comando de apagar cujos alvos estão TODOS dentro da pasta do projeto (esse passa sem cartão)"""
+        if not _APAGAR.match(cmd or "") or re.search(r"[;&|`$*?]", cmd):
+            return False
+        try:
+            partes = shlex.split(cmd, posix=False)[1:]
+        except ValueError:
+            return False
+        alvos = [x.strip("\"'") for x in partes if not x.startswith("-") and not x.startswith("/")]
+        raiz = os.path.normcase(os.path.abspath(self.pasta)) + os.sep
+        return bool(alvos) and all(os.path.normcase(os.path.abspath(os.path.join(self.pasta, a))).startswith(raiz) for a in alvos)
 
     def vivo(self):
         return self.proc is not None and self.proc.poll() is None
@@ -49,9 +97,7 @@ class Sessao:
             self.ocupada = True
             self._texto = []
             self._guardar({"t": "eu", "texto": texto})
-            msg = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": texto}]}}
-            self.proc.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
-            self.proc.stdin.flush()
+            self._escrever({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": texto}]}})
 
     def parar(self):
         """interrompe a resposta em andamento (pede com jeito; se não parar em 3 s, encerra o processo)"""
@@ -102,6 +148,25 @@ class Sessao:
 
     def _traduzir(self, d):
         t = d.get("type")
+        if t == "control_response":
+            r = ((d.get("response") or {}).get("response")) or {}
+            if r.get("commands"):
+                self.comandos = [{"nome": c.get("name"), "desc": (c.get("description") or "")[:160], "arg": c.get("argumentHint") or ""}
+                                 for c in r["commands"] if c.get("name") and not c["name"].startswith("__")]
+                self.ao_evento({"t": "comandos", "lista": self.comandos})
+            return
+        if t == "control_request":
+            q = d.get("request") or {}
+            if q.get("subtype") == "can_use_tool":
+                ent = q.get("input") or {}
+                if q.get("tool_name") in ("Bash", "PowerShell") and self._apagar_dentro(ent.get("command", "")):
+                    self.responder(d["request_id"], True, ent)
+                    return
+                ev = {"t": "permissao", "id": d["request_id"], "ferr": q.get("tool_name"), "entrada": ent,
+                      "motivo": q.get("description") or ""}
+                self._guardar(ev)
+                self.ao_evento(ev)
+            return
         if t == "system" and d.get("subtype") == "init":
             novo = d.get("session_id")
             if novo and novo != self.sessao_id:
@@ -109,15 +174,34 @@ class Sessao:
             self.ao_evento({"t": "inicio", "sessao": self.sessao_id, "modelo": d.get("model", "")})
         elif t == "stream_event":
             e = d.get("event") or {}
-            if e.get("type") == "content_block_start" and (e.get("content_block") or {}).get("type") == "text":
+            bloco = (e.get("content_block") or {}).get("type")
+            if e.get("type") == "message_start":
+                self._streamou = False
+            if e.get("type") in ("message_start", "message_delta"):
+                u = e.get("usage") or (e.get("message") or {}).get("usage") or {}
+                if u:
+                    self.ao_evento({"t": "uso", "saida": u.get("output_tokens") or 0, "novo": e.get("type") == "message_start",
+                                    "contexto": (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0)
+                                    + (u.get("cache_creation_input_tokens") or 0)})
+            elif e.get("type") == "content_block_start" and bloco == "thinking":
+                self.ao_evento({"t": "pensando"})
+            elif e.get("type") == "content_block_start" and bloco == "text":
                 self._fechar_texto()
                 self.ao_evento({"t": "texto_novo"})
             elif e.get("type") == "content_block_delta" and (e.get("delta") or {}).get("type") == "text_delta":
+                self._streamou = True
                 pedaco = e["delta"].get("text", "")
                 self._texto.append(pedaco)
                 self.ao_evento({"t": "texto", "d": pedaco})
         elif t == "assistant":
+            # comando interno ("/context", "/usage"...): a resposta vem inteira, sem os pedaços (modelo "<synthetic>")
+            sintetica = (d.get("message") or {}).get("model") == "<synthetic>" or not getattr(self, "_streamou", True)
             for b in (d.get("message") or {}).get("content") or []:
+                if b.get("type") == "text" and sintetica and b.get("text"):
+                    self._fechar_texto()
+                    self.ao_evento({"t": "texto_novo"})
+                    self._texto.append(b["text"])
+                    self.ao_evento({"t": "texto", "d": b["text"]})
                 if b.get("type") == "tool_use":
                     ev = {"t": "ferr", "id": b.get("id"), "nome": b.get("name"), "entrada": b.get("input") or {}}
                     self._guardar(ev)
@@ -133,8 +217,10 @@ class Sessao:
                     self.ao_evento(ev)
         elif t == "rate_limit_event":
             info = d.get("rate_limit_info") or {}
-            j = (info.get("unifiedWindows") or {}).get("five_hour") or {}
-            self.ao_evento({"t": "limite", "uso": j.get("utilization"), "reinicia": j.get("resetsAt") or info.get("resetsAt")})
+            w = info.get("unifiedWindows") or {}
+            h5, sem = w.get("five_hour") or {}, w.get("seven_day") or {}
+            self.ao_evento({"t": "limite", "h5": h5.get("utilization"), "h5_zera": h5.get("resetsAt"),
+                            "sem": sem.get("utilization"), "sem_zera": sem.get("resetsAt"), "estado": info.get("status")})
         elif t == "result":
             self._fechar_texto()
             self.ocupada = False

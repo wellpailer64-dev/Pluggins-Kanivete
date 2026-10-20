@@ -16,8 +16,8 @@ DADOS = os.path.join(os.path.splitdrive(PASTA)[0] + os.sep, "Kanivete", "KaniCod
 ESTADO = os.path.join(DADOS, "estado.json")
 PORTA = 47613
 BOLA = 64                 # tamanho da bolinha em pixels da interface (o Windows aplica o zoom do monitor)
-JW, JH = 440, 640         # janela da conversa, idem
-VERSAO = 2
+JW, JH = 500, 660         # janela da conversa, idem
+VERSAO = 3
 # pasta padrão das conversas: o KANIVETE (ao lado da pasta dos plugins)
 PROJETO_PADRAO = os.path.join(os.path.dirname(os.path.dirname(PASTA)), "CANIVETE DO PAILER")
 
@@ -58,8 +58,9 @@ class App:
         self._janela = None
         self._aberta = False
         self._saindo = False
+        self._limite = _ler_estado().get("limite")   # o último visto (a cota aparece antes da 1ª resposta)
         self._sessao = None
-        self._limite = None
+        self._comandos = []
 
     # ── js_api ──
     def mostrar(self):
@@ -88,17 +89,33 @@ class App:
     def info(self):
         e = _ler_estado()
         return {"versao": VERSAO, "pasta": self._pasta(), "fixa": bool(e.get("fixa", True)), "limite": self._limite,
-                "ocupada": bool(self._sessao and self._sessao.ocupada)}
+                "ocupada": bool(self._sessao and self._sessao.ocupada), "comandos": self._comandos,
+                "modelo": e.get("modelo") or ""}
 
     # ── conversa (sessao.py) ──
     def enviar(self, texto):
         texto = (texto or "").strip()
         if not texto:
             return False
+        # comandos que o próprio KaniCode resolve (os outros "/" vão para o Claude Code como no terminal)
+        cmd, _, arg = texto.partition(" ")
+        if cmd in ("/clear", "/nova", "/new"):
+            self.nova()
+            self._para_janela({"t": "local", "acao": "recarregar"})
+            return True
+        if cmd == "/pasta":
+            self._para_janela({"t": "local", "acao": "pasta"})
+            return True
+        if cmd == "/model" and arg.strip():
+            _gravar_estado(modelo=arg.strip())
+            self._encerrar()   # a próxima mensagem abre o Claude Code com o modelo novo (a conversa continua)
+            self._para_janela({"t": "local", "acao": "aviso", "texto": f"Modelo trocado para {arg.strip()}."})
+            return True
         if not self._sessao:
             from sessao import Sessao
             sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
             self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
+            self._sessao.modelo = _ler_estado().get("modelo") or None
         self._bola_estado("trabalhando")
         try:
             self._sessao.enviar(texto)
@@ -107,6 +124,26 @@ class App:
             self._para_janela({"t": "saiu", "erro": str(e)})
             return False
         return True
+
+    def responder(self, pedido_id, permitir, entrada=None):
+        """cartão de permissão: Permitir / Recusar"""
+        ok = bool(self._sessao and self._sessao.responder(pedido_id, permitir, entrada))
+        self._bola_estado("trabalhando")
+        return ok
+
+    def preparar(self):
+        """abre o Claude Code já ao mostrar a janela (a lista de comandos "/" e a 1ª resposta chegam mais rápido)"""
+        if not self._sessao:
+            from sessao import Sessao
+            sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
+            self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
+            self._sessao.modelo = _ler_estado().get("modelo") or None
+        if not self._sessao.vivo():
+            try:
+                self._sessao._abrir()
+            except Exception as e:
+                self._para_janela({"t": "saiu", "erro": str(e)})
+        return self._comandos
 
     def parar(self):
         if self._sessao:
@@ -167,7 +204,15 @@ class App:
                 ss[self._pasta()] = ev["sessao"]
                 _gravar_estado(sessoes=ss)
         elif t == "limite":
-            self._limite = {"uso": ev.get("uso"), "reinicia": ev.get("reinicia")}
+            self._limite = {k: ev.get(k) for k in ("h5", "h5_zera", "sem", "sem_zera")}
+            _gravar_estado(limite=self._limite)
+        elif t == "comandos":
+            self._comandos = ev.get("lista") or []
+        elif t == "permissao":
+            # pergunta para o Pailer: a janela aparece e a bolinha fica com a marca
+            self._bola_estado("pergunta")
+            if not self._aberta:
+                threading.Thread(target=self.mostrar, daemon=True).start()
         elif t in ("fim", "saiu"):
             # terminou: com a janela recolhida, a bolinha fica com a marca de "tem resposta"
             self._bola_estado("" if self._aberta else "pergunta")

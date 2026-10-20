@@ -33,6 +33,14 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
   % da cota de 5 h, fim). Parar = `control_request interrupt` (3 s depois, mata). Sessão por pasta em `estado.json`
   (`sessoes`), conversa da janela em `D:\Kanivete\KaniCode\conversas\<sessão>.jsonl`; reabrir = `--resume`.
 - Testar a janela: `py -3.13 kanicode.py --agente[=9350]` (CDP só nesse modo) — scripts em `D:\kanivete_testes\scripts\kc_*.py`.
-- Etapas: 1 esqueleto (feita) · 2 conversa com o Claude Code (feita) (`claude -p --input-format stream-json --output-format
-  stream-json --include-partial-messages --resume`) · 3 permissões na janela (`--permission-prompts host`) · 4 Codex e
+- Etapa 3 (permissões, status e cotas): `--permission-mode auto` (o classificador do Claude Code libera o seguro) +
+  regras "ask" do KaniCode (`sessao.REGRAS_PERGUNTAR`: git push/commit/reset…, gh, apagar, matar processo, desligar,
+  POST) mandadas por `--settings`; o pedido chega no canal da conversa com `--permission-prompt-tool stdio` + um
+  `control_request initialize` no início (sem isso o "ask" é recusado sozinho). Apagar com todos os alvos dentro da pasta
+  do projeto é liberado em `_apagar_dentro`, sem cartão. O `initialize` devolve a lista dos comandos "/" (com descrição).
+  Comandos internos ("/context", "/usage") voltam como resposta "<synthetic>" inteira, sem pedaços.
+  Status ao vivo: tokens (`message_start/delta.usage`), contexto, tempo, ação atual; cotas de 5 h e semana do
+  `rate_limit_event.unifiedWindows` (`five_hour`, `seven_day`), com contagem regressiva. Sons sintetizados (Web Audio).
+- Etapas: 1 esqueleto (feita) · 2 conversa com o Claude Code (feita) · 3 permissões, status, cotas, comandos, sons (feita) (`claude -p --input-format stream-json --output-format
+  stream-json --include-partial-messages --resume`) · 4 Codex e
   Kani · 5 modo Equipe.
