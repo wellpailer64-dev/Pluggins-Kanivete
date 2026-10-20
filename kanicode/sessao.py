@@ -14,11 +14,15 @@ Permissões (etapa 3): modo "auto" do Claude Code (o classificador dele libera o
 (--permission-prompt-tool stdio + "initialize"): control_request can_use_tool → a janela mostra o cartão → responder().
 Apagar só dentro da pasta do projeto é liberado aqui mesmo, sem cartão.
 """
-import json, os, re, shlex, shutil, subprocess, threading, time
+import json, os, re, shlex, shutil, subprocess, sys, threading, time
 
 PROMPT_KANICODE = ("Você está respondendo pelo KaniCode: uma janela pequena de conversa na área de trabalho do Pailer. "
                    "Responda curto e em português do Brasil; evite tabelas largas (a janela tem ~500 px). "
-                   "Pode editar arquivos e rodar comandos comuns dentro da pasta do projeto sem perguntar.")
+                   "Pode editar arquivos e rodar comandos comuns dentro da pasta do projeto sem perguntar.\n"
+                   "EQUIPE: você tem dois ajudantes para economizar a cota do Claude do Pailer — mcp__equipe__codex (Codex, "
+                   "conta ChatGPT Plus dele: tarefas médias e bem definidas, com contrato claro; revise o que ele fizer) e "
+                   "mcp__equipe__kani (modelo local grátis: resumir, classificar, reescrever um texto que você passa). "
+                   "Delegue quando a tarefa couber neles; o Pailer vê os ajudantes trabalhando na janela.")
 
 
 # o que sempre passa pelo Pailer (Bash e PowerShell): enviar/publicar, apagar, fechar programa, desligar
@@ -49,7 +53,12 @@ class Sessao:
         cmd = [exe, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--include-partial-messages",
                "--verbose", "--permission-mode", "auto", "--permission-prompt-tool", "stdio",
                "--settings", json.dumps({"permissions": {"ask": REGRAS_PERGUNTAR}}),
-               "--append-system-prompt", PROMPT_KANICODE]
+               "--append-system-prompt", PROMPT_KANICODE,
+               # ajudantes (mcp_equipe.py): Codex e Kani como ferramentas, liberadas sem cartão
+               "--mcp-config", json.dumps({"mcpServers": {"equipe": {
+                   "command": sys.executable.replace("pythonw.exe", "python.exe"),
+                   "args": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_equipe.py"), self.pasta]}}}),
+               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani"]
         if self.modelo:
             cmd += ["--model", self.modelo]
         if self.sessao_id:

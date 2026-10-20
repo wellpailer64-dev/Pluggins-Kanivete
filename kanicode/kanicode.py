@@ -90,7 +90,56 @@ class App:
         e = _ler_estado()
         return {"versao": VERSAO, "pasta": self._pasta(), "fixa": bool(e.get("fixa", True)), "limite": self._limite,
                 "ocupada": bool(self._sessao and self._sessao.ocupada), "comandos": self._comandos,
-                "modelo": e.get("modelo") or ""}
+                "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": e.get("quem") or "claude"}
+
+    # ── falar direto com um ajudante ("Quem responde": Codex ou Kani) ──
+    def quem(self, nome):
+        _gravar_estado(quem=nome if nome in ("claude", "codex", "kani") else "claude")
+        return True
+
+    def ajudante(self, quem, texto):
+        import ajudantes
+
+        def rodar():
+            self._bola_estado("trabalhando")
+            try:
+                if quem == "codex":
+                    r = ajudantes.codex(texto, self._pasta(), editar=True, ao_evento=self._evento)
+                else:
+                    r = ajudantes.kani(texto, ao_evento=self._evento)
+                self._para_janela({"t": "ajudante_resposta", "quem": quem, "texto": r["texto"], "ok": r["ok"], "tokens": r["tokens"]})
+            except Exception as e:
+                self._para_janela({"t": "ajudante_resposta", "quem": quem, "texto": str(e), "ok": False, "tokens": 0})
+            self._bola_estado("" if self._aberta else "pergunta")
+        threading.Thread(target=rodar, daemon=True).start()
+        return True
+
+    def habilidades(self):
+        """o que sabemos fazer, para o painel 🧰: guias e ferramentas do KANIVETE (Instructions/mapa.json) + skills"""
+        out = {"kanivete": [], "ferramentas": [], "scripts": []}
+        try:
+            with open(os.path.join(PROJETO_PADRAO, "Instructions", "mapa.json"), encoding="utf-8") as f:
+                m = json.load(f)
+            out["kanivete"] = []
+            for k, v in (m.get("guias") or {}).items():
+                # o 1º parágrafo vira o resumo e os títulos das seções entram na busca (achar "legenda" na Legenda Premium)
+                g = {"caminho": k, "titulo": v}
+                try:
+                    with open(os.path.join(PROJETO_PADRAO, k), encoding="utf-8") as f:
+                        txt = f.read(60000)
+                    linhas = txt.splitlines()
+                    g["secoes"] = " ".join(l.lstrip("#").strip() for l in linhas if l.startswith("#"))[:3000]
+                    corpo = [l.strip() for l in linhas[1:40] if l.strip() and not l.startswith(("#", "|", "-", "`", ">"))]
+                    g["resumo"] = (corpo[0] if corpo else "")[:220]
+                except OSError:
+                    pass
+                out["kanivete"].append(g)
+            out["ferramentas"] = [{"id": x.get("id"), "nome": x.get("nome"), "grupo": x.get("grupo"),
+                                   "guias": x.get("guias") or [], "testes": x.get("testes") or []} for x in m.get("ferramentas") or []]
+            out["scripts"] = [{"caminho": k, "titulo": v} for k, v in (m.get("tools") or {}).items()]
+        except Exception as e:
+            out["erro"] = str(e)
+        return out
 
     # ── conversa (sessao.py) ──
     def enviar(self, texto):
@@ -208,6 +257,8 @@ class App:
             _gravar_estado(limite=self._limite)
         elif t == "comandos":
             self._comandos = ev.get("lista") or []
+        elif t == "ajudante" and ev.get("fase") == "fim" and ev.get("cota") and ev.get("quem") == "codex":
+            _gravar_estado(cota_codex=ev["cota"])   # a cota do Codex aparece de novo ao reabrir
         elif t == "permissao":
             # pergunta para o Pailer: a janela aparece e a bolinha fica com a marca
             self._bola_estado("pergunta")
@@ -301,8 +352,22 @@ class App:
                 break
             with c:
                 try:
-                    cmd = c.recv(64).decode().strip()
+                    c.settimeout(3)
+                    buf = b""
+                    while not buf.endswith(b"\n") and len(buf) < 1_000_000:   # evento pode ser maior que um pacote
+                        pedaco = c.recv(65536)
+                        if not pedaco:
+                            break
+                        buf += pedaco
+                    cmd = buf.decode("utf-8", "replace").strip()
                 except OSError:
+                    continue
+                if cmd.startswith("evento "):   # andamento dos ajudantes (mcp_equipe.py, aberto pelo Claude Code)
+                    c.sendall(b"ok\n")
+                    try:
+                        self._evento(json.loads(cmd[7:]))
+                    except ValueError:
+                        pass
                     continue
                 c.sendall(b"ok\n" if cmd in ("ping", "mostrar", "sair") else b"?\n")
                 if cmd == "mostrar":

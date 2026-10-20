@@ -41,6 +41,13 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
   Comandos internos ("/context", "/usage") voltam como resposta "<synthetic>" inteira, sem pedaços.
   Status ao vivo: tokens (`message_start/delta.usage`), contexto, tempo, ação atual; cotas de 5 h e semana do
   `rate_limit_event.unifiedWindows` (`five_hour`, `seven_day`), com contagem regressiva. Sons sintetizados (Web Audio).
-- Etapas: 1 esqueleto (feita) · 2 conversa com o Claude Code (feita) · 3 permissões, status, cotas, comandos, sons (feita) (`claude -p --input-format stream-json --output-format
-  stream-json --include-partial-messages --resume`) · 4 Codex e
-  Kani · 5 modo Equipe.
+- Etapa 4 (equipe): `ajudantes.py` roda o Codex (`codex exec --json -m gpt-6.1-sol`, conta Plus; cotas lidas do
+  arquivo da sessão dele em `~/.codex/sessions`, `rate_limits.primary/secondary`) e a Kani (llama-server do KANIVETE,
+  `dist/CaniveteDoPailer/modelos_ia/kani`, sai da placa após 3 min parada). `mcp_equipe.py` = servidor MCP (stdio) que o
+  Claude Code abre (`--mcp-config` + `--allowedTools`): ferramentas `codex(contrato, editar)` e `kani(pedido, contexto)`;
+  o andamento vai para a janela pelo canal de controle (linha `evento <json>`) → avatar animado no canto (anel girando,
+  o que faz, tempo, tokens). "Quem responde" (rodapé): Claude (com a equipe), Codex direto ou Kani direta. Painel 🧰:
+  ferramentas, guias (resumo + seções na busca) e scripts do `Instructions/mapa.json`, comandos/skills do Claude, equipe.
+- Etapas: 1 esqueleto · 2 conversa · 3 permissões, status, cotas, comandos, sons · 4 equipe Codex/Kani, habilidades (feitas) (`claude -p --input-format stream-json --output-format
+  stream-json --include-partial-messages --resume`) · 5 modo Equipe completo
+  (contratos com as lições guardadas, revisão automática).

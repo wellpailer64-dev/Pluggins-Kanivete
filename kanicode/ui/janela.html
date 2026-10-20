@@ -111,6 +111,60 @@
   .uso small { color: var(--fraco); }
   .uso .grade { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
   .uso .grade span:nth-child(odd) { color: var(--fraco); }
+  /* ── equipe: ajudantes trabalhando (canto de cima, à direita da conversa) ── */
+  .meio { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .equipe { position: absolute; top: 10px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; z-index: 3; pointer-events: none; }
+  .aj { display: flex; align-items: center; gap: 8px; pointer-events: auto; background: rgba(21, 26, 24, .92); border: 1px solid var(--borda);
+        border-radius: 999px; padding: 3px 10px 3px 3px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); max-width: 300px;
+        animation: entra .35s cubic-bezier(.2, .8, .2, 1); transition: opacity .6s, transform .6s; }
+  .aj.sai { opacity: 0; transform: translateY(-6px); }
+  @keyframes entra { from { opacity: 0; transform: translateY(-8px) scale(.96); } }
+  .av { position: relative; width: 28px; height: 28px; flex: none; }
+  .av img, .av .cx { position: absolute; inset: 3px; width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
+  .av .cx { display: grid; place-items: center; background: #F2F4F3; color: #111; font: 700 10px var(--mono); }
+  /* anel girando enquanto trabalha (só transform: leve) */
+  .av::before { content: ''; position: absolute; inset: 0; border-radius: 50%;
+                background: conic-gradient(from 0deg, transparent 0 55%, var(--cor) 85%, transparent 100%); animation: gira 1.4s linear infinite;
+                -webkit-mask: radial-gradient(circle, transparent 11px, #000 11.5px); }
+  .aj.feito .av::before { animation: none; background: var(--cor); opacity: .55; }
+  .aj.falhou .av::before { animation: none; background: var(--erro); }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  .aj .info { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .aj .nm { font: 600 12px var(--sans); color: var(--texto); white-space: nowrap; }
+  .aj .nm small { color: var(--fraco); font: 11px var(--mono); margin-left: 4px; }
+  .aj .oq { font: 11px var(--sans); color: var(--fraco); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 230px; }
+  /* resposta de ajudante (falando direto com o Codex/Kani) */
+  .msg.aju { align-self: flex-start; background: var(--painel); border: 1px solid var(--borda); border-left: 3px solid var(--cor); }
+  .msg.aju .quem { display: flex; align-items: center; gap: 6px; font: 600 12px var(--sans); color: var(--fraco); margin-bottom: 4px; }
+  .msg.aju .quem img, .msg.aju .quem .cx { width: 16px; height: 16px; border-radius: 50%; }
+  .msg.aju .quem .cx { display: grid; place-items: center; background: #F2F4F3; color: #111; font: 700 7px var(--mono); }
+  /* quem responde */
+  .quem-bt { cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .quem-bt:hover { color: var(--texto); }
+  .quem-bt i { width: 7px; height: 7px; border-radius: 50%; background: var(--cor, var(--lima)); }
+  .menu-quem { position: absolute; right: 10px; bottom: 34px; width: 270px; background: var(--painel); border: 1px solid var(--borda); border-radius: 12px;
+               box-shadow: 0 10px 30px rgba(0, 0, 0, .5); padding: 6px; z-index: 6; }
+  .menu-quem div { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
+  .menu-quem div:hover, .menu-quem div.on { background: #1F2723; }
+  .menu-quem b { font-size: 13px; display: block; }
+  .menu-quem small { color: var(--fraco); font-size: 12px; }
+  .menu-quem .av { width: 26px; height: 26px; } .menu-quem .av::before { display: none; }
+  .menu-quem .cl { position: absolute; inset: 3px; border-radius: 50%; background: var(--lima); color: var(--fundo); display: grid; place-items: center; font: 700 9px var(--mono); }
+  /* habilidades 🧰 */
+  .hab { position: absolute; inset: 40px 0 0 0; background: var(--fundo); z-index: 8; display: flex; flex-direction: column; }
+  .hab .cab { padding: 12px 14px 8px; border-bottom: 1px solid var(--borda); }
+  .hab .cab p { margin: 0 0 8px; color: var(--fraco); font-size: 12.5px; }
+  .hab input { width: 100%; background: var(--painel); border: 1px solid var(--borda); border-radius: 8px; color: var(--texto); padding: 7px 10px; font: 13px var(--sans); outline: 0; }
+  .hab input:focus { border-color: #4D6A22; }
+  .hab .abas { display: flex; gap: 4px; margin-top: 8px; }
+  .hab .abas button { border: 0; background: transparent; color: var(--fraco); padding: 4px 10px; border-radius: 999px; cursor: pointer; font: 12.5px var(--sans); }
+  .hab .abas button.on { background: var(--lima-suave); color: var(--lima); }
+  .hab .lista { flex: 1; overflow-y: auto; padding: 6px 8px 12px; }
+  .hab .grupo { font: 600 11px var(--mono); color: var(--fraco); letter-spacing: .5px; text-transform: uppercase; margin: 10px 6px 4px; }
+  .hab .item { padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+  .hab .item:hover { background: #1A201D; }
+  .hab .item b { font-size: 13px; font-weight: 600; } .hab .item b code { font: 12px var(--mono); color: var(--lima); }
+  .hab .item div { color: var(--fraco); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2A3530; border-radius: 4px; }
 </style>
 </head>
@@ -119,12 +173,13 @@
     <span class="marca">Kc</span><span class="nome">KaniCode</span>
     <span class="esp pywebview-drag-region"></span>
     <button class="bt" id="nova" title="Conversa nova nesta pasta (a anterior fica guardada) · /nova">＋</button>
+    <button class="bt" id="habil" title="Habilidades: tudo o que sabemos fazer (guias do KANIVETE, skills, comandos)">🧰</button>
     <button class="bt" id="som" title="Sons suaves das ações">🔈</button>
     <button class="bt" id="fixar" title="Sempre por cima">📌</button>
     <button class="bt" id="recolher" title="Recolher na bolinha (Esc)">—</button>
     <button class="bt sair" id="sair" title="Sair do KaniCode">✕</button>
   </div>
-  <div class="conversa" id="conversa"></div>
+  <div class="meio"><div class="conversa" id="conversa"></div><div class="equipe" id="equipe"></div></div>
   <div class="status" id="status"><span class="ponto"></span><span class="faz" id="faz">Pronto</span><span class="num" id="num"></span></div>
   <div class="entrada">
     <div class="cmds" id="cmds" hidden></div>
@@ -135,8 +190,18 @@
     <span class="pasta" id="pasta" title="Pasta do projeto · clique para trocar">📁 …</span>
     <span class="cota" id="c5" title="Sessão de 5 horas" hidden>5h <i><b></b></i><span></span></span>
     <span class="cota" id="csem" title="Semana" hidden>sem <i><b></b></i><span></span></span>
+    <span class="quem-bt" id="quem-bt" title="Quem responde as suas mensagens"><i></i><span>Claude</span> ▾</span>
   </div>
   <div class="uso" id="uso" hidden></div>
+  <div class="menu-quem" id="menu-quem" hidden></div>
+  <div class="hab" id="hab" hidden>
+    <div class="cab">
+      <p>Tudo o que sabemos fazer juntos. Clique num item para usar: ele vai para a caixa de mensagem, pronto para você completar.</p>
+      <input id="hab-busca" placeholder="Procurar (ex.: legenda, carrossel, exportar, 3D, áudio)…">
+      <div class="abas" id="hab-abas"><button data-a="tudo" class="on">Tudo</button><button data-a="kanivete">KANIVETE</button><button data-a="claude">Claude</button><button data-a="equipe">Equipe</button></div>
+    </div>
+    <div class="lista" id="hab-lista"></div>
+  </div>
 <script>
   const $ = id => document.getElementById(id);
   const api = () => window.pywebview && pywebview.api;
@@ -148,6 +213,15 @@
     // a conversa toda (desde que a janela abriu)
     totTok: 0, totTarefas: 0, totSeg: 0,
   };
+  // ── a equipe: quem pode responder e os ajudantes que o Claude chama ──
+  const EQUIPE = {
+    claude: { nome: 'Claude', cor: '#B6F23A', av: '<span class="cl">Cl</span>', desc: 'Eu, com a equipe: delego ao Codex e à Kani quando couber' },
+    codex: { nome: 'Codex', cor: '#E8ECEA', av: '<span class="cx">Cx</span>', desc: 'Direto, na sua conta ChatGPT Plus (não gasta a cota do Claude)' },
+    kani: { nome: 'Kani', cor: '#F27FB2', av: '<img src="kani.webp" alt="">', desc: 'Direto, local e grátis: textos curtos, resumos, ideias' },
+  };
+  const AJ = {};   // ajudantes em ação: quem → {el, t0, tokens, timer}
+  K.quem = 'claude';
+  K.cotaCodex = null; K.tokCodex = 0; K.tokKani = 0;
   const LOCAIS = [
     { nome: 'nova', desc: 'Conversa nova nesta pasta (a anterior fica guardada)' },
     { nome: 'pasta', desc: 'Trocar a pasta do projeto' },
@@ -252,11 +326,14 @@
     Grep: ['🔎', 'procurou', 'Procurando'], Glob: ['🔎', 'listou', 'Listando'], WebSearch: ['🌐', 'pesquisou', 'Pesquisando'],
     WebFetch: ['🌐', 'abriu', 'Abrindo'], Task: ['🤝', 'delegou', 'Delegando'], Agent: ['🤝', 'delegou', 'Delegando'],
     TodoWrite: ['☑', 'anotou', 'Organizando as tarefas'], Skill: ['🧰', 'usou', 'Usando'],
+    mcp__equipe__codex: ['🤝', 'pediu ao Codex', 'Codex trabalhando:'], mcp__equipe__kani: ['🤝', 'pediu à Kani', 'Kani trabalhando:'],
+    ToolSearch: ['🔎', 'carregou', 'Carregando'],
   };
   function alvo(nome, e) {
     e = e || {};
+    if (nome === 'ToolSearch') return 'ferramentas (' + String(e.query || '').replace(/^select:/, '').replace(/mcp__equipe__/g, '') + ')';
     return String(e.file_path ? base(e.file_path) : e.notebook_path ? base(e.notebook_path) : e.description || e.command || e.pattern
-      || e.query || e.url || e.skill || (nome === 'TodoWrite' ? 'a lista de tarefas' : '')).slice(0, 120);
+      || e.query || e.url || e.skill || e.contrato || e.pedido || (nome === 'TodoWrite' ? 'a lista de tarefas' : '')).replace(/\s+/g, ' ').slice(0, 120);
   }
   function rotulo(nome, e) {
     const a = ACOES[nome] || ['⚙', nome];
@@ -368,10 +445,13 @@
         <small>zera ${esc(quando(zera))} · falta ${esc(falta(zera))}</small></div>`;
     $('uso').innerHTML = `<h4>USO DO CLAUDE</h4>
       ${bloco('Sessão de 5 horas', l.h5, l.h5_zera)}${bloco('Semana', l.sem, l.sem_zera)}
+      ${K.cotaCodex ? `<h4 style="margin-top:4px">CODEX (CHATGPT PLUS)</h4>${bloco('Sessão de 5 horas', K.cotaCodex.h5, K.cotaCodex.h5_zera)}${bloco('Semana', K.cotaCodex.sem, K.cotaCodex.sem_zera)}` : ''}
       <h4 style="margin-top:4px">ESTA CONVERSA</h4>
       <div class="grade">
         <span>Tarefas</span><span>${K.totTarefas}</span>
-        <span>Tokens escritos</span><span>${mil(K.totTok)}</span>
+        <span>Tokens escritos (Claude)</span><span>${mil(K.totTok)}</span>
+        <span>Tokens do Codex</span><span>${mil(K.tokCodex)}</span>
+        <span>Tokens da Kani (grátis)</span><span>${mil(K.tokKani)}</span>
         <span>Tempo trabalhando</span><span>${relogio(K.totSeg)}</span>
         <span>Tamanho da conversa</span><span>${K.contexto ? mil(K.contexto) + ' tokens' : '—'}</span>
         <span>Modelo</span><span>${esc(K.modelo || 'padrão')}</span>
@@ -379,6 +459,115 @@
   }
   const alternarUso = () => { $('uso').hidden = !$('uso').hidden; if (!$('uso').hidden) painelUso(); };
   setInterval(() => cotas(), 30000);   // a contagem regressiva anda mesmo sem resposta nova
+
+  // ── equipe trabalhando: avatar com anel girando no canto, o que está fazendo, tempo e tokens ──
+  function ajudante(ev) {
+    const q = EQUIPE[ev.quem];
+    if (!q) return;
+    let a = AJ[ev.quem];
+    if (ev.fase === 'inicio' || !a) {
+      if (a) { clearInterval(a.timer); a.el.remove(); }
+      const el = document.createElement('div');
+      el.className = 'aj';
+      el.style.setProperty('--cor', q.cor);
+      el.innerHTML = `<span class="av">${q.av}</span><span class="info"><span class="nm">${q.nome}<small></small></span><span class="oq"></span></span>`;
+      $('equipe').appendChild(el);
+      a = AJ[ev.quem] = { el, t0: Date.now(), tokens: 0 };
+      a.timer = setInterval(() => desenharAj(ev.quem), 1000);
+      el.title = ev.texto || '';
+    }
+    if (ev.tokens) a.tokens = ev.tokens;
+    if (ev.fase === 'passo' || ev.fase === 'inicio') a.el.querySelector('.oq').textContent = ev.fase === 'inicio' ? 'começando: ' + (ev.texto || '') : ev.texto || '';
+    if (ev.fase === 'fim') {
+      clearInterval(a.timer);
+      a.el.classList.add(ev.ok ? 'feito' : 'falhou');
+      a.el.querySelector('.oq').textContent = ev.ok ? '✓ pronto' : '✗ não conseguiu';
+      if (ev.quem === 'codex') { K.tokCodex += ev.tokens || 0; if (ev.cota) K.cotaCodex = ev.cota; }
+      if (ev.quem === 'kani') K.tokKani += ev.tokens || 0;
+      const el = a.el;
+      delete AJ[ev.quem];
+      setTimeout(() => { el.classList.add('sai'); setTimeout(() => el.remove(), 650); }, 3500);
+      if (!$('uso').hidden) painelUso();
+    }
+    desenharAj(ev.quem, a);
+  }
+  function desenharAj(quem, a = AJ[quem]) {
+    if (!a) return;
+    const seg = (Date.now() - a.t0) / 1000;
+    a.el.querySelector('small').textContent = `${relogio(seg)}${a.tokens ? ' · ' + mil(a.tokens) + ' tok' : ''}`;
+  }
+
+  // ── quem responde ──
+  function quemDefinir(q, gravar = true) {
+    K.quem = EQUIPE[q] ? q : 'claude';
+    const e = EQUIPE[K.quem];
+    $('quem-bt').style.setProperty('--cor', e.cor);
+    $('quem-bt').querySelector('span').textContent = e.nome;
+    texto.placeholder = K.quem === 'claude' ? 'Fale com o Claude…  ( / mostra os comandos )' : `Fale direto com ${e.nome === 'Kani' ? 'a' : 'o'} ${e.nome}…`;
+    if (gravar) api().quem(K.quem);
+  }
+  function menuQuem() {
+    const m = $('menu-quem');
+    if (!m.hidden) { m.hidden = true; return; }
+    m.innerHTML = Object.entries(EQUIPE).map(([k, e]) => `<div data-q="${k}" class="${k === K.quem ? 'on' : ''}" style="--cor:${e.cor}">
+        <span class="av">${e.av}</span><span><b>${e.nome}</b><small>${e.desc}</small></span></div>`).join('');
+    m.hidden = false;
+  }
+  $('menu-quem').addEventListener('click', e => { const d = e.target.closest('[data-q]'); if (d) { quemDefinir(d.dataset.q); $('menu-quem').hidden = true; } });
+  function bolhaAjudante(quem, t, ok) {
+    const e = EQUIPE[quem];
+    const d = document.createElement('div');
+    d.className = 'msg aju';
+    d.style.setProperty('--cor', ok ? e.cor : 'var(--erro)');
+    d.innerHTML = `<div class="quem">${e.av.replace('class="cl"', 'class="cx"')}${e.nome}</div>` + md(t || '');
+    conversa.appendChild(d);
+    return d;
+  }
+
+  // ── habilidades 🧰: tudo o que sabemos fazer, legível e à mão ──
+  const HAB = { dados: null, aba: 'tudo' };
+  async function habAbrir() {
+    const h = $('hab');
+    if (!h.hidden) { h.hidden = true; return; }
+    h.hidden = false;
+    if (!HAB.dados) HAB.dados = await api().habilidades();
+    $('hab-busca').value = '';
+    habDesenhar();
+    $('hab-busca').focus();
+  }
+  function habItens() {
+    const d = HAB.dados || {}, out = [];
+    (d.ferramentas || []).forEach(f => out.push({ aba: 'kanivete', grupo: 'Ferramentas do KANIVETE', t: f.nome, s: `${f.grupo || ''} · ${f.guias.length} guia(s) · ${f.testes.length} teste(s)`,
+      usar: `Na ferramenta ${f.nome} do KANIVETE (leia o mapa e o guia dela antes): ` }));
+    (d.kanivete || []).forEach(g => out.push({ aba: 'kanivete', grupo: 'Guias (como fazer)', t: g.titulo, s: g.resumo || g.caminho,
+      busca: g.caminho + ' ' + (g.secoes || ''), usar: `Seguindo o guia ${g.caminho}: ` }));
+    (d.scripts || []).forEach(g => out.push({ aba: 'kanivete', grupo: 'Scripts prontos (tools/)', t: g.caminho.split('/').pop(), s: g.titulo, usar: `Use ${g.caminho} para ` }));
+    K.comandos.forEach(c => out.push({ aba: 'claude', grupo: c.nome.includes(':') || /skill|^[a-z-]+$/.test(c.nome) && c.desc.length > 60 ? 'Skills e comandos do Claude' : 'Comandos do Claude',
+      t: '/' + c.nome, s: c.desc, usar: '/' + c.nome + ' ', cod: true }));
+    Object.entries(EQUIPE).filter(([k]) => k !== 'claude').forEach(([k, e]) => out.push({ aba: 'equipe', grupo: 'Equipe', t: e.nome, s: e.desc,
+      usar: `Delegue ${k === 'kani' ? 'à Kani' : 'ao Codex'}: ` }));
+    return out;
+  }
+  function habDesenhar() {
+    const q = $('hab-busca').value.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const itens = habItens().filter(i => (HAB.aba === 'tudo' || i.aba === HAB.aba) && (!q || norm(i.t + ' ' + i.s + ' ' + (i.busca || '')).includes(q)));
+    let html = '', grupo = '';
+    itens.slice(0, 400).forEach((i, n) => {
+      if (i.grupo !== grupo) { grupo = i.grupo; html += `<div class="grupo">${esc(grupo)}</div>`; }
+      html += `<div class="item" data-n="${n}"><b>${i.cod ? '<code>' + esc(i.t) + '</code>' : esc(i.t)}</b><div title="${esc(i.s)}">${esc(i.s)}</div></div>`;
+    });
+    $('hab-lista').innerHTML = html || '<div class="grupo">nada encontrado</div>';
+    HAB.vistos = itens;
+  }
+  $('hab-busca').addEventListener('input', habDesenhar);
+  $('hab-abas').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; HAB.aba = b.dataset.a; $('hab-abas').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); habDesenhar(); });
+  $('hab-lista').addEventListener('click', e => {
+    const d = e.target.closest('.item'); if (!d) return;
+    const i = HAB.vistos[+d.dataset.n];
+    if (i.aba === 'equipe') quemDefinir('claude');
+    texto.value = i.usar; $('hab').hidden = true; ajustar(); texto.focus();
+  });
 
   // ── comandos "/" ──
   const CM = { lista: [], sel: 0 };
@@ -432,6 +621,12 @@
       case 'ferr_fim': passoFim(ev.id, ev.ok, ev.saida); atividade('Pensando no próximo passo'); break;
       case 'permissao': K.espera = true; cartao(ev); atividade('Esperando você decidir'); som('pergunta'); break;
       case 'limite': cotas(ev); break;
+      case 'ajudante': ajudante(ev); break;
+      case 'ajudante_resposta':
+        bolhaAjudante(ev.quem, ev.texto, ev.ok);
+        ocupada(false);
+        if (ev.ok) som('pronto'); else som('erro');
+        break;
       case 'local':
         if (ev.acao === 'recarregar') carregar();
         else if (ev.acao === 'pasta') trocarPasta();
@@ -468,6 +663,11 @@
     texto.value = '';
     K.bolha = null;
     ocupada(true);
+    if (K.quem !== 'claude' && !t.startsWith('/')) {   // direto com um ajudante
+      atividade(`${EQUIPE[K.quem].nome} trabalhando`);
+      await api().ajudante(K.quem, t);
+      return;
+    }
     atividade('Enviando');
     const ok = await api().enviar(t);
     if (!ok) ocupada(false);
@@ -477,6 +677,8 @@
     const i = await api().info();
     $('fixar').classList.toggle('on', i.fixa);
     K.pasta = i.pasta; K.modelo = i.modelo || K.modelo; K.comandos = i.comandos || K.comandos;
+    K.cotaCodex = i.cota_codex || K.cotaCodex;
+    quemDefinir(i.quem || 'claude', false);
     $('pasta').textContent = '📁 ' + base(i.pasta);
     $('pasta').title = i.pasta + ' · clique para trocar a pasta do projeto';
     cotas(i.limite);
@@ -519,9 +721,14 @@
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     if (!$('uso').hidden) { $('uso').hidden = true; return; }
+    if (!$('hab').hidden) { $('hab').hidden = true; return; }
+    if (!$('menu-quem').hidden) { $('menu-quem').hidden = true; return; }
     api() && api().esconder();
   });
-  document.addEventListener('mousedown', e => { if (!$('uso').hidden && !e.target.closest('#uso, .cota')) $('uso').hidden = true; });
+  document.addEventListener('mousedown', e => {
+    if (!$('uso').hidden && !e.target.closest('#uso, .cota')) $('uso').hidden = true;
+    if (!$('menu-quem').hidden && !e.target.closest('#menu-quem, #quem-bt')) $('menu-quem').hidden = true;
+  });
   conversa.addEventListener('click', e => { const a = e.target.closest('a'); if (a) e.preventDefault(); });
   $('recolher').addEventListener('click', () => api().esconder());
   $('sair').addEventListener('click', () => api().sair());
@@ -534,6 +741,8 @@
     if (SOM.on) som('permitido');
   });
   somBotao();
+  $('quem-bt').addEventListener('click', menuQuem);
+  $('habil').addEventListener('click', habAbrir);
   $('c5').addEventListener('click', alternarUso);
   $('csem').addEventListener('click', alternarUso);
   $('fixar').addEventListener('click', async () => { const on = !$('fixar').classList.contains('on'); $('fixar').classList.toggle('on', await api().fixar(on)); });
