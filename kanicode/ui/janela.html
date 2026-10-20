@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>KaniCode</title>
+<style>
+  :root {
+    --lima: #B6F23A; --fundo: #0E1110; --painel: #151A18; --borda: #26302B; --texto: #E6EDE8; --fraco: #8A988F;
+    --mono: "Cascadia Mono", Consolas, monospace; --sans: "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto); font: 14px/1.5 var(--sans); }
+  body { display: flex; flex-direction: column; border: 1px solid var(--borda); }
+  /* topo: arrastar a janela por aqui */
+  .topo { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px; background: var(--painel);
+          border-bottom: 1px solid var(--borda); user-select: none; }
+  .marca { font: 700 13px var(--mono); color: var(--fundo); background: var(--lima); border-radius: 6px; padding: 2px 6px; }
+  .nome { font-weight: 600; letter-spacing: .2px; }
+  .esp { flex: 1; align-self: stretch; }
+  .bt { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--fraco); cursor: pointer;
+        font: 15px var(--sans); display: grid; place-items: center; }
+  .bt:hover { background: #1F2723; color: var(--texto); }
+  .bt.on { color: var(--lima); }
+  .bt.sair:hover { background: #3A1C1E; color: #FF8A8E; }
+  /* conversa */
+  .conversa { flex: 1; overflow-y: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 92%; padding: 8px 11px; border-radius: 10px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.eu { align-self: flex-end; background: #22301A; border: 1px solid #34481F; }
+  .msg.kc { align-self: flex-start; background: var(--painel); border: 1px solid var(--borda); }
+  .msg.sis { align-self: center; color: var(--fraco); font-size: 12.5px; background: none; border: 0; text-align: center; }
+  .passo { align-self: flex-start; font: 12.5px var(--mono); color: var(--fraco); padding: 2px 4px; }
+  .passo b { color: var(--lima); font-weight: 600; }
+  /* entrada */
+  .entrada { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 12px; border-top: 1px solid var(--borda); background: var(--painel); }
+  .campo { flex: 1; display: flex; align-items: flex-start; gap: 6px; background: var(--fundo); border: 1px solid var(--borda);
+           border-radius: 10px; padding: 8px 10px; }
+  .campo:focus-within { border-color: #4D6A22; }
+  .seta { font: 700 14px var(--mono); color: var(--lima); line-height: 22px; }
+  textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--texto); font: 14px/22px var(--sans);
+             max-height: 140px; min-height: 22px; padding: 0; }
+  .enviar { height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--lima); color: var(--fundo);
+            font: 600 14px var(--sans); cursor: pointer; }
+  .enviar:disabled { opacity: .45; cursor: default; }
+  .rodape { display: flex; gap: 10px; padding: 0 12px 8px; background: var(--painel); font: 11.5px var(--mono); color: var(--fraco); }
+  .rodape span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2A3530; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <div class="topo pywebview-drag-region">
+    <span class="marca">Kc</span><span class="nome">KaniCode</span>
+    <span class="esp pywebview-drag-region"></span>
+    <button class="bt" id="fixar" title="Sempre por cima">📌</button>
+    <button class="bt" id="recolher" title="Recolher na bolinha (Esc)">—</button>
+    <button class="bt sair" id="sair" title="Sair do KaniCode">✕</button>
+  </div>
+  <div class="conversa" id="conversa">
+    <div class="msg sis">KaniCode · etapa 1 (esqueleto)<br>A conversa com o Claude chega na etapa 2.</div>
+    <div class="msg kc">Oi, Pailer! Por enquanto eu sou só a casca: bolinha, janela e o canal com o KANIVETE. Escreva algo para testar a caixa.</div>
+  </div>
+  <div class="entrada">
+    <label class="campo"><span class="seta">&gt;</span><textarea id="texto" rows="1" placeholder="Escreva para o Claude…  (Enter envia, Shift+Enter quebra a linha)"></textarea></label>
+    <button class="enviar" id="enviar" disabled>Enviar</button>
+  </div>
+  <div class="rodape"><span id="pasta">📁 sem projeto</span><span style="flex:1"></span><span>Claude</span></div>
+<script>
+  const $ = id => document.getElementById(id);
+  const api = () => window.pywebview && pywebview.api;
+  const conversa = $('conversa'), texto = $('texto'), enviar = $('enviar');
+  function bolha(tipo, t) {
+    const d = document.createElement('div');
+    d.className = 'msg ' + tipo;
+    d.textContent = t;
+    conversa.appendChild(d);
+    conversa.scrollTop = conversa.scrollHeight;
+  }
+  function ajustar() { texto.style.height = 'auto'; texto.style.height = Math.min(texto.scrollHeight, 140) + 'px'; enviar.disabled = !texto.value.trim(); }
+  function mandar() {
+    const t = texto.value.trim();
+    if (!t) return;
+    bolha('eu', t);
+    texto.value = ''; ajustar();
+    setTimeout(() => bolha('kc', 'Recebi. (Na etapa 2 isto vai para o Claude Code de verdade.)'), 250);
+  }
+  texto.addEventListener('input', ajustar);
+  texto.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mandar(); } });
+  enviar.addEventListener('click', mandar);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') api() && api().esconder(); });
+  $('recolher').addEventListener('click', () => api() && api().esconder());
+  $('sair').addEventListener('click', () => api() && api().sair());
+  $('fixar').addEventListener('click', async () => { const on = !$('fixar').classList.contains('on'); $('fixar').classList.toggle('on', await api().fixar(on)); });
+  window.addEventListener('pywebviewready', async () => {
+    const i = await api().info();
+    $('fixar').classList.toggle('on', i.fixa);
+    if (i.pasta) $('pasta').textContent = '📁 ' + i.pasta;
+    texto.focus();
+  });
+</script>
+</body>
+</html>

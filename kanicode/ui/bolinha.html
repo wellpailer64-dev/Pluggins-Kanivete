@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>KaniCode</title>
+<style>
+  :root { --lima: #B6F23A; --lima-esc: #7FB51A; --fundo: #0E1110; }
+  html, body { margin: 0; height: 100%; background: #0E1110; overflow: hidden; user-select: none; }
+  .bola {
+    position: absolute; inset: 0; border-radius: 50%; cursor: pointer;
+    background: radial-gradient(circle at 32% 28%, #D8FF7A 0%, var(--lima) 45%, var(--lima-esc) 100%);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .45), inset 0 -3px 6px rgba(0, 0, 0, .18);
+    display: grid; place-items: center; transition: transform .15s ease;
+  }
+  .bola:hover { filter: brightness(1.08); }
+  .bola:active { filter: brightness(.94); }
+  .prompt { font: 700 17px/1 "Cascadia Mono", Consolas, monospace; color: var(--fundo); letter-spacing: -1px; }
+  .cursor { display: inline-block; width: 7px; height: 3px; background: var(--fundo); margin-left: 1px; vertical-align: -2px;
+            animation: pisca 1.1s steps(1) infinite; }
+  @keyframes pisca { 50% { opacity: 0; } }
+  /* aberta: o cursor para de piscar (a conversa está na tela) */
+  body.aberta .cursor { animation: none; }
+  /* trabalhando (etapa 2): anel girando em volta — transform/opacity só, leve com o app parado */
+  .anel { position: absolute; inset: 0; z-index: 2; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--fundo);
+          opacity: 0; pointer-events: none; }
+  body.trabalhando .anel { opacity: 1; animation: gira 1s linear infinite; }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  /* pergunta esperando você (etapa 3) */
+  .marca { position: absolute; top: 9px; right: 9px; z-index: 3; width: 14px; height: 14px; border-radius: 50%; background: #FF5A5F;
+           border: 2px solid var(--fundo); display: none; }
+  body.pergunta .marca { display: block; }
+</style>
+</head>
+<body>
+  <div class="anel"></div>
+  <div class="bola pywebview-drag-region" id="bola" title="KaniCode · clique para abrir · arraste para mudar de lugar">
+    <span class="prompt">&gt;<span class="cursor"></span></span>
+  </div>
+  <div class="marca"></div>
+<script>
+  function kcAberta(on) { document.body.classList.toggle('aberta', !!on); }
+  function kcEstado(e) { ['trabalhando', 'pergunta'].forEach(k => document.body.classList.toggle(k, e === k)); }
+  document.getElementById('bola').addEventListener('click', () => window.pywebview && pywebview.api.clique());
+  document.addEventListener('contextmenu', e => { e.preventDefault(); window.pywebview && pywebview.api.mostrar(); });
+</script>
+</body>
+</html>

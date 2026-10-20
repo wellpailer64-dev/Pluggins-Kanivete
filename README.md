@@ -10,8 +10,23 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
 |---|---|
 | `pandalab` | Demandas do Laboratório Panda: listar, baixar na pasta certa do cliente, status, comentários, entrega |
 | `kanibrowser` | Chrome do KANIVETE por canal privado (pipe, sem porta), com os logins guardados |
+| `kanicode` | Conversa com o Claude (depois Codex e Kani) numa bolinha na área de trabalho; processo à parte, sobrevive ao KANIVETE fechar |
 
 ## Não vão para o git (`.gitignore`)
 - `pandalab/config.json`: endereço e chave do sistema. Copie `config.exemplo.json` e preencha.
 - `pandalab/sessao.bin`: sessão cifrada pelo Windows (só este usuário neste PC abre).
 - `pandalab/vinculos.json` e `pandalab/mapa_clientes.json`: dados de clientes e das pastas deste PC.
+
+## KaniCode (`kanicode/`)
+- `kanicode.py`: o app à parte (pywebview). Instância única pela porta 127.0.0.1:47613 (só aceita `ping`, `mostrar`,
+  `sair`). Estado em `D:\Kanivete\KaniCode\estado.json` (posição da bolinha em pixels reais, alfinete).
+- `bolinha.py`: a bolinha NATIVA (WinForms + janela em camadas com alfa por pixel, GDI+). Não usar WebView para ela: o
+  WebView2 desenha por DirectComposition e ignora o recorte da janela (sobrava um quadrado escuro) e a transparência
+  do pywebview não desenha nada. Criar e mexer nela só na thread da interface (`App._na_ui`).
+- `ui/janela.html`: a conversa. `ponte.py`: o KANIVETE abre (`pythonw`/`pyw -3.13`, processo solto, fora do job do app),
+  mostra e fecha. `painel.js`: aba com status e "Abrir junto com o KANIVETE".
+- Medidas: o pywebview recebe pixels da INTERFACE (ele aplica o zoom do monitor); a bolinha nativa trabalha em pixels
+  REAIS (`Bolinha.escala`). Nunca chamar SetProcessDpiAwareness à mão (dobra a escala).
+- Etapas: 1 esqueleto (feita) · 2 conversa com o Claude Code (`claude -p --input-format stream-json --output-format
+  stream-json --include-partial-messages --resume`) · 3 permissões na janela (`--permission-prompts host`) · 4 Codex e
+  Kani · 5 modo Equipe.
