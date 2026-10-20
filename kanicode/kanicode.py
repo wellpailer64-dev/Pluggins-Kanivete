@@ -221,9 +221,9 @@ class App:
         return out
 
     # ── conversa (sessao.py) ──
-    def enviar(self, texto):
+    def enviar(self, texto, imagens=None):
         texto = (texto or "").strip()
-        if not texto:
+        if not texto and not imagens:
             return False
         # comandos que o próprio KaniCode resolve (os outros "/" vão para o Claude Code como no terminal)
         cmd, _, arg = texto.partition(" ")
@@ -247,12 +247,18 @@ class App:
             self._sessao.conta = _ler_estado().get("conta") or None
         self._bola_estado("trabalhando")
         try:
-            self._sessao.enviar(texto)
+            self._sessao.enviar(texto, imagens)
         except Exception as e:
             self._bola_estado("")
             self._para_janela({"t": "saiu", "erro": str(e)})
             return False
         return True
+
+    def responder_pergunta(self, pedido_id, entrada, respostas):
+        """múltipla escolha: {texto da pergunta: rótulo escolhido (vários = separados por vírgula)}"""
+        ok = bool(self._sessao and self._sessao.responder_pergunta(pedido_id, entrada, respostas))
+        self._bola_estado("trabalhando")
+        return ok
 
     def responder(self, pedido_id, permitir, entrada=None):
         """cartão de permissão: Permitir / Recusar"""
@@ -350,7 +356,7 @@ class App:
             self._comandos = ev.get("lista") or []
         elif t == "ajudante" and ev.get("fase") == "fim" and ev.get("cota") and ev.get("quem") == "codex":
             _gravar_estado(cota_codex=ev["cota"])   # a cota do Codex aparece de novo ao reabrir
-        elif t == "permissao":
+        elif t in ("permissao", "pergunta"):
             # pergunta para o Pailer: a janela aparece e a bolinha fica com a marca
             self._bola_estado("pergunta")
             if not self._aberta:

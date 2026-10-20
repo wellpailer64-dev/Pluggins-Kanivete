@@ -165,6 +165,35 @@
   .hab .item:hover { background: #1A201D; }
   .hab .item b { font-size: 13px; font-weight: 600; } .hab .item b code { font: 12px var(--mono); color: var(--lima); }
   .hab .item div { color: var(--fraco); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* imagens coladas/arrastadas: miniaturas antes de enviar e dentro da mensagem */
+  .anexos { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 6px; background: var(--painel); }
+  .anexo { position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden; border: 1px solid var(--borda); }
+  .anexo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .anexo button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .7);
+                  color: #fff; font-size: 11px; line-height: 18px; cursor: pointer; padding: 0; }
+  .msg .minis { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .msg .minis img { max-width: 140px; max-height: 110px; border-radius: 6px; display: block; }
+  body.arrastando::after { content: 'Solte a imagem para enviar ao Claude'; position: fixed; inset: 8px; border: 2px dashed var(--lima); border-radius: 14px;
+                           background: rgba(14, 17, 16, .85); color: var(--lima); display: grid; place-items: center; font: 600 15px var(--sans); z-index: 40; }
+  /* múltipla escolha */
+  .perg { align-self: stretch; background: #12191C; border: 1px solid #23414A; border-radius: 10px; padding: 10px 12px; }
+  .perg .q { margin-bottom: 10px; }
+  .perg .q:last-of-type { margin-bottom: 8px; }
+  .perg .hd { display: inline-block; font: 600 11px var(--mono); color: #7FD3E8; background: rgba(127, 211, 232, .1); border-radius: 999px;
+              padding: 0 8px; margin-bottom: 4px; letter-spacing: .3px; }
+  .perg .tx { font-weight: 600; margin-bottom: 6px; }
+  .perg .ops { display: flex; flex-direction: column; gap: 5px; }
+  .perg .op { text-align: left; background: var(--fundo); border: 1px solid var(--borda); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+              color: var(--texto); font: 13px var(--sans); }
+  .perg .op small { display: block; color: var(--fraco); font-size: 12px; }
+  .perg .op:hover { border-color: #3D6A75; }
+  .perg .op.on { border-color: #7FD3E8; background: rgba(127, 211, 232, .08); }
+  .perg .outra { width: 100%; margin-top: 2px; background: var(--fundo); border: 1px dashed var(--borda); border-radius: 8px; padding: 6px 10px;
+                 color: var(--texto); font: 13px var(--sans); outline: 0; }
+  .perg .enviar-r { margin-top: 4px; height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: #7FD3E8; color: #0B1517; font: 600 13px var(--sans); cursor: pointer; }
+  .perg .enviar-r:disabled { opacity: .4; cursor: default; }
+  .perg.respondida .ops, .perg.respondida .outra, .perg.respondida .enviar-r { display: none; }
+  .perg .res { font: 12.5px var(--mono); color: var(--fraco); }
   /* painel estreito das contas, à esquerda */
   .corpo { flex: 1; display: flex; min-height: 0; }
   .lado { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0 10px;
@@ -240,6 +269,7 @@
     <div class="meio"><div class="conversa" id="conversa"></div><div class="equipe" id="equipe"></div></div>
   </div>
   <div class="status" id="status"><span class="ponto"></span><span class="faz" id="faz">Pronto</span><span class="num" id="num"></span></div>
+  <div class="anexos" id="anexos" hidden></div>
   <div class="entrada">
     <div class="cmds" id="cmds" hidden></div>
     <label class="campo"><span class="seta">&gt;</span><textarea id="texto" rows="1" placeholder="Fale com o Claude…  ( / mostra os comandos )"></textarea></label>
@@ -389,6 +419,7 @@
     TodoWrite: ['☑', 'anotou', 'Organizando as tarefas'], Skill: ['🧰', 'usou', 'Usando'],
     mcp__equipe__codex: ['🤝', 'pediu ao Codex', 'Codex trabalhando:'], mcp__equipe__kani: ['🤝', 'pediu à Kani', 'Kani trabalhando:'],
     mcp__equipe__licao: ['📌', 'guardou a lição', 'Guardando uma lição:'],
+    AskUserQuestion: ['❓', 'perguntou', 'Esperando a sua escolha'],
     ToolSearch: ['🔎', 'carregou', 'Carregando'],
   };
   function alvo(nome, e) {
@@ -775,6 +806,103 @@
   }
 
 
+  // ── imagens: Ctrl+V de print ou arrastar arquivo; vão junto da próxima mensagem ──
+  // lado maior até 1568 px (o que o Claude enxerga sem desperdício); foto vira JPEG, print fica PNG
+  const ANX = [];
+  function anexosDesenhar() {
+    $('anexos').hidden = !ANX.length;
+    $('anexos').innerHTML = ANX.map((a, i) => `<div class="anexo"><img src="${a.mini}" alt=""><button data-i="${i}" title="Tirar">×</button></div>`).join('');
+    ajustar();
+  }
+  $('anexos').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { ANX.splice(+b.dataset.i, 1); anexosDesenhar(); } });
+  function lerImagem(arq) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(arq), im = new Image();
+      im.onload = () => {
+        const k = Math.min(1, 1568 / Math.max(im.width, im.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+        cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+        const png = arq.type === 'image/png' && arq.size < 1.5e6;   // print de tela: nítido em PNG
+        const dados = cv.toDataURL(png ? 'image/png' : 'image/jpeg', 0.9);
+        const km = Math.min(1, 200 / Math.max(cv.width, cv.height)), mc = document.createElement('canvas');
+        mc.width = Math.round(cv.width * km); mc.height = Math.round(cv.height * km);
+        mc.getContext('2d').drawImage(cv, 0, 0, mc.width, mc.height);
+        URL.revokeObjectURL(url);
+        res({ tipo: png ? 'image/png' : 'image/jpeg', dados: dados.split(',')[1], mini: mc.toDataURL('image/jpeg', 0.8) });
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('imagem não abriu')); };
+      im.src = url;
+    });
+  }
+  async function anexar(arqs) {
+    for (const a of arqs) {
+      if (!a.type.startsWith('image/')) continue;
+      if (ANX.length >= 8) { bolha('sis', 'No máximo 8 imagens por mensagem.'); break; }
+      try { ANX.push(await lerImagem(a)); } catch (e) { bolha('erro', 'Não consegui abrir a imagem: ' + e.message); }
+    }
+    anexosDesenhar();
+    texto.focus();
+  }
+  document.addEventListener('paste', e => {
+    const imgs = [...(e.clipboardData || {}).items || []].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()).filter(Boolean);
+    if (imgs.length) { e.preventDefault(); anexar(imgs); }
+  });
+  document.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); document.body.classList.add('arrastando'); } });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('arrastando'); });
+  document.addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('arrastando'); anexar([...e.dataTransfer.files]); });
+  function minis(lista) {
+    if (!lista || !lista.length) return null;
+    const d = document.createElement('div');
+    d.className = 'minis';
+    d.innerHTML = lista.map(m => `<img src="${m}" alt="">`).join('');
+    return d;
+  }
+
+  // ── perguntas de múltipla escolha (AskUserQuestion): opções clicáveis + "outra" escrita ──
+  function cartaoPergunta(ev, respondido) {
+    const d = document.createElement('div');
+    d.className = 'perg';
+    const qs = ev.perguntas || [];
+    d.innerHTML = qs.map((q, i) => `<div class="q" data-i="${i}">
+        ${q.header ? `<span class="hd">${esc(q.header)}</span>` : ''}<div class="tx">${esc(q.question)}${q.multiSelect ? ' <small style="color:var(--fraco);font-weight:400">(pode marcar várias)</small>' : ''}</div>
+        <div class="ops">${(q.options || []).map((o, j) => `<button class="op" data-j="${j}">${esc(o.label)}${o.description ? `<small>${esc(o.description)}</small>` : ''}</button>`).join('')}
+        <input class="outra" placeholder="Outra resposta (escreva aqui)…"></div></div>`).join('') +
+      `<button class="enviar-r" disabled>Responder</button><div class="res"></div>`;
+    const escolha = qs.map(() => new Set());
+    const pronto = () => qs.every((q, i) => escolha[i].size || d.querySelectorAll('.outra')[i].value.trim());
+    d.addEventListener('click', e => {
+      const op = e.target.closest('.op'); if (!op || d.classList.contains('respondida')) return;
+      const i = +op.closest('.q').dataset.i, j = +op.dataset.j;
+      if (qs[i].multiSelect) { escolha[i].has(j) ? escolha[i].delete(j) : escolha[i].add(j); }
+      else { escolha[i].clear(); escolha[i].add(j); d.querySelectorAll('.outra')[i].value = ''; }
+      d.querySelectorAll(`.q[data-i="${i}"] .op`).forEach((b, k) => b.classList.toggle('on', escolha[i].has(k)));
+      d.querySelector('.enviar-r').disabled = !pronto();
+      // uma pergunta só, de uma escolha: o clique já responde (como no terminal)
+      if (qs.length === 1 && !qs[0].multiSelect) d.querySelector('.enviar-r').click();
+    });
+    d.addEventListener('input', () => { d.querySelector('.enviar-r').disabled = !pronto(); });
+    d.querySelector('.enviar-r').onclick = async () => {
+      const resp = {};
+      qs.forEach((q, i) => {
+        const outra = d.querySelectorAll('.outra')[i].value.trim();
+        resp[q.question] = outra || [...escolha[i]].map(j => q.options[j].label).join(', ');
+      });
+      marcarPergunta(d, resp);
+      K.espera = false;
+      som('permitido');
+      await api().responder_pergunta(ev.id, ev.entrada, resp);
+      atividade('Continuando');
+    };
+    if (respondido) marcarPergunta(d, respondido);
+    conversa.appendChild(d);
+    return d;
+  }
+  function marcarPergunta(d, resp) {
+    d.classList.add('respondida');
+    d.querySelector('.res').textContent = '✓ ' + Object.values(resp).join(' · ');
+  }
+
   // ── comandos "/" ──
   const CM = { lista: [], sel: 0 };
   function comandosFiltrar() {
@@ -826,6 +954,7 @@
       }
       case 'ferr_fim': passoFim(ev.id, ev.ok, ev.saida); atividade('Pensando no próximo passo'); break;
       case 'permissao': K.espera = true; cartao(ev); atividade('Esperando você decidir'); som('pergunta'); break;
+      case 'pergunta': K.espera = true; cartaoPergunta(ev); atividade('Esperando a sua escolha'); som('pergunta'); break;
       case 'limite': cotas(ev); break;
       case 'ajudante': ajudante(ev); break;
       case 'licao': if (ev.nova) bolha('sis', '📌 Lição guardada para as próximas tarefas: ' + ev.texto); break;
@@ -858,25 +987,29 @@
   function ajustar() {
     texto.style.height = 'auto';
     texto.style.height = Math.min(texto.scrollHeight, 160) + 'px';
-    enviar.disabled = !K.ocupada && !texto.value.trim();
+    enviar.disabled = !K.ocupada && !texto.value.trim() && !(typeof ANX !== 'undefined' && ANX.length);
   }
   async function mandar() {
     if (K.ocupada) { api().parar(); atividade('Parando…'); return; }
     const t = texto.value.trim();
-    if (!t) return;
+    if (!t && !ANX.length) return;
     $('cmds').hidden = true;
-    bolha('eu', t); fim();
+    const imgs = ANX.splice(0);
+    anexosDesenhar();
+    const b = bolha('eu', t);
+    const m = minis(imgs.map(i => i.mini)); if (m) b.prepend(m);
+    fim();
     som('enviar');
     texto.value = '';
     K.bolha = null;
     ocupada(true);
-    if (K.quem !== 'claude' && !t.startsWith('/')) {   // direto com um ajudante
+    if (K.quem !== 'claude' && !t.startsWith('/') && !imgs.length) {   // direto com um ajudante (só texto)
       atividade(`${EQUIPE[K.quem].nome} trabalhando`);
       await api().ajudante(K.quem, t);
       return;
     }
     atividade('Enviando');
-    const ok = await api().enviar(t);
+    const ok = await api().enviar(t, imgs);
     if (!ok) ocupada(false);
   }
   async function trocarPasta() { if (K.ocupada) return; const p = await api().escolher_pasta(); if (p) carregar(); }
@@ -896,9 +1029,11 @@
     const h = await api().historico();
     if (!h.length) bolha('sis', 'Conversa nova em ' + base(i.pasta) + '.\nEdito e rodo comandos comuns aqui sem perguntar; o que for arriscado (apagar fora da pasta, commit, push, enviar para a internet, fechar programa) eu peço antes.');
     const respostas = {};
-    h.forEach(ev => { if (ev.t === 'permissao_fim') respostas[ev.id] = ev.ok; });
+    const escolhas = {};
+    h.forEach(ev => { if (ev.t === 'permissao_fim') respostas[ev.id] = ev.ok; if (ev.t === 'pergunta_fim') escolhas[ev.id] = ev.respostas; });
     for (const ev of h) {
-      if (ev.t === 'eu') bolha('eu', ev.texto);
+      if (ev.t === 'eu') { const b = bolha('eu', ev.texto); const m = minis(ev.minis); if (m) b.prepend(m); }
+      else if (ev.t === 'pergunta') cartaoPergunta(ev, escolhas[ev.id] || { '': '(sem resposta)' });
       else if (ev.t === 'kc') bolha('kc', md(ev.texto));
       else if (ev.t === 'ferr') passo(ev.id, ev.nome, ev.entrada);
       else if (ev.t === 'ferr_fim') passoFim(ev.id, ev.ok, ev.saida);
@@ -924,7 +1059,7 @@
       if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && texto.value.trim() !== '/' + (CM.lista[CM.sel] || {}).nome)) { e.preventDefault(); comandoEscolher(CM.sel); return; }
       if (e.key === 'Escape') { e.preventDefault(); $('cmds').hidden = true; return; }
     }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (texto.value.trim()) mandar(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (texto.value.trim() || ANX.length) mandar(); }
   });
   enviar.addEventListener('click', mandar);
   document.addEventListener('keydown', e => {

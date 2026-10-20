@@ -111,14 +111,31 @@ class Sessao:
     def vivo(self):
         return self.proc is not None and self.proc.poll() is None
 
-    def enviar(self, texto):
+    def enviar(self, texto, imagens=None):
+        """imagens = [{tipo: "image/png"|"image/jpeg"..., dados: base64, mini: dataURL pequena (só para a conversa guardada)}]"""
         with self._trava:
             if not self.vivo():
                 self._abrir()
             self.ocupada = True
             self._texto = []
-            self._guardar({"t": "eu", "texto": texto})
-            self._escrever({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": texto}]}})
+            imagens = imagens or []
+            self._guardar({"t": "eu", "texto": texto, "minis": [i.get("mini") for i in imagens if i.get("mini")]})
+            blocos = [{"type": "image", "source": {"type": "base64", "media_type": i.get("tipo") or "image/png", "data": i["dados"]}}
+                      for i in imagens if i.get("dados")]
+            blocos.append({"type": "text", "text": texto or "(veja a imagem)"})
+            self._escrever({"type": "user", "message": {"role": "user", "content": blocos}})
+
+    def responder_pergunta(self, pedido_id, entrada, respostas):
+        """pergunta de múltipla escolha (AskUserQuestion): as escolhas voltam dentro da própria ferramenta (answers)"""
+        if not self.vivo():
+            return False
+        ent = dict(entrada or {})
+        ent["answers"] = respostas or {}
+        with self._trava:
+            self._escrever({"type": "control_response", "response": {"subtype": "success", "request_id": pedido_id,
+                                                                     "response": {"behavior": "allow", "updatedInput": ent}}})
+        self._guardar({"t": "pergunta_fim", "id": pedido_id, "respostas": respostas})
+        return True
 
     def parar(self):
         """interrompe a resposta em andamento (pede com jeito; se não parar em 3 s, encerra o processo)"""
@@ -180,6 +197,11 @@ class Sessao:
             q = d.get("request") or {}
             if q.get("subtype") == "can_use_tool":
                 ent = q.get("input") or {}
+                if q.get("tool_name") == "AskUserQuestion":   # múltipla escolha: a janela mostra as opções
+                    ev = {"t": "pergunta", "id": d["request_id"], "perguntas": ent.get("questions") or [], "entrada": ent}
+                    self._guardar(ev)
+                    self.ao_evento(ev)
+                    return
                 if q.get("tool_name") in ("Bash", "PowerShell") and self._apagar_dentro(ent.get("command", "")):
                     self.responder(d["request_id"], True, ent)
                     return
