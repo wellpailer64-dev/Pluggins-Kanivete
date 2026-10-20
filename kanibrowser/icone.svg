@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC24D"/><stop offset="1" stop-color="#E0870B"/></linearGradient>
+    <linearGradient id="vidro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3A3644"/><stop offset="1" stop-color="#0F0E14"/></linearGradient>
+    <linearGradient id="tela" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFEFD2"/></linearGradient>
+    <clipPath id="le"><path d="M26 74 H86 V100 C86 116 76 124 60 124 H48 C34 124 26 114 26 100 Z"/></clipPath>
+    <clipPath id="ld"><path d="M106 74 H166 V100 C166 114 158 124 144 124 H132 C116 124 106 116 106 100 Z"/></clipPath>
+  </defs>
+  <rect width="192" height="192" rx="44" fill="url(#bg)"/>
+  <!-- armação dos óculos da Kani -->
+  <rect x="14" y="62" width="164" height="12" rx="3" fill="#16141B"/>
+  <path d="M18 70 H92 V102 C92 122 80 134 60 134 H48 C30 134 18 122 18 102 Z" fill="#16141B"/>
+  <path d="M100 70 H174 V102 C174 122 162 134 144 134 H132 C112 134 100 122 100 102 Z" fill="#16141B"/>
+  <!-- lente esquerda: o seu navegador -->
+  <g clip-path="url(#le)">
+    <rect x="26" y="74" width="60" height="50" fill="url(#tela)"/>
+    <rect x="26" y="74" width="60" height="11" fill="#2A2733"/>
+    <circle cx="33" cy="79.5" r="2.4" fill="#FF6B57"/><circle cx="40" cy="79.5" r="2.4" fill="#FFC24D"/><circle cx="47" cy="79.5" r="2.4" fill="#4CD08A"/>
+    <rect x="33" y="92" width="34" height="5" rx="2.5" fill="#E8A317"/>
+    <rect x="33" y="102" width="44" height="4" rx="2" fill="#D9CCB4"/>
+    <rect x="33" y="110" width="28" height="4" rx="2" fill="#D9CCB4"/>
+    <path d="M70 106 l0 15 l4 -4 l3 6 l3 -1.5 l-3 -6 l5.5 0 Z" fill="#16141B" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/>
+  </g>
+  <!-- lente direita: a visão da Kani -->
+  <g clip-path="url(#ld)">
+    <rect x="106" y="74" width="60" height="50" fill="url(#vidro)"/>
+    <rect x="106" y="74" width="60" height="11" fill="#08070B"/>
+    <circle cx="113" cy="79.5" r="2.4" fill="#5A5566"/><circle cx="120" cy="79.5" r="2.4" fill="#5A5566"/><circle cx="127" cy="79.5" r="2.4" fill="#5A5566"/>
+    <circle cx="158" cy="79.5" r="3" fill="#FF4D4D"/>
+    <path d="M118 124 L150 74 L162 74 L130 124 Z" fill="#fff" opacity=".16"/>
+    <path d="M136 124 L168 74 L172 74 L140 124 Z" fill="#fff" opacity=".1"/>
+    <path d="M136 92 C137.5 101 140 103.5 149 105 C140 106.5 137.5 109 136 118 C134.5 109 132 106.5 123 105 C132 103.5 134.5 101 136 92 Z" fill="#FFC24D"/><path d="M154 108 C154.6 111.6 155.4 112.4 159 113 C155.4 113.6 154.6 114.4 154 118 C153.4 114.4 152.6 113.6 149 113 C152.6 112.4 153.4 111.6 154 108 Z" fill="#FFC24D" opacity=".8"/>
+  </g>
+</svg>

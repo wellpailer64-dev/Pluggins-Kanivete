@@ -1,0 +1,10 @@
+# segredos e dados pessoais: ficam só neste PC
+pandalab/config.json
+pandalab/sessao.bin
+pandalab/vinculos.json
+pandalab/mapa_clientes.json
+*.bin
+.env
+# lixo
+__pycache__/
+*.pyc

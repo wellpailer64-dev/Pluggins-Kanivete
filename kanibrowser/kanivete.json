@@ -1,0 +1,11 @@
+{
+  "nome": "KaniBrowser",
+  "sigla": "Kb",
+  "cor": "#F0A01C",
+  "descricao": "KaniBrowser — o Chrome do Kanivete: você navega à esquerda, a Kani trabalha à direita, ao vivo; logins guardados e material direto para a pasta da demanda",
+  "js": "painel.js",
+  "css": "painel.css",
+  "py": "ponte.py",
+  "icone": "icone.png",
+  "logo": "logo.webp"
+}

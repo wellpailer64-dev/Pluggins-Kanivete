@@ -1,0 +1,11 @@
+{
+  "nome": "Pandalab",
+  "sigla": "Pl",
+  "cor": "#FF6B2C",
+  "descricao": "Laboratório Panda — demandas, briefings e material dos clientes",
+  "js": "painel.js",
+  "css": "painel.css",
+  "py": "ponte.py",
+  "icone": "icone.png",
+  "logo": "logo.webp"
+}
