@@ -16,7 +16,7 @@ DADOS = os.path.join(os.path.splitdrive(PASTA)[0] + os.sep, "Kanivete", "KaniCod
 ESTADO = os.path.join(DADOS, "estado.json")
 PORTA = 47613
 BOLA = 64                 # tamanho da bolinha em pixels da interface (o Windows aplica o zoom do monitor)
-JW, JH = 500, 660         # janela da conversa, idem
+JW, JH = 550, 660         # janela da conversa, idem (+50 do painel das contas, à esquerda)
 VERSAO = 3
 # pasta padrão das conversas: o KANIVETE (ao lado da pasta dos plugins)
 PROJETO_PADRAO = os.path.join(os.path.dirname(os.path.dirname(PASTA)), "CANIVETE DO PAILER")
