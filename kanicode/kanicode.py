@@ -19,6 +19,7 @@ BOLA = 64                 # tamanho da bolinha em pixels da interface (o Windows
 JW, JH = 550, 660         # janela da conversa, idem (+50 do painel das contas, à esquerda); o Pailer estica pelas bordas
 MIN_W, MIN_H = 340, 420
 VERSAO = 3
+AUMID = "Pandalab.KaniCode"   # o mesmo dos atalhos (atalhos.py): ícone fixado na barra = esta janela
 # pasta padrão das conversas: o KANIVETE (ao lado da pasta dos plugins)
 # (realpath: aberto pela junção D:\Kanivete\Plugins, o "ao lado" seria D:\Kanivete — pasta que não existe, WinError 267)
 PROJETO_PADRAO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "CANIVETE DO PAILER")
@@ -707,6 +708,11 @@ class App:
 
 
 def main():
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(AUMID)
+    except Exception:
+        pass
     # --agente[=porta]: a janela da conversa aceita CDP em 127.0.0.1 (testes e o agente lendo a tela); nunca por padrão
     ag = next((a for a in sys.argv if a.startswith("--agente")), None)
     if ag:

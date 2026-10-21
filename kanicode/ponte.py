@@ -2,11 +2,11 @@
 
 O KaniCode roda num processo à parte (kanicode.py): este módulo só abre, mostra, fecha e conta o estado dele.
 """
-import os, shutil, subprocess, sys
+import base64, json, os, shutil, subprocess, sys
 
 import kanicode as kc
 
-API_KANIVETE = ("estado", "abrir", "fechar")
+API_KANIVETE = ("estado", "abrir", "fechar", "garantir", "atalhos", "atalho", "fundo")
 
 
 def estado():
@@ -40,3 +40,36 @@ def abrir():
 
 def fechar():
     return {"fechado": kc.avisar("sair") == "ok"}
+
+
+def garantir():
+    """"Abrir junto com o KANIVETE": abre só a bolinha se o KaniCode estiver fechado (aberto: não mexe na janela dele)"""
+    if kc.avisar("ping") == "ok":
+        return {"rodando": True, "ja_estava": True}
+    return abrir()
+
+
+def _atalhos(*a):
+    """atalhos.py roda no Python 3.13 (pywin32), não no do KANIVETE (o .exe não traz o win32com)"""
+    r = subprocess.run(["py", "-3.13", os.path.join(kc.PASTA, "atalhos.py"), *a], cwd=kc.PASTA, capture_output=True,
+                       text=True, timeout=30, creationflags=0x08000000)   # CREATE_NO_WINDOW
+    if r.returncode:
+        raise RuntimeError((r.stderr.strip().splitlines() or ["atalhos falhou"])[-1])
+    return json.loads(r.stdout)
+
+
+def atalhos():
+    return _atalhos("estado")
+
+
+def atalho(lugar, ligar=True):
+    """lugar = desktop | menu | inicio (iniciar com o Windows)"""
+    if lugar not in ("desktop", "menu", "inicio"):
+        raise ValueError("lugar inválido")
+    return _atalhos("criar" if ligar else "apagar", lugar)
+
+
+def fundo():
+    """vídeo do lobby (o do Início do KANIVETE tingido de verde-limão) como data URL"""
+    with open(os.path.join(kc.PASTA, "lobby.webm"), "rb") as f:
+        return "data:video/webm;base64," + base64.b64encode(f.read()).decode()
