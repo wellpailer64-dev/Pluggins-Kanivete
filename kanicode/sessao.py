@@ -16,22 +16,15 @@ Apagar só dentro da pasta do projeto é liberado aqui mesmo, sem cartão.
 """
 import json, os, re, shlex, shutil, subprocess, sys, threading, time
 
-PROMPT_KANICODE = ("Você está respondendo pelo KaniCode: uma janela pequena de conversa na área de trabalho do Pailer. "
-                   "Responda curto e em português do Brasil; evite tabelas largas (a janela tem ~500 px). "
-                   "Pode editar arquivos e rodar comandos comuns dentro da pasta do projeto sem perguntar.\n"
-                   "EQUIPE: você tem dois ajudantes para economizar a cota do Claude do Pailer — mcp__equipe__codex (Codex, "
-                   "conta ChatGPT Plus dele: tarefas médias e bem definidas, com contrato claro; revise o que ele fizer) e "
-                   "mcp__equipe__kani (modelo local grátis: resumir, classificar, reescrever um texto que você passa). "
-                   "QUANDO DELEGAR (medido 2026-10-20: mesma tarefa, você sozinho 96 s / US$ 0,84; com o Codex ~5-11 min / "
-                   "US$ 0,49): faça VOCÊ quando o Pailer está esperando ou a tarefa precisa do app rodando para conferir; "
-                   "delegue ao Codex quando poupar cota importa mais que tempo (conta perto do limite, fila de tarefas, ou o "
-                   "Pailer pedir 'modo equipe') e a tarefa é bem delimitada. "
-                   "MODO EQUIPE: no contrato do Codex vão sozinhas as regras do projeto e as lições parecidas; passe "
-                   "'teste' (um comando) quando houver como conferir — a revisão automática volta com arquivos mudados, "
-                   "sintaxe e teste, e você só abre arquivo se algo falhar. Quando aprender uma armadilha (sua ou do Codex), "
-                   "guarde com mcp__equipe__licao, em uma frase com o como-fazer. O Codex não consegue rodar Python nem o app "
-                   "(o sandbox dele no Windows esconde): quem testa é a revisão; se ela falhar, mande a correção com "
-                   "continuar=true (mesma sessão dele, sem reler o projeto).")
+# o que vai a mais que no cmd em CADA passo (medido 2026-10-20: o texto antigo era +800 tokens/passo): só o essencial;
+# o como-usar dos ajudantes mora na descrição das ferramentas (mcp_equipe.py), que só entra quando o Claude as abre
+PROMPT_KANICODE = ("Você está no KaniCode: janela de ~500 px na área de trabalho do Pailer. Responda curto, em pt-BR, sem "
+                   "tabelas largas. Pode editar e rodar comandos comuns na pasta do projeto sem perguntar.\n"
+                   "Ajudantes que poupam a cota do Claude: mcp__equipe__codex (tarefa média bem delimitada, quando poupar cota "
+                   "importa mais que tempo ou o Pailer pedir 'modo equipe') e mcp__equipe__kani (texto simples, local). "
+                   "Com o Pailer esperando ou precisando do app rodando, faça você.\n"
+                   "Mexeu no próprio KaniCode (D:/Kanivete/Plugins/kanicode)? No fim rode "
+                   "`py -3.13 D:/Kanivete/Plugins/kanicode/recarregar.py`.")
 
 
 # o que sempre passa pelo Pailer (Bash e PowerShell): enviar/publicar, apagar, fechar programa, desligar
@@ -54,6 +47,7 @@ class Sessao:
         self.comandos = []         # comandos "/" (nome, descrição) que esta instalação do Claude Code tem
         self.modelo = None         # --model (None = o padrão do Claude Code)
         self.conta = None          # conta do Claude (contas.py; None = a principal)
+        self.modo = "auto"         # "plan" = só planeja e pede aprovação antes de mexer (botão Planejar)
 
     # ── processo ──
     def _abrir(self):
@@ -61,7 +55,7 @@ class Sessao:
         if not exe:
             raise RuntimeError("não achei o Claude Code (comando claude) neste PC")
         cmd = [exe, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--include-partial-messages",
-               "--verbose", "--permission-mode", "auto", "--permission-prompt-tool", "stdio",
+               "--verbose", "--permission-mode", self.modo, "--permission-prompt-tool", "stdio",
                "--settings", json.dumps({"permissions": {"ask": REGRAS_PERGUNTAR}}),
                "--append-system-prompt", PROMPT_KANICODE,
                # ajudantes (mcp_equipe.py): Codex e Kani como ferramentas, liberadas sem cartão
@@ -116,6 +110,8 @@ class Sessao:
         with self._trava:
             if not self.vivo():
                 self._abrir()
+            if self.ocupada:   # recado no meio da tarefa: o Claude Code lê no próximo passo (mesma volta, medido)
+                self._fechar_texto()
             self.ocupada = True
             self._texto = []
             imagens = imagens or []
@@ -124,6 +120,14 @@ class Sessao:
                       for i in imagens if i.get("dados")]
             blocos.append({"type": "text", "text": texto or "(veja a imagem)"})
             self._escrever({"type": "user", "message": {"role": "user", "content": blocos}})
+
+    def definir_modo(self, modo):
+        """auto | plan, na sessão aberta (control_request) e nas próximas"""
+        self.modo = modo
+        if self.vivo():
+            with self._trava:
+                self._escrever({"type": "control_request", "request_id": f"modo{time.time():.0f}",
+                                "request": {"subtype": "set_permission_mode", "mode": modo}})
 
     def responder_pergunta(self, pedido_id, entrada, respostas):
         """pergunta de múltipla escolha (AskUserQuestion): as escolhas voltam dentro da própria ferramenta (answers)"""
@@ -209,6 +213,12 @@ class Sessao:
                       "motivo": q.get("description") or ""}
                 self._guardar(ev)
                 self.ao_evento(ev)
+            return
+        if t == "system" and str(d.get("subtype") or "").startswith("task_"):
+            # tarefas em segundo plano (shell, monitor, agente): começo, andamento e fim — só para a coluna Atividades
+            self.ao_evento({"t": "tarefa", "sub": d.get("subtype"), "id": d.get("task_id") or d.get("id"),
+                            "status": d.get("status") or "", "resumo": (d.get("summary") or d.get("description") or "")[:300],
+                            "arquivo": d.get("output_file") or ""})
             return
         if t == "system" and d.get("subtype") == "init":
             novo = d.get("session_id")

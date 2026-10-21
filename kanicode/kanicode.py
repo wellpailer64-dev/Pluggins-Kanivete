@@ -7,7 +7,7 @@ Uma instância só: o canal de controle (127.0.0.1:PORTA, só aceita "ping", "mo
 
 Rodar à mão: pyw -3.13 kanicode.py   (ferramentas do navegador: --console; testes por CDP: --agente[=9350])
 """
-import json, os, socket, sys, threading, time
+import json, os, re, socket, sys, threading, time
 
 import webview
 
@@ -16,10 +16,12 @@ DADOS = os.path.join(os.path.splitdrive(PASTA)[0] + os.sep, "Kanivete", "KaniCod
 ESTADO = os.path.join(DADOS, "estado.json")
 PORTA = 47613
 BOLA = 64                 # tamanho da bolinha em pixels da interface (o Windows aplica o zoom do monitor)
-JW, JH = 550, 660         # janela da conversa, idem (+50 do painel das contas, à esquerda)
+JW, JH = 550, 660         # janela da conversa, idem (+50 do painel das contas, à esquerda); o Pailer estica pelas bordas
+MIN_W, MIN_H = 340, 420
 VERSAO = 3
 # pasta padrão das conversas: o KANIVETE (ao lado da pasta dos plugins)
-PROJETO_PADRAO = os.path.join(os.path.dirname(os.path.dirname(PASTA)), "CANIVETE DO PAILER")
+# (realpath: aberto pela junção D:\Kanivete\Plugins, o "ao lado" seria D:\Kanivete — pasta que não existe, WinError 267)
+PROJETO_PADRAO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "CANIVETE DO PAILER")
 
 
 def _ler_estado():
@@ -38,6 +40,12 @@ def _gravar_estado(**kw):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(e, f, ensure_ascii=False, indent=2)
     os.replace(tmp, ESTADO)
+
+
+def _tamanho():
+    """tamanho guardado da janela (pixels da interface) ou o de fábrica"""
+    t = _ler_estado().get("tamanho")
+    return (max(MIN_W, int(t[0])), max(MIN_H, int(t[1]))) if t else (JW, JH)
 
 
 def avisar(cmd):
@@ -61,6 +69,8 @@ class App:
         self._limite = _ler_estado().get("limite")   # o último visto (a cota aparece antes da 1ª resposta)
         self._sessao = None
         self._comandos = []
+        self._pendente = None      # "recarregar"/"reiniciar" pedido no meio de uma resposta: roda quando ela terminar
+        self._carregado = time.time()   # para o "atualizar" saber o que mudou depois de aberto
 
     # ── js_api ──
     def mostrar(self):
@@ -72,6 +82,113 @@ class App:
         self._aberta = True
         ocupada = bool(self._sessao and self._sessao.ocupada)
         self._na_ui(lambda: self._bola and self._bola.definir(aberta=True, estado="trabalhando" if ocupada else ""))
+
+    # ── tamanho: a janela é sem moldura, então as bordas são desenhadas no HTML e o redimensionar vem por aqui ──
+    def _hwnd(self):
+        return int(self._janela.native.Handle.ToInt64())
+
+    def tam_inicio(self):
+        """retângulo atual da janela em pixels físicos [x, y, w, h]"""
+        import ctypes
+        from ctypes import wintypes
+        r = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(self._hwnd(), ctypes.byref(r))
+        return [r.left, r.top, r.right - r.left, r.bottom - r.top]
+
+    def tam_mudar(self, x, y, w, h):
+        import ctypes
+        k = self._bola.escala if self._bola else 1
+        w, h = max(int(w), int(MIN_W * k)), max(int(h), int(MIN_H * k))
+        ctypes.windll.user32.SetWindowPos(self._hwnd(), 0, int(x), int(y), w, h, 0x0004 | 0x0010)   # NOZORDER | NOACTIVATE
+
+    def tam_fim(self, extra=0):
+        """guarda o tamanho sem as colunas laterais abertas (extra = quanto elas somam agora)"""
+        k = self._bola.escala if self._bola else 1
+        _, _, w, h = self.tam_inicio()
+        _gravar_estado(tamanho=[round(w / k - float(extra or 0)), round(h / k)])
+
+    def _area(self):
+        """área útil do monitor da janela (pixels físicos): esquerda, direita"""
+        import ctypes
+        from ctypes import wintypes
+
+        class MI(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+        mi = MI(); mi.cbSize = ctypes.sizeof(MI)
+        mon = ctypes.windll.user32.MonitorFromWindow(self._hwnd(), 2)
+        ctypes.windll.user32.GetMonitorInfoW(mon, ctypes.byref(mi))
+        return mi.rcWork.left, mi.rcWork.right
+
+    def crescer(self, esq, dir):
+        """abre/fecha uma coluna lateral PARA FORA: a janela ganha (ou perde) esq px à esquerda e dir px à direita,
+        num deslize curto, sem sair da tela"""
+        import ctypes
+        k = self._bola.escala if self._bola else 1
+        x, y, w, h = self.tam_inicio()
+        de, dd = int(float(esq) * k), int(float(dir) * k)
+        nx, nw = x - de, max(int(MIN_W * k), w + de + dd)
+        try:
+            l, r = self._area()
+            if nx + nw > r:
+                nx = r - nw
+            nx = max(l, nx)
+        except Exception:
+            pass
+        for i in range(1, 8):
+            t = i / 7
+            t = 1 - (1 - t) ** 3
+            ctypes.windll.user32.SetWindowPos(self._hwnd(), 0, int(x + (nx - x) * t), y, int(w + (nw - w) * t), h, 0x0004 | 0x0010)
+            time.sleep(0.012)
+        return True
+
+    def tarefas_ler(self, arquivos):
+        """andamento das tarefas em segundo plano do Claude Code: última linha da saída e o código de saída quando acaba"""
+        r = {}
+        for a in (arquivos or [])[:20]:
+            if not str(a).lower().endswith(".output"):
+                continue
+            try:
+                tam = os.path.getsize(a)
+                with open(a, "rb") as f:
+                    f.seek(max(0, tam - 8192))
+                    fim = f.read().decode("utf-8", "replace")
+            except OSError:
+                r[a] = {"falta": True}
+                continue
+            m = re.search(r"\[exited with code (-?\d+)\]\s*$", fim)
+            linhas = [l.strip() for l in re.sub(r"\[exited with code -?\d+\]\s*$", "", fim).replace("\r", "\n").split("\n") if l.strip()]
+            r[a] = {"tail": "\n".join(linhas[-3:])[-400:], "fim": int(m.group(1)) if m else None, "kb": round(tam / 1024)}
+        return r
+
+    def expandir(self, on):
+        """⤢ janela grande (diffs e saídas inteiros): ocupa quase o monitor inteiro; de novo = volta ao retângulo de antes"""
+        import ctypes
+        from ctypes import wintypes
+
+        class MI(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+        if on:
+            self._antes = self.tam_inicio()
+            mi = MI(); mi.cbSize = ctypes.sizeof(MI)
+            ctypes.windll.user32.GetMonitorInfoW(ctypes.windll.user32.MonitorFromWindow(self._hwnd(), 2), ctypes.byref(mi))
+            a = mi.rcWork
+            k = self._bola.escala if self._bola else 1
+            m = int(24 * k)
+            w = min(int(1280 * k), a.right - a.left - 2 * m)
+            r = [a.left + (a.right - a.left - w) // 2, a.top + m, w, a.bottom - a.top - 2 * m]
+        else:
+            r = getattr(self, "_antes", None)
+            if not r:
+                return False
+            self._antes = None
+        ctypes.windll.user32.SetWindowPos(self._hwnd(), 0, *map(int, r), 0x0004 | 0x0010)
+        return bool(on)
+
+    def tam_padrao(self):
+        """duplo clique no canto: volta ao tamanho de fábrica, ao lado da bolinha"""
+        _gravar_estado(tamanho=None)
+        self._janela.resize(JW, JH)
+        self._janela.move(*self._perto_da_bola())
 
     def esconder(self):
         if self._janela:
@@ -90,7 +207,8 @@ class App:
         e = _ler_estado()
         return {"versao": VERSAO, "pasta": self._pasta(), "fixa": bool(e.get("fixa", True)), "limite": self._limite,
                 "ocupada": bool(self._sessao and self._sessao.ocupada), "comandos": self._comandos,
-                "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": e.get("quem") or "claude"}
+                "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": e.get("quem") or "claude",
+                "modo": getattr(self, "_modo", "auto")}
 
     # ── contas do Claude (contas.py): salvas, com apelido e e-mail; troca MANUAL ──
     def _contas(self):
@@ -115,6 +233,22 @@ class App:
             c.update(email=st.get("email", ""), plano=st.get("plano", ""), logado=st.get("logado", False))
             if c["logado"]:
                 c["cotas"] = contas.cotas(c["id"])
+        # a mesma conta duas vezes (mesmo e-mail): mostra uma só — a em uso; senão uma salva (a "Principal" segue o
+        # login do PC e pode mudar por fora; as salvas têm login próprio e ficam). Nada é apagado: as outras só somem.
+        por = {}
+        for c in lista:
+            c.pop("igual", None)
+            c.pop("oculta", None)
+            if c.get("logado") and c.get("email"):
+                por.setdefault(c["email"].lower(), []).append(c)
+        for grupo in por.values():
+            if len(grupo) > 1:
+                fica = next((x for x in grupo if x["id"] == ativa), None) \
+                    or next((x for x in grupo if x["id"] != "principal"), grupo[0])
+                fica["cotas"] = max(grupo, key=lambda x: (x.get("cotas") or {}).get("lido") or 0).get("cotas")
+                for c in grupo:
+                    if c is not fica:
+                        c["oculta"] = True
         _gravar_estado(contas=lista)
         return {"lista": lista, "ativa": ativa}
 
@@ -245,6 +379,7 @@ class App:
             self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
             self._sessao.conta = _ler_estado().get("conta") or None
+            self._sessao.modo = getattr(self, "_modo", "auto")
         self._bola_estado("trabalhando")
         try:
             self._sessao.enviar(texto, imagens)
@@ -274,6 +409,7 @@ class App:
             self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
             self._sessao.conta = _ler_estado().get("conta") or None
+            self._sessao.modo = getattr(self, "_modo", "auto")
         if not self._sessao.vivo():
             try:
                 self._sessao._abrir()
@@ -285,6 +421,41 @@ class App:
         if self._sessao:
             self._sessao.parar()
         return True
+
+    _IMG = (".png", ".jpg", ".jpeg", ".webp")
+
+    def miniatura(self, caminho, lado=900):
+        """print na conversa: a imagem reduzida como dataURL (None se não for imagem ou não existir)"""
+        try:
+            if not caminho.lower().endswith(self._IMG) or not os.path.isfile(caminho):
+                return None
+            import base64, io
+            from PIL import Image
+            with Image.open(caminho) as im:
+                im.thumbnail((lado, lado))
+                buf = io.BytesIO()
+                if im.mode in ("RGBA", "LA", "P"):
+                    im.convert("RGBA").save(buf, "PNG", optimize=True)
+                    tipo = "png"
+                else:
+                    im.convert("RGB").save(buf, "JPEG", quality=85)
+                    tipo = "jpeg"
+            return f"data:image/{tipo};base64," + base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            return None
+
+    def abrir_imagem(self, caminho):
+        if caminho.lower().endswith(self._IMG) and os.path.isfile(caminho):
+            os.startfile(caminho)
+        return True
+
+    def modo(self, modo):
+        """botão Planejar: 'plan' = o Claude só planeja e pede aprovação; 'auto' = trabalha normal"""
+        modo = "plan" if modo == "plan" else "auto"
+        self._modo = modo
+        if self._sessao:
+            self._sessao.definir_modo(modo)
+        return modo
 
     def nova(self):
         """conversa nova nesta pasta (a anterior continua guardada)"""
@@ -367,6 +538,9 @@ class App:
             if t == "saiu":
                 self._sessao = None
         self._para_janela(ev)
+        if t in ("fim", "saiu") and self._pendente:
+            acao, self._pendente = self._pendente, None
+            threading.Timer(1.5, self._atualizar, args=(acao,)).start()   # a última bolha chega à tela antes
 
     def _para_janela(self, ev):
         try:
@@ -400,6 +574,12 @@ class App:
         k = b.escala
         ax, ay, aw, ah = (v / k for v in b.area_util())
         bx, by, bl = b.x / k, b.y / k, b.total / k
+        try:   # o tamanho de agora (com as colunas laterais abertas a janela é mais larga)
+            _, _, fw, fh = self.tam_inicio()
+            JW, JH = fw / k, fh / k
+        except Exception:
+            JW, JH = _tamanho()
+        JW, JH = min(JW, aw - 16), min(JH, ah - 16)
         x = bx - JW - 10 if bx - JW - 10 >= ax else bx + bl + 10
         y = by + bl - JH
         x = max(ax + 8, min(x, ax + aw - JW - 8))
@@ -441,6 +621,52 @@ class App:
         threading.Thread(target=self.esconder, daemon=True).start()
         return False
 
+    # ── atualizar depois de um ajuste no código do KaniCode (recarregar.py) ──
+    def _o_que_mudou(self):
+        """'reiniciar' se algum .py mudou depois de aberto; 'recarregar' se só a janela (ui/, .css/.js); senão None"""
+        py = ui = False
+        for raiz, _, nomes in os.walk(PASTA):
+            if "__pycache__" in raiz:
+                continue
+            for n in nomes:
+                try:
+                    novo = os.path.getmtime(os.path.join(raiz, n)) > self._carregado
+                except OSError:
+                    continue
+                if novo and n.endswith(".py"):
+                    py = True
+                elif novo and n.endswith((".html", ".css", ".js")):
+                    ui = True
+        return "reiniciar" if py else "recarregar" if ui else None
+
+    def _pedir(self, acao):
+        """acao: atualizar (decide sozinho) | recarregar | reiniciar. No meio de uma resposta, espera ela terminar."""
+        if acao == "atualizar":
+            acao = self._o_que_mudou()
+            if not acao:
+                return "nada"
+        if self._sessao and self._sessao.ocupada:
+            if self._pendente != "reiniciar":
+                self._pendente = acao
+            return "depois:" + acao
+        threading.Thread(target=self._atualizar, args=(acao,), daemon=True).start()
+        return acao
+
+    def _atualizar(self, acao):
+        if acao == "recarregar":
+            self._carregado = time.time()
+            try:
+                self._janela.evaluate_js("setTimeout(() => location.reload(), 50)")
+            except Exception:
+                pass
+            return
+        # reiniciar: abre um KaniCode novo (que espera este soltar a porta) e este sai; a conversa continua (--resume)
+        import subprocess
+        args = [a for a in sys.argv[1:] if a not in ("--reaberto", "--abrir")] + ["--reaberto"] + (["--abrir"] if self._aberta else [])
+        subprocess.Popen([sys.executable, os.path.abspath(__file__), *args], cwd=PASTA, close_fds=True,
+                         creationflags=0x00000008 | 0x00000200)
+        self.sair()
+
     def _servir(self, srv):
         while not self._saindo:
             try:
@@ -466,6 +692,11 @@ class App:
                     except ValueError:
                         pass
                     continue
+                if cmd in ("atualizar", "recarregar", "reiniciar"):
+                    c.sendall(self._pedir(cmd).encode() + b"\n")
+                    if self._saindo:
+                        break
+                    continue
                 c.sendall(b"ok\n" if cmd in ("ping", "mostrar", "sair") else b"?\n")
                 if cmd == "mostrar":
                     self.mostrar()
@@ -481,23 +712,37 @@ def main():
     if ag:
         porta = ag.split("=", 1)[1] if "=" in ag else "9350"
         os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"--remote-debugging-port={porta} --remote-allow-origins=http://127.0.0.1:{porta}"
-    if avisar("mostrar"):   # já existe uma aberta: ela aparece e esta sai
+    reaberto = "--reaberto" in sys.argv   # reiniciado pelo _atualizar: espera o anterior soltar a porta
+    if not reaberto and avisar("mostrar"):   # já existe uma aberta: ela aparece e esta sai
         return
-    try:
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.bind(("127.0.0.1", PORTA))   # a porta é a trava de instância única
-        srv.listen(4)
-    except OSError:
+    srv = None
+    for _ in range(100 if reaberto else 1):
+        try:
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.bind(("127.0.0.1", PORTA))   # a porta é a trava de instância única
+            srv.listen(4)
+            break
+        except OSError:
+            srv.close()
+            srv = None
+            time.sleep(0.15)
+    if not srv:
         return
     app = App()
     e = _ler_estado()
-    app._janela = webview.create_window("KaniCode", os.path.join(PASTA, "ui", "janela.html"), js_api=app, width=JW, height=JH,
+    w, h = _tamanho()
+    app._janela = webview.create_window("KaniCode", os.path.join(PASTA, "ui", "janela.html"), js_api=app, width=w, height=h,
                                         hidden=True, frameless=True, easy_drag=False, on_top=bool(e.get("fixa", True)),
-                                        resizable=True, min_size=(340, 420), background_color="#0E1110")
+                                        resizable=True, min_size=(MIN_W, MIN_H), background_color="#0E1110")
     app._janela.events.closing += app._fechando
     threading.Thread(target=app._servir, args=(srv,), daemon=True).start()
     os.makedirs(DADOS, exist_ok=True)
-    webview.start(app._criar_bola, debug="--console" in sys.argv, storage_path=os.path.join(DADOS, "webview"))
+
+    def comecar():
+        app._criar_bola()
+        if "--abrir" in sys.argv:   # reiniciado com a janela aberta: volta aberta
+            threading.Timer(0.8, app.mostrar).start()
+    webview.start(comecar, debug="--console" in sys.argv, storage_path=os.path.join(DADOS, "webview"))
 
 
 if __name__ == "__main__":

@@ -28,7 +28,10 @@ FERRAMENTAS = [
                      "pode, critério de pronto. As REGRAS do projeto e as LIÇÕES já aprendidas parecidas com a tarefa vão "
                      "junto sozinhas. Com editar=true, ao terminar o KaniCode confere sozinho: lista os arquivos mudados (com "
                      "o resumo do diff), checa a sintaxe de cada um e roda o comando de 'teste', se você der um. Leia o "
-                     "relatório e só abra os arquivos se algo falhar ou parecer estranho. editar=false = só lê e responde."),
+                     "relatório e só abra os arquivos se algo falhar ou parecer estranho. editar=false = só lê e responde. "
+                     "Custo medido (2026-10-20): você sozinho ~96 s/US$ 0,84; com o Codex ~5-11 min/US$ 0,49. O Codex NÃO "
+                     "roda Python nem o app (sandbox do Windows): quem testa é a revisão; se ela falhar, mande a correção "
+                     "com continuar=true. Armadilha aprendida (sua ou dele): guarde com a ferramenta licao."),
      "inputSchema": {"type": "object", "properties": {
          "contrato": {"type": "string", "description": "a tarefa completa, em português"},
          "editar": {"type": "boolean", "description": "true = pode criar/editar arquivos na pasta do projeto", "default": False},

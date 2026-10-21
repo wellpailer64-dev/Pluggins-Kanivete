@@ -12,6 +12,18 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto); font: 13.5px/1.5 var(--sans); }
   body { display: flex; flex-direction: column; border: 1px solid var(--borda); }
+  /* bordas para esticar a janela (sem moldura): faixas finas nas 4 bordas e nos cantos */
+  .tam { position: fixed; z-index: 99; }
+  .tam.n, .tam.s { left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+  .tam.n { top: 0; } .tam.s { bottom: 0; }
+  .tam.l, .tam.o { top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+  .tam.o { left: 0; } .tam.l { right: 0; }
+  .tam.no, .tam.ne, .tam.so, .tam.se { width: 12px; height: 12px; }
+  .tam.no { left: 0; top: 0; cursor: nwse-resize; } .tam.se { right: 0; bottom: 0; cursor: nwse-resize; }
+  .tam.ne { right: 0; top: 0; cursor: nesw-resize; } .tam.so { left: 0; bottom: 0; cursor: nesw-resize; }
+  .tam.se::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 6px; height: 6px;
+                   border-right: 2px solid var(--borda); border-bottom: 2px solid var(--borda); }
+  .tam.se:hover::after { border-color: var(--lima); }
   /* topo: arrastar a janela por aqui */
   .topo { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 6px 0 12px; background: var(--painel);
           border-bottom: 1px solid var(--borda); user-select: none; }
@@ -47,6 +59,22 @@
   .passo.ok { border-left-color: #4D6A22; } .passo.falhou { border-left-color: #7A2F33; } .passo.falhou summary b { color: var(--erro); }
   .passo pre { margin: 4px 0 2px; max-height: 220px; overflow: auto; white-space: pre-wrap; background: #0B0E0D; border: 1px solid var(--borda);
                border-radius: 6px; padding: 6px 8px; color: #C7D2CB; }
+  /* antes × depois e resumo dos arquivos mudados */
+  .qtd { margin-left: 6px; } .qtd i { font-style: normal; font-weight: 600; }
+  .qtd .a { color: #8FD14F; } .qtd .r { color: #E0787E; }
+  .passo pre.diff { white-space: pre; padding: 4px 0; max-height: 320px; }
+  .diff span { display: block; padding: 0 8px; white-space: pre-wrap; }
+  .diff .dl-a { background: #16301A; color: #B8E6A0; } .diff .dl-r { background: #34181B; color: #F0A9AD; }
+  .diff .dl-c { color: #8C9A92; } .diff .dl-p { color: #5A6660; text-align: center; }
+  .mud { align-self: stretch; border: 1px solid var(--borda); border-radius: 10px; padding: 8px 10px; background: var(--painel); font-size: 13px; }
+  .mud .t { font-weight: 600; margin-bottom: 4px; }
+  .mud .arq { display: flex; justify-content: space-between; gap: 8px; padding: 3px 6px; border-radius: 6px; cursor: pointer; font: 12.5px var(--mono); }
+  .mud .arq:hover { background: #0B0E0D; } .mud .arq .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mud .arq small { color: var(--fraco); }
+  /* janela grande (⤢): mais espaço para ler */
+  html.grande .msg { max-width: 82%; } html.grande .passo pre { max-height: 70vh; }
+  html.grande .perm pre { max-height: 50vh; }
+  .cnt.igual { outline: 1px dashed var(--aviso); outline-offset: 2px; }
   /* cartão de permissão */
   .perm { align-self: stretch; background: #1C1A10; border: 1px solid #5C4F1C; border-radius: 10px; padding: 10px 12px; }
   .perm .t { font-weight: 600; margin-bottom: 4px; }
@@ -82,6 +110,13 @@
             font: 600 14px var(--sans); cursor: pointer; }
   .enviar:disabled { opacity: .45; cursor: default; }
   .enviar.parar { background: #3A1C1E; color: var(--erro); }
+  .meio-tarefa { border-left: 3px solid var(--lima); }
+  .print { margin: 4px 0 8px; cursor: zoom-in; max-width: 100%; }
+  .print img { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid var(--borda); }
+  .print figcaption { font: 11px var(--mono); color: var(--fraco); margin-top: 3px; }
+  .longa { color: var(--fraco); font-size: 12.5px; }
+  .longa button { margin-left: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--borda); border-radius: 7px;
+                  background: transparent; color: var(--lima); font: 600 12px var(--sans); cursor: pointer; }
   /* lista de comandos "/" */
   .cmds { position: absolute; left: 12px; right: 12px; bottom: calc(100% + 4px); max-height: 260px; overflow-y: auto; background: var(--painel);
           border: 1px solid var(--borda); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); padding: 4px; }
@@ -140,6 +175,10 @@
   .msg.aju .quem .cx { display: grid; place-items: center; background: #F2F4F3; color: #111; font: 700 7px var(--mono); }
   /* quem responde */
   .quem-bt { cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .modo-bt { cursor: pointer; white-space: nowrap; padding: 1px 7px; border-radius: 6px; border: 1px solid transparent; }
+  .modo-bt:hover { color: var(--texto); }
+  .modo-bt.on { color: #7FD3E8; border-color: #2B5560; background: #12262B; }
+  .perm.plano .md { max-height: 340px; overflow: auto; font-size: 13px; margin: 6px 0 8px; }
   .quem-bt:hover { color: var(--texto); }
   .quem-bt i { width: 7px; height: 7px; border-radius: 50%; background: var(--cor, var(--lima)); }
   .menu-quem { position: absolute; right: 10px; bottom: 34px; width: 270px; background: var(--painel); border: 1px solid var(--borda); border-radius: 12px;
@@ -249,6 +288,64 @@
   .caixa button { height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--borda); background: transparent; color: var(--texto); cursor: pointer; font: 13px var(--sans); }
   .caixa button.ok { background: var(--lima); color: var(--fundo); border-color: var(--lima); font-weight: 600; }
   ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2A3530; border-radius: 4px; }
+  /* ── coluna das contas aberta (paineis.js): a janela cresce para a esquerda ── */
+  .lado { transition: width .18s ease; overflow: hidden; }
+  .lado.aberto { width: 252px; align-items: stretch; padding: 10px; }
+  .lado.aberto > #lado-contas, .lado.aberto > .mais, .lado.aberto > .esp2 { display: none !important; }
+  .lado.aberto .contas { position: static; inset: auto; max-height: none; flex: 1; overflow-y: auto; box-shadow: none; border: 0; padding: 0;
+                         background: transparent; animation: entra .25s ease; }
+  .lado.aberto .contas h4 { display: flex; align-items: center; } .lado.aberto .contas h4 .bt { margin-left: auto; height: 24px; min-width: 24px; }
+  .lado.aberto .ct .acoes { flex-wrap: wrap; }
+  /* ── coluna das Atividades, à direita ── */
+  .atv { flex: none; display: flex; border-left: 1px solid var(--borda); background: var(--painel); }
+  .atv .trilho { width: 30px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; cursor: pointer; color: var(--fraco); }
+  .atv .trilho:hover { color: var(--texto); background: #1A201D; }
+  .atv .trilho .ic { font-size: 13px; }
+  .atv.tem .trilho .ic { color: var(--lima); animation: pulsa 1.2s ease-in-out infinite; }
+  .atv .trilho .cont { min-width: 18px; height: 18px; border-radius: 9px; background: var(--lima); color: var(--fundo); font: 700 10.5px/18px var(--mono); text-align: center; padding: 0 4px; }
+  .atv .trilho .vert { writing-mode: vertical-rl; font: 600 10px var(--mono); letter-spacing: 2px; opacity: .7; }
+  .atv .det { width: 0; overflow: hidden; display: flex; flex-direction: column; transition: width .18s ease; border-left: 1px solid transparent; }
+  .atv.aberto .det { width: 270px; border-left-color: var(--borda); }
+  .atv.aberto .trilho .vert { opacity: .35; }
+  .atv .cab { display: flex; align-items: center; height: 36px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--borda); flex: none; }
+  .atv .cab b { font-size: 13px; }
+  .atv .rolo { flex: 1; overflow-y: auto; padding: 4px 10px 12px; min-width: 270px; }
+  .atv .sec { font: 600 10.5px var(--mono); color: var(--fraco); letter-spacing: .6px; margin: 12px 2px 6px; }
+  .atv .sec small { background: #26302B; color: var(--texto); border-radius: 8px; padding: 0 6px; margin-left: 4px; }
+  .atv .vazio { color: #56625C; font-size: 12px; padding: 2px 4px 4px; }
+  .ta { border: 1px solid var(--borda); border-radius: 9px; padding: 7px 9px; margin-bottom: 6px; background: var(--fundo); cursor: pointer;
+        animation: entra .3s cubic-bezier(.2, .8, .2, 1); }
+  .ta:hover { border-color: #3A4540; }
+  .ta .l1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .ta .l1 b { font: 600 12.5px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ta .tic { font-size: 12px; flex: none; }
+  .ta .anel { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 2px solid #3A4540; }
+  .ta.vivo .anel { border-color: var(--lima) transparent var(--lima) transparent; animation: gira 1s linear infinite; }
+  .ta.vivo.bg .anel { border-color: #7FD3E8 transparent #7FD3E8 transparent; }
+  .ta.ok .anel { border-color: #4D6A22; background: #4D6A22; }
+  .ta.falhou .anel { border-color: var(--erro); background: var(--erro); }
+  .ta.vivo.bg { border-color: #23414A; background: #0F1618; }
+  .ta code { display: block; margin-top: 4px; font: 11px var(--mono); color: var(--fraco); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ta pre { margin: 5px 0 0; font: 10.5px/1.4 var(--mono); color: #C7D2CB; background: #0B0E0D; border: 1px solid var(--borda); border-radius: 5px;
+            padding: 4px 6px; white-space: pre-wrap; max-height: 64px; overflow: hidden; }
+  .ta .l2 { display: flex; justify-content: space-between; gap: 6px; margin-top: 5px; font: 10.5px var(--mono); color: var(--fraco); }
+  .ta .chip { border-radius: 8px; padding: 0 6px; background: #26302B; }
+  .ta.vivo .chip { background: var(--lima-suave, #24311A); color: var(--lima); }
+  .ta.vivo.bg .chip { background: rgba(127, 211, 232, .1); color: #7FD3E8; }
+  .ta.falhou .chip { background: #2A1517; color: var(--erro); }
+  .passo.piscar { background: rgba(182, 242, 58, .08); transition: background .4s; }
+  /* ── diferenças de código ── */
+  .dif { margin: 4px 0 2px; max-height: 320px; overflow: auto; background: #0B0E0D; border: 1px solid var(--borda); border-radius: 6px;
+         font: 11.5px/1.5 var(--mono); padding: 3px 0; }
+  .dif .dh { padding: 2px 8px; color: var(--texto); background: #151B18; border-bottom: 1px solid var(--borda); font-weight: 600; }
+  .dif .dl { white-space: pre; padding: 0 8px 0 0; color: #8E9A93; min-width: max-content; }
+  .dif .dl i { display: inline-block; width: 18px; text-align: center; font-style: normal; color: #56625C; user-select: none; }
+  .dif .dl.add { background: rgba(70, 160, 70, .16); color: #B5E7A0; } .dif .dl.add i { color: #6FCF5A; }
+  .dif .dl.del { background: rgba(210, 70, 70, .16); color: #F0A9A9; } .dif .dl.del i { color: #E06464; }
+  .dif .dz { color: #56625C; padding: 1px 8px; font-style: italic; background: #0E1311; }
+  .dif .dsep { height: 6px; border-top: 1px solid var(--borda); margin-top: 3px; }
+  .pl { font: 600 11px var(--mono); margin-left: 6px; } .pl .add { color: #6FCF5A; } .pl .del { color: #E06464; }
+  .perm .dif { max-height: 220px; margin: 6px 0 8px; }
 </style>
 </head>
 <body>
@@ -256,8 +353,10 @@
     <span class="marca">Kc</span><span class="nome">KaniCode</span>
     <span class="esp pywebview-drag-region"></span>
     <button class="bt" id="nova" title="Conversa nova nesta pasta (a anterior fica guardada) · /nova">＋</button>
+    <button class="bt" id="revisar" title="Revisar o código mudado: procura erros no que foi alterado (/code-review)">🔍</button>
     <button class="bt" id="habil" title="Habilidades: tudo o que sabemos fazer (guias do KANIVETE, skills, comandos)">🧰</button>
     <button class="bt" id="som" title="Sons suaves das ações">🔈</button>
+    <button class="bt" id="grande" title="Janela grande: antes × depois e saídas inteiros (de novo = volta)">⤢</button>
     <button class="bt" id="fixar" title="Sempre por cima">📌</button>
     <button class="bt" id="recolher" title="Recolher na bolinha (Esc)">—</button>
     <button class="bt sair" id="sair" title="Sair do KaniCode">✕</button>
@@ -280,6 +379,7 @@
 
     <span class="cota" id="c5" title="Sessão de 5 horas" hidden>5h <i><b></b></i><span></span></span>
     <span class="cota" id="csem" title="Semana" hidden>sem <i><b></b></i><span></span></span>
+    <span class="modo-bt" id="modo-bt" title="Planejar: o Claude estuda e mostra o plano; só mexe depois que você aprovar">📝 Planejar</span>
     <span class="quem-bt" id="quem-bt" title="Quem responde as suas mensagens"><i></i><span>Claude</span> ▾</span>
   </div>
   <div class="uso" id="uso" hidden></div>
@@ -298,7 +398,7 @@
   const api = () => window.pywebview && pywebview.api;
   const conversa = $('conversa'), texto = $('texto'), enviar = $('enviar');
   const K = {
-    ocupada: false, bolha: null, bruto: '', ferr: {}, pasta: '', modelo: '', comandos: [], limite: null,
+    ocupada: false, bolha: null, bruto: '', ferr: {}, mud: {}, pasta: '', modelo: '', comandos: [], limite: null,
     // a tarefa em andamento: início, tokens escritos (soma das mensagens) e o tamanho da conversa que o Claude lê
     t0: 0, tokFeitos: 0, tokMsg: 0, contexto: 0, faz: 'Pronto', espera: false,
     // a conversa toda (desde que a janela abriu)
@@ -440,21 +540,147 @@
     if (nome === 'Write') return (e.content || '').slice(0, 3000);
     return JSON.stringify(e, null, 1).slice(0, 3000);
   }
+  // antes × depois linha a linha (LCS depois de tirar o começo e o fim iguais); [tipo, texto], tipo ' ' | '+' | '−'
+  function diffLinhas(velho, novo) {
+    const a = String(velho || '').split('\n'), b = String(novo || '').split('\n');
+    let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    let ja = a.length, jb = b.length; while (ja > i && jb > i && a[ja - 1] === b[jb - 1]) { ja--; jb--; }
+    const A = a.slice(i, ja), B = b.slice(i, jb), out = a.slice(0, i).map(x => [' ', x]);
+    if (A.length * B.length > 250000) { A.forEach(x => out.push(['−', x])); B.forEach(x => out.push(['+', x])); }
+    else {
+      const n = A.length, m = B.length, L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+      for (let x = n - 1; x >= 0; x--) for (let y = m - 1; y >= 0; y--) L[x][y] = A[x] === B[y] ? L[x + 1][y + 1] + 1 : Math.max(L[x + 1][y], L[x][y + 1]);
+      let x = 0, y = 0;
+      while (x < n || y < m) {
+        if (x < n && y < m && A[x] === B[y]) { out.push([' ', A[x]]); x++; y++; }
+        else if (x < n && (y === m || L[x + 1][y] >= L[x][y + 1])) out.push(['−', A[x++]]);   // tirado antes do posto
+        else out.push(['+', B[y++]]);
+      }
+    }
+    a.slice(ja).forEach(x => out.push([' ', x]));
+    return out;
+  }
+  function diffHtml(linhas) {   // contexto: 2 linhas em volta de cada mudança; o resto vira ⋯
+    const perto = linhas.map((l, k) => linhas.slice(Math.max(0, k - 2), k + 3).some(z => z[0] !== ' '));
+    let h = '', pulou = false;
+    linhas.forEach((l, k) => {
+      if (l[0] === ' ' && !perto[k]) { if (!pulou) h += '<span class="dl-p">⋯</span>'; pulou = true; return; }
+      pulou = false;
+      h += `<span class="${l[0] === '+' ? 'dl-a' : l[0] === '−' ? 'dl-r' : 'dl-c'}">${l[0]} ${esc(l[1].slice(0, 400))}</span>`;
+    });
+    return h;
+  }
+  function mudanca(nome, e) {   // Edit/MultiEdit/Write → {arq, a, r, html}; outras ferramentas → null
+    if (nome === 'Edit' || nome === 'MultiEdit') {
+      let a = 0, r = 0;
+      const html = (e.edits || [e]).map(x => {
+        const l = diffLinhas(x.old_string, x.new_string);
+        l.forEach(z => { if (z[0] === '+') a++; else if (z[0] === '−') r++; });
+        return diffHtml(l);
+      }).join('<span class="dl-p">· · ·</span>');
+      return { arq: e.file_path || '', a, r, html };
+    }
+    if (nome === 'Write') {
+      const l = String(e.content || '').split('\n');
+      return { arq: e.file_path || '', a: l.length, r: 0, novo: true,
+               html: l.slice(0, 400).map(x => `<span class="dl-a">+ ${esc(x.slice(0, 400))}</span>`).join('')
+                     + (l.length > 400 ? `<span class="dl-p">⋯ mais ${l.length - 400} linhas</span>` : '') };
+    }
+    return null;
+  }
+  const contaHtml = m => `<span class="qtd">${m.a ? `<i class="a">+${m.a}</i>` : ''}${m.r ? ` <i class="r">−${m.r}</i>` : ''}</span>`;
   function passo(id, nome, entrada) {
     const d = document.createElement('details');
     d.className = 'passo';
-    d.innerHTML = `<summary>${rotulo(nome, entrada)}</summary><pre class="ent">${esc(corpoFerr(nome, entrada || {}))}</pre>`;
+    const m = mudanca(nome, entrada || {});
+    if (m) {
+      d.innerHTML = `<summary>${rotulo(nome, entrada)} ${contaHtml(m)}</summary><pre class="ent diff">${m.html}</pre>`;
+      if (id) K.mud[id] = Object.assign(m, { el: d });
+    } else d.innerHTML = `<summary>${rotulo(nome, entrada)}</summary><pre class="ent">${esc(corpoFerr(nome, entrada || {}))}</pre>`;
+    d._nome = nome; d._ent = entrada || {};
     conversa.appendChild(d);
     if (id) K.ferr[id] = d;
     return d;
   }
+  // prints: imagem que o Claude abriu (Read) ou que um comando gerou (caminho na saída) aparece na conversa
+  const IMG_RE = /[A-Za-z]:[\/][^\s"'<>|*?`]+?\.(?:png|jpe?g|webp)\b/gi;
+  function prints(d, saida) {
+    const cs = [];
+    const f = d._ent.file_path || '';
+    if (d._nome === 'Read' && /\.(png|jpe?g|webp)$/i.test(f)) cs.push(f);
+    else if (/^(Bash|PowerShell)$/.test(d._nome)) (saida || '').match(IMG_RE)?.forEach(c => cs.includes(c) || cs.push(c));
+    let depois = d;
+    cs.slice(0, 4).forEach(async c => {
+      const url = await api().miniatura(c);
+      if (!url) return;
+      const fg = document.createElement('figure');
+      fg.className = 'print'; fg.title = c + ' · clique para abrir';
+      fg.innerHTML = `<img src="${url}"><figcaption>${esc(base(c))}</figcaption>`;
+      fg.onclick = () => api().abrir_imagem(c);
+      depois.after(fg); depois = fg;
+      if (typeof perto !== "function" || perto()) fim();
+    });
+  }
+  function resumoMudancas() {   // no fim da resposta: os arquivos mexidos, somados; clicar abre o passo
+    const por = {};
+    Object.values(K.mud).forEach(m => {
+      const p = por[m.arq] || (por[m.arq] = { a: 0, r: 0, els: [], novo: false });
+      p.a += m.a; p.r += m.r; p.els.push(m.el); p.novo = p.novo || m.novo;
+    });
+    K.mud = {};
+    const arqs = Object.keys(por);
+    if (!arqs.length) return;
+    const d = document.createElement('div');
+    d.className = 'mud';
+    d.innerHTML = `<div class="t">📝 ${arqs.length === 1 ? '1 arquivo mudado' : arqs.length + ' arquivos mudados'}</div>`;
+    arqs.forEach(f => {
+      const p = por[f], l = document.createElement('div');
+      l.className = 'arq'; l.title = f + ' · clique para ver o antes × depois';
+      l.innerHTML = `<span class="n">${esc(base(f))}${p.novo ? ' <small>(escrito)</small>' : ''}</span>${contaHtml(p)}`;
+      l.onclick = () => { p.els.forEach(el => el.open = true); p.els[0].scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+      d.appendChild(l);
+    });
+    conversa.appendChild(d);
+  }
   function passoFim(id, ok, saida) {
     const d = K.ferr[id];
     if (!d) return;
+    if (!ok) delete K.mud[id];   // edição que falhou não mudou nada
     d.classList.add(ok ? 'ok' : 'falhou');
     if (saida && saida.trim()) { const p = document.createElement('pre'); p.textContent = saida.slice(0, 3000); d.appendChild(p); }
+    if (ok) prints(d, saida);
+  }
+  // modo Planejar (rodapé): liga/desliga; aprovar um plano volta ao normal sozinho
+  function modoMostrar(m) { K.modo = m; $('modo-bt').classList.toggle('on', m === 'plan'); }
+  $('modo-bt').addEventListener('click', async () => {
+    const m = await api().modo(K.modo === 'plan' ? 'auto' : 'plan');
+    modoMostrar(m);
+    bolha('sis', m === 'plan' ? '📝 Modo Planejar: eu estudo e mostro o plano; só mexo depois que você aprovar.'
+                              : 'Modo normal: trabalho direto.');
+  });
+  function cartaoPlano(ev, respondido) {
+    const d = document.createElement('div');
+    d.className = 'perm plano';
+    d.dataset.id = ev.id;
+    const e = ev.entrada || {};
+    d.innerHTML = `<div class="t">📝 Plano pronto. Posso executar?</div><div class="md">${md(e.plan || '')}</div>
+      <div class="bts"><button class="sim">Aprovar e executar</button><button class="nao">Ajustar</button></div><div class="res"></div>`;
+    const responder = async ok => {
+      if (d.classList.contains('respondida')) return;
+      marcarCartao(d, ok);
+      d.querySelector('.res').textContent = ok ? '✓ você aprovou' : '✎ você quer ajustar';
+      K.espera = false;
+      if (ok) { som('permitido'); await api().responder(ev.id, true, e); modoMostrar(await api().modo('auto')); atividade('Executando o plano'); }
+      else { await api().responder(ev.id, false, e); atividade('Escreva o que mudar no plano'); texto.focus(); }
+    };
+    d.querySelector('.sim').onclick = () => responder(true);
+    d.querySelector('.nao').onclick = () => responder(false);
+    if (respondido != null) { marcarCartao(d, respondido); d.querySelector('.res').textContent = respondido ? '✓ você aprovou' : '✎ ajustado'; }
+    conversa.appendChild(d);
+    return d;
   }
   function cartao(ev, respondido) {
+    if (ev.ferr === 'ExitPlanMode') return cartaoPlano(ev, respondido);
     const d = document.createElement('div');
     d.className = 'perm';
     d.dataset.id = ev.id;
@@ -505,8 +731,6 @@
     }
     K.ocupada = on;
     if (!on) K.espera = false;
-    enviar.textContent = on ? 'Parar' : 'Enviar';
-    enviar.classList.toggle('parar', on);
     ajustar();
     status();
   }
@@ -683,32 +907,39 @@
     });
   }
   // painel estreito à esquerda: um círculo por conta (iniciais), anel = quanto da cota de 5 h já foi
-  const iniciais = c => String(c.apelido || c.email || '?').replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase() || '?';
+  // nome visível: a vaga "Principal" (login do PC) aparece pelo e-mail da conta que está nela
+  const nomeCt = c => c.id === 'principal' && c.apelido === 'Principal' && c.email ? c.email.replace(/@.*/, '') : c.apelido;
+  // sem repetidas (o servidor marca 'oculta') e a em uso primeiro
+  const ctVisiveis = d => d.lista.filter(c => !c.oculta).sort((a, b) => (b.id === d.ativa) - (a.id === d.ativa));
+  const iniciais = c => String(nomeCt(c) || c.email || '?').replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase() || '?';
   function contaBotao() {
     const d = CT.dados; if (!d) return;
-    $('lado-contas').innerHTML = d.lista.map(c => {
+    $('lado-contas').innerHTML = ctVisiveis(d).map(c => {
       const ct = c.cotas || {}, uso = ct.h5 != null ? ct.h5 : 0;
       const cor = uso >= .85 ? 'var(--erro)' : uso >= .65 ? 'var(--aviso)' : 'var(--lima)';
-      return `<div class="cnt${c.id === d.ativa ? ' ativa' : ''}${c.logado === false ? ' sai' : ''}" data-id="${c.id}" style="--uso:${uso};--cor-uso:${cor}">
+      return `<div class="cnt${c.id === d.ativa ? ' ativa' : ''}${c.logado === false ? ' sai' : ''}${c.igual ? ' igual' : ''}" data-id="${c.id}" style="--uso:${uso};--cor-uso:${cor}">
         <span>${esc(iniciais(c))}</span><small>${ct.h5 != null ? Math.round(uso * 100) + '%' : '·'}</small></div>`;
     }).join('');
   }
+  const lidoHa = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`; };
   function contaDica(el) {
     const c = CT.dados.lista.find(x => x.id === el.dataset.id); if (!c) return;
     const ct = c.cotas || {};
     const pct = v => v != null ? Math.round(v * 100) + '%' : '—';
     const d = document.createElement('div');
     d.className = 'dica-ct'; d.id = 'dica-ct';
-    d.innerHTML = `<b>${esc(c.apelido)}</b>${c.id === CT.dados.ativa ? ' <span style="color:var(--lima)">· em uso</span>' : ''}
+    d.innerHTML = `<b>${esc(nomeCt(c))}</b>${c.id === CT.dados.ativa ? ' <span style="color:var(--lima)">· em uso</span>' : ''}
       <div>${esc(c.email || (c.logado === false ? 'ainda não entrou' : ''))}${c.plano ? ' · ' + esc(c.plano.toUpperCase()) : ''}</div>
       <div>5h: ${pct(ct.h5)}${ct.h5_zera ? ' · zera em ' + esc(falta(ct.h5_zera)) : ''}</div>
       <div>semana: ${pct(ct.sem)}${ct.sem_zera ? ' · zera em ' + esc(falta(ct.sem_zera)) : ''}</div>
+      ${ct.lido ? `<div style="color:var(--fraco)">lido ${esc(lidoHa(ct.lido))}</div>` : ''}
+      ${c.igual ? `<div style="color:var(--aviso)">⚠ mesma conta que "${esc(c.igual.join('", "'))}": pode remover uma (⋯)</div>` : ''}
       ${c.id === CT.dados.ativa ? '' : '<div style="color:var(--texto);margin-top:3px">clique para usar esta conta</div>'}`;
     document.body.appendChild(d);
     const r = el.getBoundingClientRect();
     d.style.top = Math.min(r.top - 4, innerHeight - d.offsetHeight - 8) + 'px';
   }
-  $('lado-contas').addEventListener('mouseover', e => { const el = e.target.closest('.cnt'); if (el && !$('dica-ct')) contaDica(el); });
+  $('lado-contas').addEventListener('mouseover', e => { const el = e.target.closest('.cnt'); if (el && !$('dica-ct') && !$('lado').classList.contains('aberto')) contaDica(el); });
   $('lado-contas').addEventListener('mouseout', e => { if (!e.relatedTarget || !e.relatedTarget.closest('.cnt')) $('dica-ct')?.remove(); });
   $('lado-contas').addEventListener('click', async e => {
     const el = e.target.closest('.cnt'); if (!el) return;
@@ -719,7 +950,7 @@
     if (c.logado === false) { await api().conta_entrar_de_novo(id); contasEsperarLogin(id); return; }
     try { CT.dados = await api().conta_usar(id); } catch (x) { bolha('erro', String(x.message || x)); return; }
     contaBotao(); cotasDaConta();
-    bolha('sis', `Agora usando a conta "${c.apelido}"${c.email ? ' (' + c.email + ')' : ''}. A conversa continua a mesma.`);
+    bolha('sis', `Agora usando a conta "${nomeCt(c)}"${c.email ? ' (' + c.email + ')' : ''}. A conversa continua a mesma.`);
     som('permitido');
   });
   async function contaNova() {
@@ -731,7 +962,7 @@
     contasEsperarLogin(r.id);
   }
   $('lado-mais').addEventListener('click', contaNova);
-  $('lado-aj').addEventListener('click', contasAbrir);
+  $('lado-aj').addEventListener('click', () => contasAbrir());
   // as cotas das contas paradas andam sozinhas (zeram com o tempo): lê de novo a cada 10 min, sem gastar tokens
   setInterval(async () => { if (CT.dados) { CT.dados = await api().conta_atualizar(); contaBotao(); } }, 600000);
   function contasDesenhar() {
@@ -740,12 +971,13 @@
       `<span>${nome}</span><i><b style="width:${Math.round(uso * 100)}%;background:${uso >= .85 ? 'var(--erro)' : uso >= .65 ? 'var(--aviso)' : 'var(--lima)'}"></b></i><span>${Math.round(uso * 100)}% · zera em ${esc(falta(zera))}</span>`;
     $('contas').innerHTML = `<h4>CONTAS DO CLAUDE</h4>
       <p class="dica">Ficam salvas e logadas. A conversa continua a mesma ao trocar. A troca é sempre sua (um clique).</p>
-      ${d.lista.map(c => {
+      ${ctVisiveis(d).map(c => {
         const ct = c.cotas || {}, at = c.id === d.ativa;
         return `<div class="ct${at ? ' ativa' : ''}" data-id="${c.id}">
-          <div class="l1"><span class="ap" data-ren title="Clique para dar outro nome">${esc(c.apelido)}</span>${at ? '<span class="tag">em uso</span>' : ''}
+          <div class="l1"><span class="ap" data-ren title="Clique para dar outro nome">${esc(nomeCt(c))}</span>${at ? '<span class="tag">em uso</span>' : ''}
             <span style="flex:1"></span><small style="color:var(--fraco)">${esc((c.plano || '').toUpperCase())}</small></div>
-          <div class="em">${c.email ? esc(c.email) : c.logado === false ? '⚠ ainda não entrou: clique em Entrar' : 'conferindo…'}</div>
+          ${c.igual ? `<div class="em" style="color:var(--aviso)">⚠ mesma conta que "${esc(c.igual.join('", "'))}": remova uma delas</div>` : ''}
+          <div class="em">${c.email ? esc(c.email) + (c.id === 'principal' ? ' · login deste PC' : '') : c.logado === false ? '⚠ ainda não entrou: clique em Entrar' : 'conferindo…'}</div>
           <div class="q">${q('5h', ct.h5, ct.h5_zera)}${q('semana', ct.sem, ct.sem_zera)}</div>
           <div class="acoes">
             ${at ? '' : `<button class="usar" data-acao="usar">Usar esta</button>`}
@@ -774,7 +1006,7 @@
     const card = e.target.closest('.ct'); if (!card) return;
     const id = card.dataset.id;
     if (e.target.closest('[data-ren]')) {
-      const atual = (CT.dados.lista.find(x => x.id === id) || {}).apelido;
+      const atual = nomeCt(CT.dados.lista.find(x => x.id === id) || {});
       const nome = await perguntar('Novo nome para a conta:', atual, 'Salvar');
       if (nome) { CT.dados = await api().conta_renomear(id, nome); contasDesenhar(); contaBotao(); }
       return;
@@ -784,7 +1016,7 @@
       try { CT.dados = await api().conta_usar(id); } catch (x) { bolha('erro', String(x.message || x)); return; }
       contasDesenhar(); contaBotao();
       const c = CT.dados.lista.find(x => x.id === id);
-      cotas(c.cotas); bolha('sis', `Agora usando a conta "${c.apelido}"${c.email ? ' (' + c.email + ')' : ''}. A conversa continua a mesma.`);
+      cotas(c.cotas); bolha('sis', `Agora usando a conta "${nomeCt(c)}"${c.email ? ' (' + c.email + ')' : ''}. A conversa continua a mesma.`);
       som('permitido');
     } else if (acao === 'entrar') { await api().conta_entrar_de_novo(id); contasEsperarLogin(id); }
     else if (acao === 'atualizar') { e.target.textContent = '…'; CT.dados = await api().conta_atualizar(id); contasDesenhar(); }
@@ -971,8 +1203,9 @@
         break;
       case 'fim': {
         const longa = (Date.now() - K.t0) > 4000;   // resposta rápida não toca nada (só as tarefas que você esperou)
-        K.bolha = null; ocupada(false);
+        K.bolha = null; ocupada(false); resumoMudancas();
         if (ev.erro) { bolha('erro', 'A resposta parou no meio.'); som('erro'); } else if (longa) som('pronto');
+        avisoLonga();
         break;
       }
       case 'saiu':
@@ -984,15 +1217,47 @@
     if (colar) fim();
   };
 
+  // economia: cada passo relê a conversa inteira; o que mais gasta é seguir na mesma conversa ao trocar de assunto
+  // (o /usage do Pailer: 89%). Passou de 120 mil (o básico do projeto é ~58 mil), sugere uma nova — uma vez a cada 60 mil
+  function avisoLonga() {
+    if (!K.contexto || K.contexto < 120000 || K.contexto < (K.avisouEm || 0) + 60000) return;
+    K.avisouEm = K.contexto;
+    const d = document.createElement('div');
+    d.className = 'msg sis longa';
+    d.innerHTML = `Conversa longa: cada passo relê ~${mil(K.contexto)} tokens. Se o próximo assunto for outro, uma conversa
+      nova gasta bem menos (esta fica guardada). <button>＋ Nova conversa</button>`;
+    d.querySelector('button').onclick = () => $('nova').click();
+    conversa.appendChild(d); fim();
+  }
   function ajustar() {
     texto.style.height = 'auto';
     texto.style.height = Math.min(texto.scrollHeight, 160) + 'px';
-    enviar.disabled = !K.ocupada && !texto.value.trim() && !(typeof ANX !== 'undefined' && ANX.length);
+    const tem = !!texto.value.trim() || (typeof ANX !== 'undefined' && ANX.length > 0);
+    enviar.disabled = !K.ocupada && !tem;
+    // no meio da tarefa: com texto escrito o botão manda agora (o Claude lê no próximo passo); vazio, para
+    const agora = K.ocupada && tem && K.quem === 'claude';
+    enviar.textContent = !K.ocupada ? 'Enviar' : agora ? 'Mandar agora' : 'Parar';
+    enviar.classList.toggle('parar', K.ocupada && !agora);
+    enviar.title = agora ? 'O Claude lê no próximo passo e muda o rumo, sem parar o que já fez (apague o texto para ver o Parar)' : '';
   }
   async function mandar() {
-    if (K.ocupada) { api().parar(); atividade('Parando…'); return; }
     const t = texto.value.trim();
+    if (K.ocupada && !((t || ANX.length) && K.quem === 'claude')) { api().parar(); atividade('Parando…'); return; }
     if (!t && !ANX.length) return;
+    if (K.ocupada) {   // corrigir o rumo: entra na mesma tarefa, sem parar
+      $('cmds').hidden = true;
+      const imgs = ANX.splice(0);
+      anexosDesenhar();
+      const b = bolha('eu', t);
+      const m = minis(imgs.map(i => i.mini)); if (m) b.prepend(m);
+      b.title = 'mandada no meio da tarefa';
+      b.classList.add('meio-tarefa');
+      fim(); som('enviar');
+      texto.value = ''; K.bolha = null; ajustar();
+      atividade('Recado entregue: o Claude lê no próximo passo');
+      await api().enviar(t, imgs);
+      return;
+    }
     $('cmds').hidden = true;
     const imgs = ANX.splice(0);
     anexosDesenhar();
@@ -1019,13 +1284,14 @@
     K.pasta = i.pasta; K.modelo = i.modelo || K.modelo; K.comandos = i.comandos || K.comandos;
     K.cotaCodex = i.cota_codex || K.cotaCodex;
     api().contas_listar().then(d => { CT.dados = d; contaBotao(); })
-      .then(() => api().conta_atualizar(CT.dados.ativa)).then(d => { CT.dados = d; contaBotao(); cotasDaConta(); });
+      .then(() => api().conta_atualizar()).then(d => { CT.dados = d; contaBotao(); cotasDaConta(); });
     quemDefinir(i.quem || 'claude', false);
+    modoMostrar(i.modo || 'auto');
     $('pasta').textContent = '📁 ' + base(i.pasta);
     $('pasta').title = i.pasta + ' · clique para trocar a pasta do projeto';
     cotas(i.limite);
     conversa.innerHTML = '';
-    K.ferr = {};
+    K.ferr = {}; K.mud = {}; K.avisouEm = 0; K.contexto = 0;
     const h = await api().historico();
     if (!h.length) bolha('sis', 'Conversa nova em ' + base(i.pasta) + '.\nEdito e rodo comandos comuns aqui sem perguntar; o que for arriscado (apagar fora da pasta, commit, push, enviar para a internet, fechar programa) eu peço antes.');
     const respostas = {};
@@ -1037,6 +1303,7 @@
       else if (ev.t === 'kc') bolha('kc', md(ev.texto));
       else if (ev.t === 'ferr') passo(ev.id, ev.nome, ev.entrada);
       else if (ev.t === 'ferr_fim') passoFim(ev.id, ev.ok, ev.saida);
+      else if (ev.t === 'fim') resumoMudancas();
       else if (ev.t === 'permissao') cartao(ev, ev.id in respostas ? respostas[ev.id] : false);
     }
     ocupada(!!i.ocupada);
@@ -1078,6 +1345,11 @@
   conversa.addEventListener('click', e => { const a = e.target.closest('a'); if (a) e.preventDefault(); });
   $('recolher').addEventListener('click', () => api().esconder());
   $('sair').addEventListener('click', () => api().sair());
+  $('revisar').addEventListener('click', () => {
+    if (K.ocupada) return;
+    quemDefinir('claude', false);
+    texto.value = '/code-review'; mandar();
+  });
   $('nova').addEventListener('click', async () => { if (K.ocupada) return; await api().nova(); carregar(); });
   $('pasta').addEventListener('click', trocarPasta);
   $('som').addEventListener('click', () => {
@@ -1091,8 +1363,51 @@
   $('habil').addEventListener('click', habAbrir);
   $('c5').addEventListener('click', alternarUso);
   $('csem').addEventListener('click', alternarUso);
+  $('grande').addEventListener('click', async () => {
+    const on = !document.documentElement.classList.contains('grande');
+    const r = await api().expandir(on);
+    document.documentElement.classList.toggle('grande', !!r);
+    $('grande').classList.toggle('on', !!r); $('grande').textContent = r ? '⤡' : '⤢';
+  });
   $('fixar').addEventListener('click', async () => { const on = !$('fixar').classList.contains('on'); $('fixar').classList.toggle('on', await api().fixar(on)); });
+  // ── esticar a janela pelas bordas: o Python move/redimensiona a janela nativa (pixels físicos) ──
+  ['n', 's', 'l', 'o', 'no', 'ne', 'so', 'se'].forEach(lado => {
+    const g = document.createElement('div');
+    g.className = 'tam ' + lado;
+    g.title = lado === 'se' ? 'Arraste para mudar o tamanho (duplo clique: tamanho padrão)' : '';
+    document.body.appendChild(g);
+    let ini = null, alvo = null, indo = false;
+    const mandar = async () => {
+      if (indo || !alvo) return;
+      indo = true; const a = alvo; alvo = null;
+      try { await api().tam_mudar(...a); } catch (e) { /* ok */ }
+      indo = false; if (alvo) mandar();
+    };
+    g.addEventListener('pointerdown', async e => {
+      if (e.button !== 0) return;
+      e.preventDefault(); g.setPointerCapture(e.pointerId);
+      ini = { sx: e.screenX, sy: e.screenY, r: await api().tam_inicio(), k: window.devicePixelRatio || 1 };
+    });
+    g.addEventListener('pointermove', e => {
+      if (!ini) return;
+      const dx = (e.screenX - ini.sx) * ini.k, dy = (e.screenY - ini.sy) * ini.k;
+      let [x, y, w, h] = ini.r;
+      if (lado.includes('l') || lado === 'ne' || lado === 'se') w += dx;
+      if (lado === 'o' || lado === 'no' || lado === 'so') { x += dx; w -= dx; }
+      if (lado.includes('s')) h += dy;
+      if (lado.includes('n')) { y += dy; h -= dy; }
+      const mw = 340 * ini.k, mh = 420 * ini.k;   // não deixa a borda esquerda/de cima empurrar a janela no mínimo
+      if (w < mw) { if (x !== ini.r[0]) x -= mw - w; w = mw; }
+      if (h < mh) { if (y !== ini.r[1]) y -= mh - h; h = mh; }
+      alvo = [Math.round(x), Math.round(y), Math.round(w), Math.round(h)]; mandar();
+    });
+    const soltar = () => { if (!ini) return; ini = null; setTimeout(() => api().tam_fim(window.kcExtra ? kcExtra() : 0), 120); };
+    g.addEventListener('pointerup', soltar);
+    g.addEventListener('lostpointercapture', soltar);
+    if (lado === 'se') g.addEventListener('dblclick', () => api().tam_padrao());
+  });
   window.addEventListener('pywebviewready', () => { carregar(); texto.focus(); });
 </script>
+<script src="paineis.js"></script>
 </body>
 </html>

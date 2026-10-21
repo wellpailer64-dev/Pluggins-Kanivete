@@ -18,8 +18,8 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
 - `pandalab/vinculos.json` e `pandalab/mapa_clientes.json`: dados de clientes e das pastas deste PC.
 
 ## KaniCode (`kanicode/`)
-- `kanicode.py`: o app à parte (pywebview). Instância única pela porta 127.0.0.1:47613 (só aceita `ping`, `mostrar`,
-  `sair`). Estado em `D:\Kanivete\KaniCode\estado.json` (posição da bolinha em pixels reais, alfinete).
+- `kanicode.py`: o app à parte (pywebview). Instância única pela porta 127.0.0.1:47613 (aceita `ping`, `mostrar`,
+  `sair`, `atualizar`/`recarregar`/`reiniciar` e `evento <json>`). Estado em `D:\Kanivete\KaniCode\estado.json` (posição da bolinha em pixels reais, alfinete).
 - `bolinha.py`: a bolinha NATIVA (WinForms + janela em camadas com alfa por pixel, GDI+). Não usar WebView para ela: o
   WebView2 desenha por DirectComposition e ignora o recorte da janela (sobrava um quadrado escuro) e a transparência
   do pywebview não desenha nada. Criar e mexer nela só na thread da interface (`App._na_ui`).
@@ -51,3 +51,23 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
 - Etapas: 1 esqueleto · 2 conversa · 3 permissões, status, cotas, comandos, sons · 4 equipe Codex/Kani, habilidades (feitas) (`claude -p --input-format stream-json --output-format
   stream-json --include-partial-messages --resume`) · 5 modo Equipe completo
   (contratos com as lições guardadas, revisão automática).
+- Melhorias "melhor que o cmd" (2026-10-20; medições em `D:\kanivete_testes\kc\exp_*.py`):
+  - Custo: o prompt extra (`sessao.PROMPT_KANICODE`) ficou só no essencial; o como-usar dos ajudantes mora na descrição da
+    ferramenta `codex` (ferramentas MCP entram adiadas). Medido por passo: cmd 57.612 × KaniCode 57.932 tokens (+0,5%;
+    antes +1,5%). Aviso "Conversa longa" (> 120 mil de contexto, de novo a cada +60 mil) com botão Nova conversa — o
+    `/usage` aponta "não limpar ao trocar de assunto" como o maior gasto.
+  - "Mandar agora": com texto escrito no meio da tarefa o botão manda o recado (`user` no stream-json entra na MESMA
+    volta, no próximo passo); campo vazio = Parar (`exp_meio.py`).
+  - 📝 Planejar (rodapé): `control_request set_permission_mode` plan/auto (e `--permission-mode` ao abrir); o
+    `ExitPlanMode` chega como `can_use_tool` e vira cartão com o plano em markdown (Aprovar e executar / Ajustar);
+    aprovar volta a auto (`exp_plano.py`). 🔍 no topo = `/code-review`.
+  - Prints na conversa: `Read` de .png/.jpg/.webp ou caminho de imagem na saída do Bash/PowerShell vira miniatura abaixo
+    do passo (`App.miniatura`, PIL, ≤ 900 px; clique = `App.abrir_imagem`).
+  - Diff colorido por linha e resumo dos arquivos mudados; ⤢ janela grande; painéis laterais para fora (`ui/paineis.js`:
+    Atividades à direita, Contas à esquerda).
+  - Contas: a mesma conta (mesmo e-mail) aparece uma vez só (`oculta`: fica a em uso, senão uma salva; nada é apagado),
+    a em uso primeiro, e a vaga "Principal" (login do PC, muda por fora com `/login`) mostra o e-mail. Contas salvas têm
+    login próprio em `D:\Kanivete\KaniCode\contas\<id>` e não somem quando o login do PC muda.
+  - Aplicar ajuste sem fechar: `py -3.13 recarregar.py [--recarregar|--reiniciar]` manda `atualizar` pelo canal de
+    controle; só ui/css/js mudou = recarrega a página; algum .py = abre um KaniCode novo (`--reaberto` espera a porta,
+    `--abrir` volta com a janela aberta, `--resume` mantém a conversa) e este sai. No meio de uma resposta, espera o `fim`.
