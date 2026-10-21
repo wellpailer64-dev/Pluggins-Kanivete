@@ -398,6 +398,12 @@ class App:
     # ── falar direto com um ajudante ("Quem responde": Codex ou Kani) ──
     def quem(self, nome):
         _gravar_estado(quem=nome if nome in ("claude", "codex", "kani") else "claude")
+        self.bola_quem(nome)
+        return True
+
+    def bola_quem(self, nome):
+        """selo na bolinha: logo da Kani (modo Kani) ou do Claude"""
+        self._na_ui(lambda: self._bola and self._bola.definir(quem="kani" if nome == "kani" else "claude"))
         return True
 
     def ajudante(self, quem, texto):
@@ -405,14 +411,49 @@ class App:
 
         def rodar():
             self._bola_estado("trabalhando")
+            por_voz = self._por_voz
             try:
                 if quem == "codex":
                     r = ajudantes.codex(texto, self._pasta(), editar=True, ao_evento=self._evento)
-                else:
-                    r = ajudantes.kani(texto, ao_evento=self._evento)
+                else:   # modo Kani: em etapas (kani_modo.py), com a conversa recente como contexto
+                    import kani_modo
+                    self._kani_parar = threading.Event()
+                    passos = []
+
+                    def ev(e):   # guarda os passos para o registro (D:/Kanivete/KaniCode/kani_modo.jsonl)
+                        if e.get("t") in ("ferr", "ferr_fim"):
+                            passos.append({k: e.get(k) for k in ("t", "nome", "entrada", "ok", "saida") if e.get(k) is not None})
+                        self._evento(e)
+                    r = kani_modo.rodar(texto, self._pasta(), ev, getattr(self, "_kani_hist", []), por_voz, self._kani_parar)
+                    try:   # registro de cada pedido do modo Kani: o Claude lê depois para achar limitações
+                        with open(os.path.join(DADOS, "kani_modo.jsonl"), "a", encoding="utf-8") as f:
+                            f.write(json.dumps({"quando": time.strftime("%Y-%m-%d %H:%M:%S"), "pedido": texto, "voz": por_voz,
+                                                "passos": passos, "resposta": r.get("texto"), "claude": r.get("claude"),
+                                                "ok": r.get("ok"), "ms": r.get("ms"), "tokens": r.get("tokens")}, ensure_ascii=False) + chr(10))
+                    except Exception:
+                        pass
+                    if r.get("claude"):   # pedido difícil: vai para o Claude, com a mesma pergunta
+                        self._kani_hist = []
+                        self._para_janela({"t": "ajudante_resposta", "quem": "kani", "ok": True, "tokens": r["tokens"],
+                                           "texto": "Isso é com o Claude, passei para ele." + (f" ({r['texto']})" if r["texto"] else "")})
+                        self._bola_atividade("")
+                        self._para_janela({"t": "local", "acao": "quem", "quem": "claude"})
+                        self.enviar(texto)
+                        return
+                    self._kani_hist = (getattr(self, "_kani_hist", []) + [{"role": "user", "content": texto},
+                                                                          {"role": "assistant", "content": r["texto"]}])[-20:]
+                    self._bola_atividade("")
+                    if por_voz:   # pedido por voz: a resposta volta falada
+                        f = self._fala_obj()
+                        f.novo()
+                        f.pedaco(r["texto"])
+                        f.terminar()
+                        self._por_voz = False
                 self._para_janela({"t": "ajudante_resposta", "quem": quem, "texto": r["texto"], "ok": r["ok"], "tokens": r["tokens"]})
+                self._na_ui(lambda: self._bola and self._bola.definir(humor="feliz" if r["ok"] else "erro", segundos=3))
             except Exception as e:
                 self._para_janela({"t": "ajudante_resposta", "quem": quem, "texto": str(e), "ok": False, "tokens": 0})
+            self._bola_atividade("")
             self._bola_estado("" if self._aberta else "pergunta")
         threading.Thread(target=rodar, daemon=True).start()
         return True
@@ -517,6 +558,8 @@ class App:
         return self._comandos
 
     def parar(self):
+        if getattr(self, "_kani_parar", None):
+            self._kani_parar.set()
         if self._sessao:
             self._sessao.parar()
         return True
@@ -617,6 +660,12 @@ class App:
             self._resposta += ev.get("d") or ""
         elif t in ("fim", "saiu"):
             self._respondendo, self._resposta = False, ""
+        if t == "ferr":
+            self._bola_atividade(self._ATIV.get(ev.get("nome"), ""))
+        elif t in ("pensando", "kani_pensando"):
+            self._bola_atividade("pensando")
+        elif t in ("texto_novo", "fim", "saiu"):
+            self._bola_atividade("")
         if self._por_voz and self._fala:
             if t == "texto_novo":
                 self._fala.novo()
@@ -686,6 +735,23 @@ class App:
     def _bola_estado(self, estado):
         self._na_ui(lambda: self._bola and self._bola.definir(estado=estado))
 
+    # o que está fazendo agora → rosto da bolinha (lendo, digitando, procurando, pensando)
+    _ATIV = {"Read": "lendo", "Grep": "procurando", "Glob": "procurando", "WebSearch": "procurando", "WebFetch": "lendo",
+             "ToolSearch": "procurando", "Edit": "digitando", "MultiEdit": "digitando", "Write": "digitando",
+             "NotebookEdit": "digitando", "Bash": "digitando", "PowerShell": "digitando",
+             "kani_ler_arquivo": "lendo", "kani_listar_pasta": "procurando", "kani_procurar_no_codigo": "procurando",
+             "kani_buscar_no_mapa": "procurando", "kani_demandas_panda": "lendo", "kani_git_resumo": "lendo",
+             "kani_espaco_disco": "procurando", "kani_abrir": "digitando", "kani_ver_kanivete": "procurando",
+             "kani_abrir_ferramenta": "digitando", "kani_pedir_ao_kanivete": "digitando",
+             "kani_abrir_no_kanibrowser": "digitando", "kani_fechar_aba": "digitando", "kani_salvar_texto": "digitando",
+             "kani_salvar_conversa": "digitando", "kani_lembrar": "digitando", "kani_responder_janela": "digitando",
+             "kani_ver_kanibrowser": "procurando", "kani_fechar_aba_kanibrowser": "digitando", "kani_ler_site": "lendo",
+             "kani_clicar_no_site": "digitando",
+             "kani_navegar_kani": "procurando", "kani_ler_kani": "lendo", "kani_clicar_kani": "digitando"}
+
+    def _bola_atividade(self, a):
+        self._na_ui(lambda: self._bola and self._bola.definir(atividade=a))
+
     def _na_ui(self, fn):
         """roda fn na thread da interface do Windows (a bolinha só pode ser mexida lá)"""
         try:
@@ -739,6 +805,7 @@ class App:
             if not dentro:
                 px, py_ = ax + aw - b.total - 24, ay + ah - b.total - 24
             b.form.Location = Point(int(px), int(py_))
+            b.quem = "kani" if e.get("quem") == "kani" else "claude"
             b.desenhar()
             self._bola = b
         for _ in range(100):   # a janela da conversa (escondida) precisa existir para dar a thread da interface

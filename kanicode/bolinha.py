@@ -56,6 +56,9 @@ class Bolinha:
         self.humor, self._humor_ate = "", 0.0   # "feliz"/"erro" por alguns segundos (fim da tarefa)
         self._mexeu = time.time()                # parada há muito tempo = dorme
         self._fase = 0.0
+        self.quem = "claude"      # selo no canto: "claude" | "kani" (modo Kani)
+        self.atividade = ""       # "" | "lendo" | "digitando" | "procurando" | "pensando" (rosto enquanto trabalha)
+        self._selos = {}
         f = self.form = Form()
         f.FormBorderStyle = getattr(FormBorderStyle, "None")   # "None" é palavra reservada no Python
         f.ShowInTaskbar = False
@@ -114,7 +117,11 @@ class Bolinha:
             self._fase = (self._fase + 0.12) % 1.0
         self.desenhar()
 
-    def definir(self, estado=None, aberta=None, voz=None, humor=None, segundos=2.5):
+    def definir(self, estado=None, aberta=None, voz=None, humor=None, segundos=2.5, quem=None, atividade=None):
+        if quem is not None:
+            self.quem = quem
+        if atividade is not None:
+            self.atividade = atividade
         if estado is not None:
             self.estado = estado
         if voz is not None:
@@ -142,7 +149,7 @@ class Bolinha:
         if self.estado == "pergunta":
             return "pergunta"
         if self.estado == "trabalhando":
-            return "trabalhando"
+            return self.atividade or "trabalhando"
         if not self.aberta and time.time() - self._mexeu > 600:
             return "dormindo"
         return "neutro"
@@ -196,9 +203,47 @@ class Bolinha:
             r = L * 0.22
             g.FillEllipse(SolidBrush(_cor(FUNDO)), float(m + L - r * 1.05), float(m - r * 0.05), float(r + 2), float(r + 2))
             g.FillEllipse(SolidBrush(_cor(ALERTA)), float(m + L - r * 0.95), float(m + r * 0.05), float(r - 2), float(r - 2))
+        self._selo(g, T, L, m)
         g.Dispose()
         self._entregar(bmp)
         bmp.Dispose()
+
+    def _selo_kani(self, lado):
+        """logo da Kani (ui/kani.webp) redondo, guardado por tamanho"""
+        if lado not in self._selos:
+            import io, os
+            from PIL import Image, ImageDraw
+            from System.IO import MemoryStream
+            im = Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "kani.webp")).convert("RGBA")
+            w, h = im.size
+            q = min(w, h)
+            im = im.crop(((w - q) // 2, (h - q) // 2, (w + q) // 2, (h + q) // 2)).resize((lado * 4, lado * 4), Image.LANCZOS)
+            masc = Image.new("L", im.size, 0)
+            ImageDraw.Draw(masc).ellipse((0, 0, im.size[0] - 1, im.size[1] - 1), fill=255)
+            im.putalpha(masc)
+            im = im.resize((lado, lado), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "PNG")
+            self._selos[lado] = Bitmap(Bitmap(MemoryStream(buf.getvalue())))   # cópia: o GDI+ prende o stream do original
+        return self._selos[lado]
+
+    def _selo(self, g, T, L, m):
+        """quem responde, no canto de baixo à direita: logo da Kani ou o asterisco laranja do Claude"""
+        r = int(L * 0.36)
+        x, y = float(m + L - r * 0.92), float(m + L - r * 0.92)
+        g.FillEllipse(SolidBrush(_cor(FUNDO)), x - 2, y - 2, float(r + 4), float(r + 4))
+        if self.quem == "kani":
+            g.DrawImage(self._selo_kani(r), x, y, float(r), float(r))
+            return
+        g.FillEllipse(SolidBrush(_cor((0xF5, 0xF0, 0xE6))), x, y, float(r), float(r))
+        cx, cy = x + r / 2, y + r / 2
+        pen = Pen(_cor((0xD9, 0x77, 0x57)), max(1.2, r * 0.075))
+        pen.StartCap = pen.EndCap = LineCap.Round
+        for k in range(12):   # asterisco de raios desiguais, como o logo do Claude
+            a = k * math.pi / 6 + 0.2
+            c = r * (0.40 if k % 2 else 0.31)
+            g.DrawLine(pen, float(cx + math.cos(a) * r * 0.07), float(cy + math.sin(a) * r * 0.07),
+                       float(cx + math.cos(a) * c), float(cy + math.sin(a) * c))
 
     def _entregar(self, bmp):
         tela = u32.GetDC(None)

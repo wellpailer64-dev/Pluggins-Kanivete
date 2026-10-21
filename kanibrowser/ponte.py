@@ -8,7 +8,7 @@ import visao
 API_KANIVETE = ("estado", "abrir", "fechar_navegador", "abas", "ir", "nova", "fechar", "frente", "foto", "texto",
                 "imagens", "destinos", "baixar_imagens", "abrir_pasta", "visitar", "instagram", "baixar_link", "pesquisar", "ler_pagina",
                 "ajustar", "entrada", "escolher", "dialogo", "arquivo", "navegar", "ponto", "kani_ir", "abrir_downloads",
-                "favoritos", "favorito", "favorito_remover", "favorito_renomear", "favoritos_ordem", "chatgpt", "diagnostico_chatgpt", "js_kani", "kani_parar", "vista")
+                "favoritos", "favorito", "favorito_remover", "favorito_renomear", "favoritos_ordem", "chatgpt", "diagnostico_chatgpt", "js_kani", "kani_parar", "vista", "clicar_texto")
 
 
 def vista(aba=None):
@@ -40,6 +40,18 @@ def kani_parar():
     """interrompe a espera do trabalho da Kani (ex.: resposta do ChatGPT)"""
     kb._k["cancelar"] = True
     return True
+
+
+def clicar_texto(texto, aba=None):
+    """a Kani do KaniCode clica num botão/link pelo texto visível, na aba que o Pailer está vendo (só clique, sem script livre)"""
+    import json
+    cod = """(q => { q = q.toLowerCase(); const vis = e => e.offsetParent !== null;
+      const els = [...document.querySelectorAll('button, a, [role=button], [role=link], input[type=submit], input[type=button]')].filter(vis);
+      const b = els.find(e => (e.innerText || e.value || e.getAttribute('aria-label') || '').trim().toLowerCase() === q)
+             || els.find(e => (e.innerText || e.value || e.getAttribute('aria-label') || '').toLowerCase().includes(q));
+      if (!b) return 'não achei "' + q + '". Botões: ' + els.map(e => (e.innerText || e.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0, 25).join(' | ');
+      b.click(); return 'cliquei em: ' + (b.innerText || b.value || b.getAttribute('aria-label')).trim(); })(""" + json.dumps(str(texto)) + ")"
+    return kb.js(cod, aba)
 
 
 def js_kani(codigo):

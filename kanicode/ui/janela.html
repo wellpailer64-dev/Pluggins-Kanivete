@@ -419,7 +419,7 @@
   const EQUIPE = {
     claude: { nome: 'Claude', cor: '#B6F23A', av: '<span class="cl">Cl</span>', desc: 'Eu, com a equipe: delego ao Codex e à Kani quando couber' },
     codex: { nome: 'Codex', cor: '#E8ECEA', av: '<span class="cx">Cx</span>', desc: 'Direto, na sua conta ChatGPT Plus (não gasta a cota do Claude)' },
-    kani: { nome: 'Kani', cor: '#F27FB2', av: '<img src="kani.webp" alt="">', desc: 'Direto, local e grátis: textos curtos, resumos, ideias' },
+    kani: { nome: 'Kani', cor: '#F27FB2', av: '<img src="kani.webp" alt="">', desc: 'Modo Kani: local e grátis, em etapas (disco, pastas, arquivos, demandas); passa ao Claude o que for difícil' },
   };
   const AJ = {};   // ajudantes em ação: quem → {el, t0, tokens, timer}
   K.quem = 'claude';
@@ -532,13 +532,26 @@
     mcp__equipe__licao: ['📌', 'guardou a lição', 'Guardando uma lição:'],
     AskUserQuestion: ['❓', 'perguntou', 'Esperando a sua escolha'],
     ToolSearch: ['🔎', 'carregou', 'Carregando'],
+    // modo Kani (kani_modo.py)
+    kani_espaco_disco: ['💽', 'olhou o disco', 'Olhando o disco'], kani_listar_pasta: ['📂', 'listou', 'Listando'],
+    kani_ler_arquivo: ['📖', 'leu', 'Lendo'], kani_procurar_no_codigo: ['🔎', 'procurou', 'Procurando'],
+    kani_buscar_no_mapa: ['🗺', 'buscou no mapa', 'Buscando no mapa'], kani_demandas_panda: ['🐼', 'viu as demandas', 'Vendo as demandas'],
+    kani_git_resumo: ['🌿', 'viu o git', 'Vendo o git'], kani_abrir: ['↗', 'abriu', 'Abrindo'],
+    kani_ver_kanivete: ['👁', 'olhou o KANIVETE', 'Olhando o KANIVETE'], kani_abrir_ferramenta: ['🧭', 'abriu no KANIVETE', 'Abrindo no KANIVETE'],
+    kani_pedir_ao_kanivete: ['🪄', 'pediu ao KANIVETE', 'KANIVETE criando:'],
+    kani_abrir_no_kanibrowser: ['🌐', 'abriu no KaniBrowser', 'Abrindo no KaniBrowser'], kani_fechar_aba: ['✕', 'fechou a aba', 'Fechando a aba'],
+    kani_salvar_texto: ['📝', 'salvou o arquivo', 'Salvando o arquivo'], kani_salvar_conversa: ['💾', 'salvou a conversa', 'Salvando a conversa'],
+    kani_lembrar: ['📒', 'anotou no caderno', 'Anotando no caderno'],
+    kani_responder_janela: ['🖱', 'respondeu a janelinha', 'Respondendo a janelinha'],
+    kani_ver_kanibrowser: ['🌐', 'viu as abas do KaniBrowser', 'Vendo as abas'], kani_fechar_aba_kanibrowser: ['✕', 'fechou abas do KaniBrowser', 'Fechando abas'],
+    kani_ler_site: ['📖', 'leu o site', 'Lendo o site'], kani_navegar_kani: ['🧭', 'abriu no navegador dela', 'Navegando'], kani_ler_kani: ['📖', 'leu a página', 'Lendo a página'], kani_clicar_kani: ['🖱', 'clicou', 'Clicando'], kani_clicar_no_site: ['🖱', 'clicou no site', 'Clicando no site'],
   };
   function alvo(nome, e) {
     e = e || {};
     if (nome === 'ToolSearch') return 'ferramentas (' + String(e.query || '').replace(/^select:/, '').replace(/mcp__equipe__/g, '') + ')';
     if (nome === 'mcp__equipe__licao') return String(e.texto || '').slice(0, 120);
     return String(e.file_path ? base(e.file_path) : e.notebook_path ? base(e.notebook_path) : e.description || e.command || e.pattern
-      || e.query || e.url || e.skill || e.contrato || e.pedido || (nome === 'TodoWrite' ? 'a lista de tarefas' : '')).replace(/\s+/g, ' ').slice(0, 120);
+      || e.query || e.url || e.skill || e.contrato || e.pedido || e.caminho || e.termo || e.alvo || (nome === 'TodoWrite' ? 'a lista de tarefas' : '')).replace(/\s+/g, ' ').slice(0, 120);
   }
   function rotulo(nome, e) {
     const a = ACOES[nome] || ['⚙', nome];
@@ -842,7 +855,7 @@
     $('quem-bt').style.setProperty('--cor', e.cor);
     $('quem-bt').querySelector('span').textContent = e.nome;
     texto.placeholder = K.quem === 'claude' ? 'Fale com o Claude…  ( / mostra os comandos )' : `Fale direto com ${e.nome === 'Kani' ? 'a' : 'o'} ${e.nome}…`;
-    if (gravar) api().quem(K.quem);
+    if (gravar) api().quem(K.quem); else api().bola_quem(K.quem);
   }
   function menuQuem() {
     const m = $('menu-quem');
@@ -1211,6 +1224,8 @@
       case 'pergunta': K.espera = true; cartaoPergunta(ev); atividade('Esperando a sua escolha'); som('pergunta'); break;
       case 'limite': cotas(ev); break;
       case 'ajudante': ajudante(ev); break;
+      case 'kani_pensando': atividade('Kani pensando no próximo passo'); break;
+      case 'kani_estado': atividade('Kani ' + (ev.texto || 'trabalhando')); break;
       case 'licao': if (ev.nova) bolha('sis', '📌 Lição guardada para as próximas tarefas: ' + ev.texto); break;
       case 'ajudante_resposta':
         bolhaAjudante(ev.quem, ev.texto, ev.ok);
@@ -1221,6 +1236,7 @@
         if (ev.acao === 'recarregar') carregar();
         else if (ev.acao === 'pasta') trocarPasta();
         else if (ev.acao === 'aviso') bolha('sis', ev.texto);
+        else if (ev.acao === 'quem') { quemDefinir(ev.quem, false); break; }
         ocupada(false);
         break;
       case 'fim': {

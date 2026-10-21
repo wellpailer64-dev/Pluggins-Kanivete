@@ -11,7 +11,7 @@ Eventos: ajudante{quem, fase: "inicio"|"passo"|"fim", texto, tokens, cota, ms, o
 import glob, json, os, shutil, socket, subprocess, threading, time, urllib.request
 
 CODEX_MODELO = "gpt-6.1-sol"   # o que a conta Plus aceita no Codex (os outros dão "not supported with a ChatGPT account")
-KANI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+KANI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))),
                         "CANIVETE DO PAILER", "dist", "CaniveteDoPailer", "modelos_ia", "kani")
 KANI_GGUF = "Qwen3.5-4B-Q5_K_M.gguf"
 KANI_OCIOSA = 180   # s sem uso: a Kani sai da placa de vídeo
@@ -132,6 +132,45 @@ def _porta_livre():
         return s.getsockname()[1]
 
 
+_job = [None]
+
+
+def _amarrar(p):
+    """o motor morre junto com quem o abriu (Job do Windows com KILL_ON_JOB_CLOSE): sem isso, KaniCode recarregado ou
+    teste encerrado deixava llama-server órfão na placa, e o próximo ficava 10× mais lento (2026-10-21: 90 s por pedido)"""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    if not _job[0]:
+        class _LIM(ctypes.Structure):
+            _fields_ = [("a", ctypes.c_int64), ("b", ctypes.c_int64), ("LimitFlags", wintypes.DWORD), ("c", ctypes.c_size_t),
+                        ("d", ctypes.c_size_t), ("e", wintypes.DWORD), ("f", ctypes.c_size_t), ("g", wintypes.DWORD), ("h", wintypes.DWORD)]
+
+        class _EXT(ctypes.Structure):
+            _fields_ = [("basico", _LIM), ("io", ctypes.c_uint64 * 6), ("m1", ctypes.c_size_t), ("m2", ctypes.c_size_t),
+                        ("m3", ctypes.c_size_t), ("m4", ctypes.c_size_t)]
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        j = k32.CreateJobObjectW(None, None)
+        info = _EXT()
+        info.basico.LimitFlags = 0x2000   # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        k32.SetInformationJobObject(wintypes.HANDLE(j), 9, ctypes.byref(info), ctypes.sizeof(info))
+        _job[0] = j
+    k32.AssignProcessToJobObject(wintypes.HANDLE(_job[0]), wintypes.HANDLE(int(p._handle)))
+
+
+def _limpar_orfaos():
+    """llama-server da Kani cujo dono já morreu (o do KANIVETE tem dono vivo e fica)"""
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\" | ForEach-Object { "
+                              "if (-not (Get-Process -Id $_.ParentProcessId -ErrorAction SilentlyContinue)) { $_.ProcessId } }"],
+                             capture_output=True, text=True, timeout=20, creationflags=_SEM_JANELA).stdout
+        for pid in out.split():
+            subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=10, creationflags=_SEM_JANELA)
+    except Exception:
+        pass
+
+
 def _kani_subir(ao_evento):
     with _kani_trava:
         p = _kani["proc"]
@@ -139,12 +178,17 @@ def _kani_subir(ao_evento):
             return _kani["porta"]
         if not kani_disponivel():
             raise RuntimeError("a Kani não está instalada (abra a Kani uma vez no KANIVETE para baixar o modelo)")
+        _limpar_orfaos()
         ao_evento({"t": "ajudante", "quem": "kani", "fase": "passo", "texto": "acordando (carregando o modelo)"})
         porta = _porta_livre()
         exe = os.path.join(KANI_DIR, "bin", "llama-server.exe")
         p = subprocess.Popen([exe, "-m", os.path.join(KANI_DIR, KANI_GGUF), "--host", "127.0.0.1", "--port", str(porta), "-c", "8192",
                               "-ngl", "99", "--jinja", "-np", "1"], cwd=os.path.dirname(exe), stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, creationflags=_SEM_JANELA)
+        try:
+            _amarrar(p)
+        except Exception:
+            pass
         for _ in range(240):
             if p.poll() is not None:
                 raise RuntimeError("o motor da Kani fechou ao carregar (memória da placa?)")

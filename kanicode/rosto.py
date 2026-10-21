@@ -56,7 +56,8 @@ BOCAS = {
             ".......#.#......"],
 }
 
-EXPRESSOES = ("neutro", "trabalhando", "pensando", "ouvindo", "falando", "pergunta", "feliz", "erro", "dormindo")
+EXPRESSOES = ("neutro", "trabalhando", "pensando", "ouvindo", "falando", "pergunta", "feliz", "erro", "dormindo",
+              "lendo", "digitando", "procurando")
 
 
 def _desloca(linha, d):
@@ -112,6 +113,39 @@ def quadro(expressao, t=0.0):
     elif e == "erro":
         por(OLHOS["x"], 5)
         por(BOCAS["triste"], 10)
+    elif e == "lendo":         # lendo arquivo: olhos baixos que correm a linha, livro aberto, página que vira
+        d = (-1, 0, 1, 1)[int(t * 2.2) % 4]
+        por(["....##....##....", "....##....##...."], 6, d)
+        por(["..############..",
+             "..#wwwwwwwwww#..",
+             "..#wwwwwwwwww#..",
+             "..############.."], 11)
+        lin = int(t * 2.2) % 4 < 2
+        por(["...#.##.##.#...." if lin else "....##.#.##.#..."], 12)
+        if int(t * 0.7) % 3 == 0:     # página virando
+            por(["........#......."], 10)
+        g[11][7] = g[11][8] = "#"
+    elif e == "digitando":     # editando/rodando: olhos no teclado, mãozinhas batendo alternadas
+        por(["....##....##....", "....##....##...."], 6)
+        por(BOCAS["o_peq"], 9)
+        sobe = int(t * 7) % 2
+        por(["..##............"], 12 if sobe else 13)
+        por(["...........##..."], 13 if sobe else 12)
+        por(["..############.."], 14)
+        if int(t * 7) % 4 == 0:
+            por([".....w..w..w...."], 14)
+    elif e == "procurando":    # procurando: lupa (com o olho grande dentro) que passa de um lado ao outro
+        d = (-4, -2, 0, 0, -2, -4)[int(t * 1.8) % 6]
+        por(["....w#..........", "....##..........", "....##.........."], 5)
+        por(BOCAS["o_peq"], 10)
+        por(["........####....",
+             ".......#wwww#...",
+             ".......#w##w#...",
+             ".......#w##w#...",
+             ".......#wwww#...",
+             "........####....",
+             "............#...",
+             ".............#.."], 3, d)
     elif e == "dormindo":
         por(OLHOS["fechados"], 5)
         por(BOCAS["o_peq"], 10)

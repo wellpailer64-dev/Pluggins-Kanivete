@@ -275,6 +275,8 @@ class _H(BaseHTTPRequestHandler):
                             _asr = Voz()
                         voz = _asr
                     texto = voz._transcrever(audio)
+                    import glossario
+                    texto = glossario.corrigir(texto)
                 return self._enviar(200, json.dumps({"texto": texto}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
             import io, wave
             from fala import VELOCIDADE, VOZ, limpar

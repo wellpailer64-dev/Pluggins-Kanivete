@@ -242,6 +242,8 @@ class Voz:
             self._estado("erro:" + str(e))
             return
         texto = TIRAR.sub("", texto).strip()   # "Ei Kani, abre…" → "abre…"
+        import glossario
+        texto = glossario.corrigir(texto)       # "Poto Canivete" → "Photo Kanivete", "Cane" → "Kani"
         texto = texto[:1].upper() + texto[1:]
         self._estado("escutando")
         if texto and self.ao_texto:
