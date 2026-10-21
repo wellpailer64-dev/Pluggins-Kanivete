@@ -73,6 +73,10 @@ class App:
         self._pendente = None      # "recarregar"/"reiniciar" pedido no meio de uma resposta: roda quando ela terminar
         self._carregado = time.time()   # para o "atualizar" saber o que mudou depois de aberto
         self._voz = None           # voz.py: "Ei Kani" + fala para texto
+        self._fala = None          # fala.py: resposta lida em voz alta (pedido por voz com a janela fechada)
+        self._por_voz = False
+        self._respondendo = False  # resposta do Claude chegando (para falar o resto se a janela for minimizada)
+        self._resposta = ""        # o texto da mensagem atual da resposta, desde o último "texto_novo"
 
     # ── js_api ──
     def mostrar(self):
@@ -203,31 +207,83 @@ class App:
                     from voz import Voz
                     self._voz = Voz(self._voz_acordou, self._voz_texto, self._voz_estado)
                 self._voz.ligar()
+                threading.Thread(target=self._fala_obj().carregar, daemon=True).start()   # 1ª resposta sem espera
             except Exception as e:
                 return {"on": False, "erro": str(e)}
         elif self._voz:
             self._voz.desligar()
+            if self._fala:
+                self._fala.soltar()
             self._na_ui(lambda: self._bola and self._bola.definir(voz=""))
         _gravar_estado(voz=bool(on))
         return {"on": bool(on)}
 
+    def ouvir(self, fim=False):
+        """botão do microfone na caixa de texto: ouve um pedido sem "Ei Kani" (fim=True: terminou de falar)"""
+        try:
+            if fim:
+                if self._voz:
+                    self._voz.terminar()
+                return {"ok": True}
+            if not self._voz:
+                from voz import Voz
+                self._voz = Voz(self._voz_acordou, self._voz_texto, self._voz_estado)
+            self._voz.escutar()
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
+
     def _voz_acordou(self):
-        if not self._aberta:
-            self.mostrar()
+        # a janela fica como está: fechada, a conversa é toda por voz (a bolinha mostra o rosto ouvindo)
+        if self._fala:
+            self._fala.parar()   # "Ei Kani" no meio da fala = interromper
 
     def _voz_estado(self, e):
-        b = {"escutando": "escutando", "ouvindo": "ouvindo", "transcrevendo": "ouvindo"}.get(e, "")
+        b = {"escutando": "escutando", "ouvindo": "ouvindo", "transcrevendo": "pensando"}.get(e, "")
         self._na_ui(lambda: self._bola and self._bola.definir(voz=b))
         self._para_janela({"t": "voz", "fase": e})
 
     def _voz_texto(self, texto):
+        # pedido por voz com a janela fechada: a resposta volta falada (fala.py), frase a frase enquanto é escrita
+        self._por_voz = not self._aberta
         self._para_janela({"t": "voz", "fase": "texto", "texto": texto})
+
+    def _fala_obj(self):
+        if not self._fala:
+            from fala import Fala
+            self._fala = Fala(self._fala_estado)
+        return self._fala
+
+    def _fala_estado(self, e):
+        if e == "fim":   # terminou de falar a resposta: ouve o próximo pedido sem "Ei Kani" (janela fechada)
+            if not self._aberta:   # chat minimizado = conversa por voz, mesmo com o Ei Kani desligado
+                try:
+                    if not self._voz:
+                        from voz import Voz
+                        self._voz = Voz(self._voz_acordou, self._voz_texto, self._voz_estado)
+                    from voz import SEGUIR_S
+                    self._voz.escutar(SEGUIR_S)
+                except Exception:
+                    pass
+            return
+        b = "falando" if e == "falando" else ("escutando" if self._voz and self._voz.ligada else "")
+        self._na_ui(lambda: self._bola and self._bola.definir(voz=b))
 
     def esconder(self):
         if self._janela:
             self._janela.hide()
         self._aberta = False
         self._na_ui(lambda: self._bola and self._bola.definir(aberta=False))
+        # minimizou com a resposta ainda chegando (pedido escrito): o resto vira voz, a partir da mensagem atual
+        if self._respondendo and not self._por_voz:
+            try:
+                f = self._fala_obj()
+                self._por_voz = True
+                f.novo()
+                if self._resposta:
+                    f.pedaco(self._resposta)
+            except Exception:
+                self._por_voz = False
 
     def fixar(self, on):
         """janela sempre por cima (alfinete)"""
@@ -414,6 +470,8 @@ class App:
             self._sessao.conta = _ler_estado().get("conta") or None
             self._sessao.modo = getattr(self, "_modo", "auto")
         self._bola_estado("trabalhando")
+        if not self._respondendo:
+            self._respondendo, self._resposta = True, ""
         try:
             self._sessao.enviar(texto, imagens)
         except Exception as e:
@@ -548,6 +606,24 @@ class App:
 
     def _evento(self, ev):
         t = ev.get("t")
+        if t == "inicio":
+            self._respondendo, self._resposta = True, ""
+        elif t == "texto_novo":
+            self._resposta = ""
+        elif t == "texto":
+            self._resposta += ev.get("d") or ""
+        elif t in ("fim", "saiu"):
+            self._respondendo, self._resposta = False, ""
+        if self._por_voz and self._fala:
+            if t == "texto_novo":
+                self._fala.novo()
+            elif t == "texto":
+                self._fala.pedaco(ev.get("d") or "")
+            elif t in ("permissao", "pergunta"):
+                self._fala.dizer("Preciso da sua decisão na janela.")
+            elif t in ("fim", "saiu"):
+                self._fala.terminar()
+                self._por_voz = False
         if t == "inicio" and ev.get("sessao"):
             ss = _ler_estado().get("sessoes") or {}
             if ss.get(self._pasta()) != ev["sessao"]:
@@ -573,6 +649,9 @@ class App:
         elif t in ("fim", "saiu"):
             # terminou: com a janela recolhida, a bolinha fica com a marca de "tem resposta"
             self._bola_estado("" if self._aberta else "pergunta")
+            if t == "fim" or ev.get("erro"):   # carinha feliz/triste por 3 s (sair sem erro não entristece)
+                ok = t == "fim" and not ev.get("erro")
+                self._na_ui(lambda: self._bola and self._bola.definir(humor="feliz" if ok else "erro", segundos=3))
             if t == "saiu":
                 self._sessao = None
         self._para_janela(ev)
@@ -783,6 +862,14 @@ def main():
 
     def comecar():
         app._criar_bola()
+        if e.get("encaixe", True):   # Win + setas encaixam a janela (encaixe.py); "encaixe": false no estado desliga
+            def encaixar():
+                try:
+                    import encaixe
+                    encaixe.ligar(app._hwnd())
+                except Exception:
+                    pass
+            app._na_ui(encaixar)
         if e.get("voz"):   # o Ei Kani estava ligado: volta ligado
             threading.Timer(1.5, app.voz, args=(True,)).start()
         if "--abrir" in sys.argv:   # reiniciado com a janela aberta: volta aberta

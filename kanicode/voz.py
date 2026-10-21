@@ -14,7 +14,12 @@ PASTA = os.path.dirname(os.path.abspath(__file__))
 MODELO = os.path.join(PASTA, "modelos", "hey_kani.onnx")
 SR, BLOCO = 16000, 1280              # 80 ms: o passo do openWakeWord
 LIMIAR = 0.5
-SILENCIO_S, ESPERA_S, MAX_S = 0.9, 5.0, 30.0
+SILENCIO_S, SILENCIO_LONGO_S, ESPERA_S, MAX_S = 1.3, 2.6, 5.0, 60.0
+FALA_P = 0.4                         # voz baixa também conta como fala
+SEGUIR_S = 6.0                       # depois da resposta falada: ouve de novo sem precisar do "Ei Kani"
+# frase que termina numa palavra de ligação ainda não acabou: espera a pausa longa
+LIGACAO = {"e", "que", "porque", "mas", "então", "entao", "pra", "para", "de", "do", "da", "o", "a", "os", "as", "um", "uma",
+           "com", "se", "quando", "como", "ou", "no", "na", "em", "tipo", "aí", "ai", "é", "sobre", "pro", "por", "mais", "também"}
 LIBERAR_S = 600
 # 2ª checagem: no disparo, o Parakeet relê os últimos 2,5 s; sem algo como "Kani" é alarme falso (vídeo falando, música)
 CONFERIR = re.compile(r"[kcq][aâáeê]+n|hani|kenn|conn|kahn|ikan", re.I)
@@ -76,16 +81,40 @@ class Voz:
         self._th = None
         self._asr = None
         self._asr_uso = 0
+        self._seguir = 0.0     # > 0: ouvir o próximo pedido sem "Ei Kani" (esperando até este tanto de segundos)
+        self._uma = False      # botão do microfone com o Ei Kani desligado: ouve um pedido e desliga
+        self._cortar = False   # clicou no microfone de novo: terminou de falar
         self.ultimo = {}
 
+    def seguir(self, segundos=SEGUIR_S):
+        """conversa contínua: depois da resposta falada, o próximo pedido não precisa do 'Ei Kani'"""
+        if self._ligada:
+            self._seguir = segundos
+
+    def escutar(self, espera=ESPERA_S):
+        """botão do microfone (ou fim da resposta falada): ouve um pedido agora, sem 'Ei Kani'
+        (com o Ei Kani desligado, desliga depois)"""
+        if self._ligada:
+            self._seguir = espera
+            return True
+        return self.ligar(uma=True, espera=espera)
+
+    def terminar(self):
+        """clicou de novo no microfone durante o pedido: manda o que já falou"""
+        self._cortar = True
+
     # ── ligar/desligar ──
-    def ligar(self):
+    def ligar(self, uma=False, espera=ESPERA_S):
+        if not uma:
+            self._uma = False
         if self._ligada:
             return True
         falta = disponivel()
         if falta:
             raise RuntimeError("Falta: " + "; ".join(falta))
         self._ligada = True
+        if uma:
+            self._uma, self._seguir = True, espera
         self._th = threading.Thread(target=self._rodar, daemon=True, name="kc-voz")
         self._th.start()
         threading.Thread(target=self._carregar_asr, daemon=True).start()   # o 1º pedido não espera o carregamento
@@ -108,10 +137,12 @@ class Voz:
     # ── laço do microfone ──
     def _rodar(self):
         import sounddevice as sd
-        from openwakeword.model import Model
-        ww = Model(wakeword_models=[MODELO], inference_framework="onnx",
-                   melspec_model_path=os.path.join(PASTA, "modelos", "melspectrogram.onnx"),
-                   embedding_model_path=os.path.join(PASTA, "modelos", "embedding_model.onnx"))
+        def modelo():
+            from openwakeword.model import Model
+            return Model(wakeword_models=[MODELO], inference_framework="onnx",
+                         melspec_model_path=os.path.join(PASTA, "modelos", "melspectrogram.onnx"),
+                         embedding_model_path=os.path.join(PASTA, "modelos", "embedding_model.onnx"))
+        ww = None if self._uma else modelo()   # só o microfone: não precisa do "Ei Kani"
         vad = _Vad()
         recente = deque(maxlen=int(2.5 * SR / BLOCO))
 
@@ -125,6 +156,19 @@ class Voz:
             with sd.InputStream(samplerate=SR, channels=1, dtype="int16", blocksize=BLOCO, callback=cb):
                 self._estado("escutando")
                 while self._ligada:
+                    if self._seguir:
+                        espera, self._seguir = self._seguir, 0.0
+                        self._esvaziar()
+                        self._pedido(vad, espera)
+                        if self._uma:
+                            break
+                        if ww is None:
+                            ww = modelo()
+                        ww.reset()
+                        self._esvaziar()
+                        continue
+                    if ww is None:
+                        ww = modelo()
                     try:
                         x = self._fila.get(timeout=0.5)
                     except queue.Empty:
@@ -151,8 +195,10 @@ class Voz:
         while not self._fila.empty():
             self._fila.get_nowait()
 
-    def _pedido(self, vad):
-        """depois do Ei Kani: grava até a pausa e transcreve"""
+    def _pedido(self, vad, espera=ESPERA_S):
+        """depois do Ei Kani: grava até a pausa e transcreve.
+        Pausa curta (SILENCIO_S) no meio de "…e", "…porque": relê o que já tem e, se acabou numa palavra de ligação,
+        espera a pausa longa — pensar no meio da frase não corta o pedido."""
         self._bipe(True)
         self._estado("ouvindo")
         if self.ao_acordar:
@@ -161,19 +207,28 @@ class Voz:
             except Exception:
                 pass
         vad.zerar()
-        blocos, falou, quieto, t0 = [], False, 0.0, time.time()
-        while self._ligada:
+        self._cortar = False
+        blocos, falou, quieto, t0, longa, conferiu = [], False, 0.0, time.time(), False, False
+        while self._ligada and not self._cortar:
             try:
                 x = self._fila.get(timeout=0.5)
             except queue.Empty:
                 continue
             blocos.append(x)
-            if vad.fala(x) > 0.5:
-                falou, quieto = True, 0.0
+            if vad.fala(x) > FALA_P:
+                falou, quieto, conferiu = True, 0.0, False
             else:
                 quieto += BLOCO / SR
             dur = time.time() - t0
-            if (falou and quieto >= SILENCIO_S) or (not falou and dur >= ESPERA_S) or dur >= MAX_S:
+            if falou and quieto >= SILENCIO_S and not conferiu:
+                conferiu = True
+                try:
+                    parcial = self._transcrever(np.concatenate(blocos).astype(np.float32) / 32768)
+                except Exception:
+                    parcial = ""
+                ult = re.sub(r"[^\wà-ú]", " ", parcial.lower()).split()
+                longa = not parcial or parcial.rstrip()[-1:] not in ".!?" and bool(ult) and ult[-1] in LIGACAO
+            if (falou and quieto >= (SILENCIO_LONGO_S if longa else SILENCIO_S) and conferiu)                     or (not falou and dur >= espera) or dur >= MAX_S:
                 break
         self._bipe(False)
         if not falou:

@@ -24,7 +24,10 @@ PROMPT_KANICODE = ("Você está no KaniCode: janela de ~500 px na área de traba
                    "importa mais que tempo ou o Pailer pedir 'modo equipe') e mcp__equipe__kani (texto simples, local). "
                    "Com o Pailer esperando ou precisando do app rodando, faça você.\n"
                    "Mexeu no próprio KaniCode (D:/Kanivete/Plugins/kanicode)? No fim rode "
-                   "`py -3.13 D:/Kanivete/Plugins/kanicode/recarregar.py`.")
+                   "`py -3.13 D:/Kanivete/Plugins/kanicode/recarregar.py`.\n"
+                   "Mensagem terminada em '(por voz)': o Pailer falou e pode estar só OUVINDO a resposta (lida em voz alta, "
+                   "frase a frase). Comece com uma frase curta que já diga o essencial; frases curtas, sem caminho de "
+                   "arquivo, código ou lista longa no texto (isso fica para depois, se ele abrir a janela).")
 
 
 # o que sempre passa pelo Pailer (Bash e PowerShell): enviar/publicar, apagar, fechar programa, desligar

@@ -16,7 +16,10 @@ from System.Drawing.Imaging import PixelFormat
 from System.Drawing.Text import TextRenderingHint
 from System.Windows.Forms import Form, FormBorderStyle, FormStartPosition, MouseButtons, Screen, Timer
 
+import rosto
+
 LIMA, LIMA_CLARO, LIMA_ESC, FUNDO, ALERTA = (0xB6, 0xF2, 0x3A), (0xD8, 0xFF, 0x7A), (0x7F, 0xB5, 0x1A), (0x0E, 0x11, 0x10), (0xFF, 0x5A, 0x5F)
+BOCHECHA = (0xFF, 0x8F, 0xA3)
 u32, gdi = ctypes.windll.user32, ctypes.windll.gdi32
 GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_APPWINDOW, WS_EX_TOPMOST = -20, 0x80000, 0x80, 0x40000, 0x8
 
@@ -49,9 +52,10 @@ class Bolinha:
         self.ao_clicar, self.ao_mover, self.ao_direito = ao_clicar, ao_mover, ao_direito
         self.estado = ""          # "" | "trabalhando" | "pergunta"
         self.aberta = False
-        self.voz = ""             # "" | "escutando" (Ei Kani ligado) | "ouvindo" (gravando o pedido)
+        self.voz = ""             # "" | "escutando" (Ei Kani ligado) | "ouvindo" (gravando o pedido) | "pensando"
+        self.humor, self._humor_ate = "", 0.0   # "feliz"/"erro" por alguns segundos (fim da tarefa)
+        self._mexeu = time.time()                # parada há muito tempo = dorme
         self._fase = 0.0
-        self._cursor = True
         f = self.form = Form()
         f.FormBorderStyle = getattr(FormBorderStyle, "None")   # "None" é palavra reservada no Python
         f.ShowInTaskbar = False
@@ -69,7 +73,7 @@ class Bolinha:
         u32.SetWindowLongW(h, GWL_EXSTYLE, (u32.GetWindowLongW(h, GWL_EXSTYLE) | WS_EX_LAYERED | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW)
         f.MouseDown += self._apertou
         self._t = Timer()
-        self._t.Interval = 550
+        self._t.Interval = 120
         self._t.Tick += self._tique
         self._t.Start()
         f.Show()
@@ -108,20 +112,40 @@ class Bolinha:
     def _tique(self, _s, _e):
         if self.estado == "trabalhando" or self.voz == "ouvindo":
             self._fase = (self._fase + 0.12) % 1.0
-        else:
-            self._cursor = not self._cursor
         self.desenhar()
 
-    def definir(self, estado=None, aberta=None, voz=None):
+    def definir(self, estado=None, aberta=None, voz=None, humor=None, segundos=2.5):
         if estado is not None:
             self.estado = estado
         if voz is not None:
             self.voz = voz
+        if humor is not None:
+            self.humor, self._humor_ate = humor, time.time() + segundos
         if estado is not None or voz is not None:
-            self._t.Interval = 40 if self.estado == "trabalhando" or self.voz == "ouvindo" else 550
+            # rápido só com animação contínua (arco/anel); parado, 120 ms basta para piscar
+            self._t.Interval = 40 if self.estado == "trabalhando" or self.voz == "ouvindo" else 120
         if aberta is not None:
             self.aberta = aberta
+        self._mexeu = time.time()
         self.desenhar()
+
+    def expressao(self):
+        """qual cara mostrar agora (rosto.py)"""
+        if self.humor and time.time() < self._humor_ate:
+            return self.humor
+        if self.voz == "ouvindo":
+            return "ouvindo"
+        if self.voz == "pensando":
+            return "pensando"
+        if self.voz == "falando":
+            return "falando"
+        if self.estado == "pergunta":
+            return "pergunta"
+        if self.estado == "trabalhando":
+            return "trabalhando"
+        if not self.aberta and time.time() - self._mexeu > 600:
+            return "dormindo"
+        return "neutro"
 
     # ── desenho ──
     def desenhar(self):
@@ -149,15 +173,19 @@ class Bolinha:
             pen.StartCap = pen.EndCap = LineCap.Round
             d = L * 0.07
             g.DrawArc(pen, float(m + d), float(m + d), float(L - 2 * d), float(L - 2 * d), float(self._fase * 360), 90.0)
-        # ">" e o cursor (pisca quando a conversa está fechada)
-        fonte = Font("Cascadia Mono", float(L * 0.27), FontStyle.Bold)
-        tam = g.MeasureString(">", fonte)
-        cx, cy = m + L / 2, m + L / 2
-        g.DrawString(">", fonte, SolidBrush(_cor(FUNDO)), float(cx - tam.Width * 0.62), float(cy - tam.Height / 2))
-        if self.aberta or self._cursor or self.estado == "trabalhando":
-            g.FillRectangle(SolidBrush(_cor(FUNDO)), RectangleF(float(cx + L * 0.02), float(cy + L * 0.08), float(L * 0.13), float(L * 0.05)))
+        # rosto 8-bit (rosto.py): grade 16 × 16 de pixels grandes, sem suavizar
+        cel = max(2, int(L * 0.8 / 16))
+        x0 = int(m + L / 2 - 8 * cel)
+        y0 = int(m + L / 2 - 8 * cel + cel * 0.5)
+        g.SmoothingMode = getattr(SmoothingMode, "None")   # "None" é palavra reservada no Python
+        pinceis = {"#": SolidBrush(_cor(FUNDO)), "w": SolidBrush(Color.White), "p": SolidBrush(_cor(BOCHECHA)),
+                   "r": SolidBrush(_cor(ALERTA))}
+        for y, linha in enumerate(rosto.quadro(self.expressao(), time.time())):
+            for x, c in enumerate(linha):
+                if c in pinceis:
+                    g.FillRectangle(pinceis[c], x0 + x * cel, y0 + y * cel, cel, cel)
+        g.SmoothingMode = SmoothingMode.AntiAlias
         if self.voz == "ouvindo":   # ouvindo o pedido: anel que pulsa por fora
-            import math
             k = 0.5 + 0.5 * math.sin(self._fase * 2 * math.pi)
             pen = Pen(_cor(FUNDO, int(120 + 110 * k)), max(2.0, L * (0.05 + 0.04 * k)))
             g.DrawEllipse(pen, float(m + L * 0.04), float(m + L * 0.04), float(L * 0.92), float(L * 0.92))

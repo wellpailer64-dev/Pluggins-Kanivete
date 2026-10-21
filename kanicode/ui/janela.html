@@ -112,6 +112,11 @@
              max-height: 160px; min-height: 22px; padding: 0; }
   .enviar { height: 40px; min-width: 76px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--lima); color: var(--fundo);
             font: 600 14px var(--sans); cursor: pointer; }
+  .mic { align-self: center; width: 26px; height: 26px; margin: -2px -4px -2px 0; border: 0; border-radius: 50%; background: transparent;
+         color: var(--fraco, #8A9488); font-size: 15px; cursor: pointer; }
+  .mic:hover { color: var(--texto); }
+  .mic.on { background: var(--lima); color: var(--fundo); animation: mic-pulsa 1.2s ease-in-out infinite; }
+  @keyframes mic-pulsa { 50% { opacity: .6; } }
   .enviar:disabled { opacity: .45; cursor: default; }
   .enviar.parar { background: #3A1C1E; color: var(--erro); }
   .meio-tarefa { border-left: 3px solid var(--lima); }
@@ -376,7 +381,8 @@
   <div class="anexos" id="anexos" hidden></div>
   <div class="entrada">
     <div class="cmds" id="cmds" hidden></div>
-    <label class="campo"><span class="seta">&gt;</span><textarea id="texto" rows="1" placeholder="Fale com o Claude…  ( / mostra os comandos )"></textarea></label>
+    <label class="campo"><span class="seta">&gt;</span><textarea id="texto" rows="1" placeholder="Fale com o Claude…  ( / mostra os comandos )"></textarea>
+      <button class="mic" id="mic" type="button" title="Falar o pedido (sem dizer &quot;Ei Kani&quot;) · clique de novo quando terminar">🎤</button></label>
     <button class="enviar" id="enviar" disabled>Enviar</button>
   </div>
   <div class="rodape">
@@ -1379,10 +1385,11 @@
   // ── Ei Kani (voz.py): o texto falado entra na caixa e vai como se fosse digitado ──
   function vozBotao(on) { $('voz').classList.toggle('on', !!on); }
   function vozEv(ev) {
+    $('mic').classList.toggle('on', ev.fase === 'ouvindo');
     if (ev.fase === 'ouvindo') atividade('Ouvindo… fale o pedido');
     else if (ev.fase === 'transcrevendo') atividade('Entendendo o que você falou');
     else if (ev.fase === 'escutando' && !K.ocupada) atividade('Pronto');
-    else if (ev.fase === 'desligada') vozBotao(false);
+    else if (ev.fase === 'desligada') { vozBotao(false); if (!K.ocupada) atividade('Pronto'); }
     else if (ev.fase && ev.fase.startsWith('erro:')) { bolha('erro', 'Ei Kani: ' + ev.fase.slice(5)); vozBotao(false); }
     else if (ev.fase === 'texto' && ev.texto) {
       // comandos falados que o KaniCode resolve sozinho: "para" interrompe; "cancela/esquece" não manda nada
@@ -1398,6 +1405,13 @@
     vozBotao(r.on);
     if (r.erro) bolha('erro', 'Ei Kani: ' + r.erro);
     else bolha('sis', r.on ? '🎙 Ei Kani ligado: diga "Ei Kani" e o pedido.' : 'Ei Kani desligado.');
+  });
+  $('mic').addEventListener('click', async e => {
+    e.preventDefault();
+    const fim = $('mic').classList.contains('on');
+    if (!fim) atividade('Ligando o microfone…');
+    const r = await api().ouvir(fim);
+    if (r && r.erro) bolha('erro', 'Microfone: ' + r.erro);
   });
   setTimeout(() => api().voz(null).then(r => vozBotao(r.on)).catch(() => {}), 2500);
   $('quem-bt').addEventListener('click', menuQuem);
