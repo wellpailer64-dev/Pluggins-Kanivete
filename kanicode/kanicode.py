@@ -402,6 +402,11 @@ class App:
         self._bola_estado("trabalhando")
         return ok
 
+    def sempre(self, add=None, tirar=None):
+        """"Permitir sempre" do cartão (git push, git commit…): lista guardada em DADOS/sempre.json"""
+        import sessao
+        return sessao.sempre(DADOS, add, tirar)
+
     def preparar(self):
         """abre o Claude Code já ao mostrar a janela (a lista de comandos "/" e a 1ª resposta chegam mais rápido)"""
         if not self._sessao:

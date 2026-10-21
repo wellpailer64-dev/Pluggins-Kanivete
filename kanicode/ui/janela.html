@@ -85,6 +85,10 @@
   .perm button { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--borda); cursor: pointer; font: 600 13px var(--sans); }
   .perm .sim { background: var(--lima); color: var(--fundo); border-color: var(--lima); }
   .perm .nao { background: transparent; color: var(--texto); }
+  .perm .sempre { background: transparent; color: var(--lima); border-color: var(--lima); }
+  .perm .bts { flex-wrap: wrap; }
+  .auto-ok { font-size: 12px; color: var(--fraco); margin: 2px 0; }
+  .auto-ok button { background: none; border: 0; color: var(--fraco); text-decoration: underline; cursor: pointer; font: inherit; }
   .perm .nao:hover { background: #2A1517; color: var(--erro); border-color: #4A2326; }
   .perm.respondida { opacity: .6; } .perm.respondida .bts { display: none; }
   .perm .res { font: 12.5px var(--mono); color: var(--fraco); }
@@ -688,7 +692,7 @@
     d.innerHTML = `<div class="t">Posso fazer isto? <small>${esc(ev.ferr || '')}</small></div>
       ${ev.motivo ? `<div style="color:var(--fraco);font-size:12.5px">${esc(ev.motivo)}</div>` : ''}
       <pre>${esc(corpoFerr(ev.ferr, e))}</pre>
-      <div class="bts"><button class="sim">Permitir</button><button class="nao">Recusar</button></div><div class="res"></div>`;
+      <div class="bts"><button class="sim">Permitir</button>${ev.risco ? `<button class="sempre" title="Não pergunta mais para ${esc(ev.risco)} (só o comando sozinho; desfaz na conversa)">Permitir sempre: ${esc(ev.risco)}</button>` : ''}<button class="nao">Recusar</button></div><div class="res"></div>`;
     const responder = async ok => {
       if (d.classList.contains('respondida')) return;
       marcarCartao(d, ok);
@@ -699,9 +703,18 @@
     };
     d.querySelector('.sim').onclick = () => responder(true);
     d.querySelector('.nao').onclick = () => responder(false);
+    if (d.querySelector('.sempre')) d.querySelector('.sempre').onclick = async () => { await api().sempre(ev.risco); responder(true); };
     if (respondido != null) marcarCartao(d, respondido);
     conversa.appendChild(d);
     return d;
+  }
+  // passou sozinho pelo "Permitir sempre": uma linha discreta com o desfazer
+  function autoOk(ev) {
+    const d = document.createElement('div');
+    d.className = 'auto-ok';
+    d.innerHTML = `✓ ${esc(ev.risco)} liberado sempre <button>não liberar mais</button>`;
+    d.querySelector('button').onclick = async () => { await api().sempre(null, ev.risco); d.innerHTML = `${esc(ev.risco)} volta a perguntar`; };
+    conversa.appendChild(d);
   }
   function marcarCartao(d, ok) {
     d.classList.add('respondida');
@@ -1185,6 +1198,7 @@
         break;
       }
       case 'ferr_fim': passoFim(ev.id, ev.ok, ev.saida); atividade('Pensando no próximo passo'); break;
+      case 'auto_ok': autoOk(ev); break;
       case 'permissao': K.espera = true; cartao(ev); atividade('Esperando você decidir'); som('pergunta'); break;
       case 'pergunta': K.espera = true; cartaoPergunta(ev); atividade('Esperando a sua escolha'); som('pergunta'); break;
       case 'limite': cotas(ev); break;
@@ -1304,6 +1318,7 @@
       else if (ev.t === 'ferr') passo(ev.id, ev.nome, ev.entrada);
       else if (ev.t === 'ferr_fim') passoFim(ev.id, ev.ok, ev.saida);
       else if (ev.t === 'fim') resumoMudancas();
+      else if (ev.t === 'auto_ok') autoOk(ev);
       else if (ev.t === 'permissao') cartao(ev, ev.id in respostas ? respostas[ev.id] : false);
     }
     ocupada(!!i.ocupada);

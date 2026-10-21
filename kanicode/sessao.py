@@ -33,6 +33,36 @@ _RISCO = ["git push", "git commit", "git reset", "git rebase", "git clean", "git
           "Stop-Process", "kill", "shutdown", "Restart-Computer", "Stop-Computer", "format", "curl -X POST", "Invoke-RestMethod",
           "Invoke-WebRequest -Method Post"]
 REGRAS_PERGUNTAR = [f"{f}({c}:*)" for f in ("Bash", "PowerShell") for c in _RISCO]
+
+
+def risco(cmd):
+    """o item de _RISCO com que o comando começa ("git push", "rm"…) ou None (é o que "Permitir sempre" libera)"""
+    c = (cmd or "").strip()
+    for r in sorted(_RISCO, key=len, reverse=True):
+        if c == r or c.startswith(r + " "):
+            return r
+    return None
+
+
+def sempre(dados, add=None, tirar=None):
+    """lista do "Permitir sempre" (dados/sempre.json); add/tirar = um item de _RISCO"""
+    p = os.path.join(dados, "sempre.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            lst = json.load(f)
+    except (OSError, ValueError):
+        lst = []
+    if add in _RISCO and add not in lst:
+        lst.append(add)
+    if tirar in lst:
+        lst.remove(tirar)
+    if add or tirar:
+        os.makedirs(dados, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(lst, f, ensure_ascii=False)
+    return lst
+
+
 _APAGAR = re.compile(r"^\s*(rm|rmdir|del|rd|Remove-Item)\b", re.I)
 
 
@@ -209,8 +239,16 @@ class Sessao:
                 if q.get("tool_name") in ("Bash", "PowerShell") and self._apagar_dentro(ent.get("command", "")):
                     self.responder(d["request_id"], True, ent)
                     return
+                rs = risco(ent.get("command")) if q.get("tool_name") in ("Bash", "PowerShell") else None
+                # comando composto (&&, ;, |) não passa direto: o "sempre" vale só para o comando sozinho
+                if rs and rs in sempre(self.dados) and not re.search(r"&&|\|\||[;|`]|\$\(", ent.get("command", "")):
+                    self.responder(d["request_id"], True, ent)
+                    ev = {"t": "auto_ok", "risco": rs, "cmd": ent.get("command", "")}
+                    self._guardar(ev)
+                    self.ao_evento(ev)
+                    return
                 ev = {"t": "permissao", "id": d["request_id"], "ferr": q.get("tool_name"), "entrada": ent,
-                      "motivo": q.get("description") or ""}
+                      "motivo": q.get("description") or "", "risco": rs}
                 self._guardar(ev)
                 self.ao_evento(ev)
             return
