@@ -24,7 +24,11 @@ NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "
 _TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
           ".webp": "image/webp", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json"}
 
+ICONES = ("icone.png", "icone-192.png", "icone-512.png", "icone-mascara-512.png")   # icone_oculos.py
+
 _app = None
+_asr = None               # voz.Voz só para transcrever (o mesmo Parakeet do "Ei Kani"; carrega no 1º uso)
+_tts = threading.Lock()   # um Kokoro só (fala.py) para a janela e o celular
 _chave = None
 _ouvintes = []            # filas dos celulares conectados (uma por página aberta)
 _trava = threading.Lock()
@@ -85,7 +89,7 @@ class _H(BaseHTTPRequestHandler):
                 return self._enviar(302, extra={"Location": "/", "Set-Cookie":
                                     f"kc_chave={_chave}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax; Secure"})
             return self._enviar(403, "Chave errada.".encode())
-        if u.path in ("/manifest.webmanifest", "/icone.png"):   # o Chrome pede sem cookie em alguns casos
+        if u.path == "/manifest.webmanifest" or u.path.lstrip("/") in ICONES:   # o Chrome pede sem cookie em alguns casos
             return self._arquivo(u.path.lstrip("/"))
         if not self._autorizado():
             return self._enviar(403, "KaniCode: abra o link de pareamento (com ?chave=) no celular.".encode())
@@ -99,10 +103,12 @@ class _H(BaseHTTPRequestHandler):
         if nome == "manifest.webmanifest":
             m = {"name": "KaniCode", "short_name": "KaniCode", "start_url": "/", "display": "standalone",
                  "background_color": "#0E1110", "theme_color": "#151A18",
-                 "icons": [{"src": "/icone.png", "sizes": "192x192", "type": "image/png"}]}
+                 "icons": [{"src": "/icone-192.png", "sizes": "192x192", "type": "image/png"},
+                           {"src": "/icone-512.png", "sizes": "512x512", "type": "image/png"},
+                           {"src": "/icone-mascara-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
             return self._enviar(200, json.dumps(m).encode(), _TIPOS[".webmanifest"])
-        cam = os.path.join(PASTA, "icone.png") if nome == "icone.png" else os.path.normpath(os.path.join(UI, nome.replace("ui/", "", 1)))
-        if not (cam.startswith(UI + os.sep) or nome == "icone.png") or not os.path.isfile(cam):
+        cam = os.path.join(PASTA, nome) if nome in ICONES else os.path.normpath(os.path.join(UI, nome.replace("ui/", "", 1)))
+        if not (cam.startswith(UI + os.sep) or nome in ICONES) or not os.path.isfile(cam):
             return self._enviar(404)
         with open(cam, "rb") as f:
             return self._enviar(200, f.read(), _TIPOS.get(os.path.splitext(cam)[1].lower(), "application/octet-stream"))
@@ -110,9 +116,9 @@ class _H(BaseHTTPRequestHandler):
     def _pagina(self):
         with open(os.path.join(UI, "janela.html"), encoding="utf-8") as f:
             h = f.read()
-        cab = ('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">'
+        cab = ('<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">'
                '<meta name="theme-color" content="#151A18"><link rel="manifest" href="/manifest.webmanifest">'
-               '<link rel="icon" href="/icone.png"><link rel="apple-touch-icon" href="/icone.png">'
+               '<link rel="icon" href="/icone-192.png"><link rel="apple-touch-icon" href="/icone-192.png">'
                '<link rel="stylesheet" href="/movel.css"><script src="/movel.js"></script>')
         h = h.replace("<title>", cab + "<title>", 1)
         self._enviar(200, h.encode("utf-8"), _TIPOS[".html"])
@@ -149,6 +155,8 @@ class _H(BaseHTTPRequestHandler):
         if not self._autorizado():
             return self._enviar(403)
         u = urlparse(self.path)
+        if u.path in ("/voz/ouvir", "/voz/falar"):
+            return self._voz(u.path[5:])
         if not u.path.startswith("/api/"):
             return self._enviar(404)
         nome = u.path[5:]
@@ -169,6 +177,42 @@ class _H(BaseHTTPRequestHandler):
             else:
                 return self._enviar(404)
             return self._enviar(200, json.dumps({"r": r}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
+        except Exception as e:
+            return self._enviar(500, json.dumps({"erro": str(e)}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
+
+
+    def _voz(self, o_que):
+        """ouvir: corpo = PCM 16 bits mono 16 kHz do microfone do celular → {"texto"}; falar: {"texto"} → WAV (Kokoro)"""
+        global _asr
+        n = int(self.headers.get("Content-Length") or 0)
+        corpo = self.rfile.read(n) if n else b""
+        try:
+            import numpy as np
+            if o_que == "ouvir":
+                audio = np.frombuffer(corpo[: len(corpo) // 2 * 2], np.int16).astype(np.float32) / 32768
+                if len(audio) < 16000 * 0.3:
+                    texto = ""
+                else:
+                    voz = getattr(_app, "_voz", None)
+                    if voz is None:
+                        if _asr is None:
+                            from voz import Voz
+                            _asr = Voz()
+                        voz = _asr
+                    texto = voz._transcrever(audio)
+                return self._enviar(200, json.dumps({"texto": texto}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
+            import io, wave
+            from fala import VELOCIDADE, VOZ, limpar
+            frase = limpar(json.loads(corpo or b"{}").get("texto") or "")
+            if len(frase) < 2:
+                return self._enviar(204)
+            with _tts:
+                a, sr = _app._fala_obj().carregar().create(frase, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as w:
+                w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+                w.writeframes((np.clip(np.asarray(a, np.float32), -1, 1) * 32767).astype(np.int16).tobytes())
+            return self._enviar(200, buf.getvalue(), "audio/wav")
         except Exception as e:
             return self._enviar(500, json.dumps({"erro": str(e)}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
 

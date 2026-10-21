@@ -1,7 +1,20 @@
 /* KaniCode no celular (movel.py): a janela do PC adaptada ao toque */
 html.movel body { border: 0; font-size: 15px; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); height: 100dvh; }
-html.movel .tam, html.movel #grande, html.movel #fixar, html.movel #recolher, html.movel #sair,
-html.movel #voz, html.movel #mic, html.movel #revisar { display: none !important; }
+html.movel .tam, html.movel #grande, html.movel #fixar, html.movel #recolher, html.movel #sair, html.movel #revisar,
+html.movel #som { display: none !important; }
+/* nada passa da largura da tela (a coluna da conversa esticava com linhas longas e a página andava para os lados) */
+html.movel, html.movel body { overflow-x: hidden; max-width: 100vw; touch-action: pan-y; }
+html.movel .corpo, html.movel .meio, html.movel .conversa { min-width: 0; max-width: 100%; }
+html.movel .conversa { overflow-x: hidden; }
+html.movel .msg, html.movel .passo, html.movel .perm, html.movel .perg { min-width: 0; max-width: 100%; }
+html.movel .msg.kc pre, html.movel .dif, html.movel .passo pre { max-width: 100%; }
+html.movel .mic { width: 36px; height: 36px; font-size: 18px; margin: 0 -2px 0 0; }
+/* contas: painel que sobe de baixo; trocar só (entrar/remover/renomear ficam no PC) */
+html.movel .contas { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); max-height: 75dvh; z-index: 70;
+                     border-radius: 14px; box-shadow: 0 -10px 40px #000a; }
+html.movel .contas [data-acao=tirar], html.movel .contas [data-acao=entrar], html.movel .contas #ct-add { display: none; }
+html.movel .contas [data-ren] { pointer-events: none; }
+html.movel .ct .acoes button { height: 38px; font-size: 14px; }
 html.movel .topo { height: 48px; }
 html.movel .bt { min-width: 40px; height: 40px; font-size: 17px; }
 html.movel textarea { font-size: 16px; line-height: 24px; }   /* 16px: o celular não dá zoom ao tocar */
@@ -15,3 +28,5 @@ html.movel .atv.aberto .det { position: fixed; right: 0; top: 48px; bottom: 0; w
                               background: var(--painel); box-shadow: -8px 0 24px #0008; }
 html.movel.sem-pc .topo::after { content: "sem conexão com o PC…"; position: fixed; left: 0; right: 0; top: calc(48px + env(safe-area-inset-top)); z-index: 60;
                                  background: #3A2A10; color: var(--aviso); font: 12.5px var(--sans); text-align: center; padding: 4px; }
+html.movel .lado.aberto { position: fixed; left: 0; top: calc(48px + env(safe-area-inset-top)); bottom: 0; width: min(92vw, 360px); z-index: 70;
+                          background: var(--painel); box-shadow: 10px 0 40px #000b; border-right: 1px solid var(--borda); }
