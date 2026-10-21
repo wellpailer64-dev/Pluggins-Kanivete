@@ -9,8 +9,8 @@ Eventos: inicio{sessao, modelo} · comandos{lista} · texto{d} (pedaço) · text
 ferr_fim{id, ok, saida} · uso{saida, contexto, novo} · limite{h5, h5_zera, sem, sem_zera} · permissao{id, ferr, entrada, motivo} ·
 fim{custo, ms, tokens, erro} · saiu{erro}
 
-Permissões (etapa 3): modo "auto" do Claude Code (o classificador dele libera o que é seguro dentro do projeto) + regras
-"ask" do KaniCode para o que o Pailer quer decidir (REGRAS_PERGUNTAR). O pedido chega pelo próprio canal
+Permissões (etapa 3): as mesmas do cmd — modo "auto" do Claude Code e as configurações dele, sem regras "ask" a mais
+(REGRAS_PERGUNTAR vazia desde 2026-10-20). O pedido chega pelo próprio canal
 (--permission-prompt-tool stdio + "initialize"): control_request can_use_tool → a janela mostra o cartão → responder().
 Apagar só dentro da pasta do projeto é liberado aqui mesmo, sem cartão.
 """
@@ -32,7 +32,8 @@ _RISCO = ["git push", "git commit", "git reset", "git rebase", "git clean", "git
           "gh pr", "gh release", "gh repo", "gh api", "npm publish", "rm", "rmdir", "del", "rd", "Remove-Item", "taskkill",
           "Stop-Process", "kill", "shutdown", "Restart-Computer", "Stop-Computer", "format", "curl -X POST", "Invoke-RestMethod",
           "Invoke-WebRequest -Method Post"]
-REGRAS_PERGUNTAR = [f"{f}({c}:*)" for f in ("Bash", "PowerShell") for c in _RISCO]
+# vazia = as mesmas permissões do cmd (pedido do Pailer, 2026-10-20); _RISCO fica para o "Permitir sempre" quando o auto pergunta
+REGRAS_PERGUNTAR = []   # antes: [f"{f}({c}:*)" for f in ("Bash", "PowerShell") for c in _RISCO]
 
 
 def risco(cmd):
@@ -86,7 +87,7 @@ class Sessao:
             raise RuntimeError("não achei o Claude Code (comando claude) neste PC")
         cmd = [exe, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--include-partial-messages",
                "--verbose", "--permission-mode", self.modo, "--permission-prompt-tool", "stdio",
-               "--settings", json.dumps({"permissions": {"ask": REGRAS_PERGUNTAR}}),
+               *(["--settings", json.dumps({"permissions": {"ask": REGRAS_PERGUNTAR}})] if REGRAS_PERGUNTAR else []),
                "--append-system-prompt", PROMPT_KANICODE,
                # ajudantes (mcp_equipe.py): Codex e Kani como ferramentas, liberadas sem cartão
                "--mcp-config", json.dumps({"mcpServers": {"equipe": {
