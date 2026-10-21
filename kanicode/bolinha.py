@@ -49,6 +49,7 @@ class Bolinha:
         self.ao_clicar, self.ao_mover, self.ao_direito = ao_clicar, ao_mover, ao_direito
         self.estado = ""          # "" | "trabalhando" | "pergunta"
         self.aberta = False
+        self.voz = ""             # "" | "escutando" (Ei Kani ligado) | "ouvindo" (gravando o pedido)
         self._fase = 0.0
         self._cursor = True
         f = self.form = Form()
@@ -105,16 +106,19 @@ class Bolinha:
             self.ao_mover(self.x, self.y)
 
     def _tique(self, _s, _e):
-        if self.estado == "trabalhando":
+        if self.estado == "trabalhando" or self.voz == "ouvindo":
             self._fase = (self._fase + 0.12) % 1.0
         else:
             self._cursor = not self._cursor
         self.desenhar()
 
-    def definir(self, estado=None, aberta=None):
+    def definir(self, estado=None, aberta=None, voz=None):
         if estado is not None:
             self.estado = estado
-            self._t.Interval = 40 if estado == "trabalhando" else 550
+        if voz is not None:
+            self.voz = voz
+        if estado is not None or voz is not None:
+            self._t.Interval = 40 if self.estado == "trabalhando" or self.voz == "ouvindo" else 550
         if aberta is not None:
             self.aberta = aberta
         self.desenhar()
@@ -152,6 +156,14 @@ class Bolinha:
         g.DrawString(">", fonte, SolidBrush(_cor(FUNDO)), float(cx - tam.Width * 0.62), float(cy - tam.Height / 2))
         if self.aberta or self._cursor or self.estado == "trabalhando":
             g.FillRectangle(SolidBrush(_cor(FUNDO)), RectangleF(float(cx + L * 0.02), float(cy + L * 0.08), float(L * 0.13), float(L * 0.05)))
+        if self.voz == "ouvindo":   # ouvindo o pedido: anel que pulsa por fora
+            import math
+            k = 0.5 + 0.5 * math.sin(self._fase * 2 * math.pi)
+            pen = Pen(_cor(FUNDO, int(120 + 110 * k)), max(2.0, L * (0.05 + 0.04 * k)))
+            g.DrawEllipse(pen, float(m + L * 0.04), float(m + L * 0.04), float(L * 0.92), float(L * 0.92))
+        elif self.voz == "escutando":   # Ei Kani ligado: pontinho embaixo à esquerda
+            r = L * 0.16
+            g.FillEllipse(SolidBrush(_cor(FUNDO)), float(m + L * 0.06), float(m + L - r * 1.25), float(r), float(r))
         if self.estado == "pergunta":
             r = L * 0.22
             g.FillEllipse(SolidBrush(_cor(FUNDO)), float(m + L - r * 1.05), float(m - r * 0.05), float(r + 2), float(r + 2))

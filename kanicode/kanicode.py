@@ -72,6 +72,7 @@ class App:
         self._comandos = []
         self._pendente = None      # "recarregar"/"reiniciar" pedido no meio de uma resposta: roda quando ela terminar
         self._carregado = time.time()   # para o "atualizar" saber o que mudou depois de aberto
+        self._voz = None           # voz.py: "Ei Kani" + fala para texto
 
     # ── js_api ──
     def mostrar(self):
@@ -190,6 +191,37 @@ class App:
         _gravar_estado(tamanho=None)
         self._janela.resize(JW, JH)
         self._janela.move(*self._perto_da_bola())
+
+    # ── voz (voz.py): "Ei Kani" acorda, a fala vai para a conversa ──
+    def voz(self, on=None):
+        """liga/desliga o Ei Kani (None = só diz o estado). Fica gravado: abre ligado da próxima vez."""
+        if on is None:
+            return {"on": bool(self._voz and self._voz.ligada)}
+        if on:
+            try:
+                if not self._voz:
+                    from voz import Voz
+                    self._voz = Voz(self._voz_acordou, self._voz_texto, self._voz_estado)
+                self._voz.ligar()
+            except Exception as e:
+                return {"on": False, "erro": str(e)}
+        elif self._voz:
+            self._voz.desligar()
+            self._na_ui(lambda: self._bola and self._bola.definir(voz=""))
+        _gravar_estado(voz=bool(on))
+        return {"on": bool(on)}
+
+    def _voz_acordou(self):
+        if not self._aberta:
+            self.mostrar()
+
+    def _voz_estado(self, e):
+        b = {"escutando": "escutando", "ouvindo": "ouvindo", "transcrevendo": "ouvindo"}.get(e, "")
+        self._na_ui(lambda: self._bola and self._bola.definir(voz=b))
+        self._para_janela({"t": "voz", "fase": e})
+
+    def _voz_texto(self, texto):
+        self._para_janela({"t": "voz", "fase": "texto", "texto": texto})
 
     def esconder(self):
         if self._janela:
@@ -751,6 +783,8 @@ def main():
 
     def comecar():
         app._criar_bola()
+        if e.get("voz"):   # o Ei Kani estava ligado: volta ligado
+            threading.Timer(1.5, app.voz, args=(True,)).start()
         if "--abrir" in sys.argv:   # reiniciado com a janela aberta: volta aberta
             threading.Timer(0.8, app.mostrar).start()
     webview.start(comecar, debug="--console" in sys.argv, storage_path=os.path.join(DADOS, "webview"))

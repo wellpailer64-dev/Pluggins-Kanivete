@@ -359,6 +359,7 @@
     <button class="bt" id="nova" title="Conversa nova nesta pasta (a anterior fica guardada) · /nova">＋</button>
     <button class="bt" id="revisar" title="Revisar o código mudado: procura erros no que foi alterado (/code-review)">🔍</button>
     <button class="bt" id="habil" title="Habilidades: tudo o que sabemos fazer (guias do KANIVETE, skills, comandos)">🧰</button>
+    <button class="bt" id="voz" title="Ei Kani: fale &quot;Ei Kani&quot; e o pedido, sem tocar no teclado (tudo no seu PC)">🎙</button>
     <button class="bt" id="som" title="Sons suaves das ações">🔈</button>
     <button class="bt" id="grande" title="Janela grande: antes × depois e saídas inteiros (de novo = volta)">⤢</button>
     <button class="bt" id="fixar" title="Sempre por cima">📌</button>
@@ -1227,6 +1228,7 @@
         if (ev.erro) { bolha('erro', 'O Claude Code fechou:\n' + ev.erro); som('erro'); }
         break;
       case 'aviso': console.warn(ev.texto); break;
+      case 'voz': vozEv(ev); break;
     }
     if (colar) fim();
   };
@@ -1374,6 +1376,30 @@
     if (SOM.on) som('permitido');
   });
   somBotao();
+  // ── Ei Kani (voz.py): o texto falado entra na caixa e vai como se fosse digitado ──
+  function vozBotao(on) { $('voz').classList.toggle('on', !!on); }
+  function vozEv(ev) {
+    if (ev.fase === 'ouvindo') atividade('Ouvindo… fale o pedido');
+    else if (ev.fase === 'transcrevendo') atividade('Entendendo o que você falou');
+    else if (ev.fase === 'escutando' && !K.ocupada) atividade('Pronto');
+    else if (ev.fase === 'desligada') vozBotao(false);
+    else if (ev.fase && ev.fase.startsWith('erro:')) { bolha('erro', 'Ei Kani: ' + ev.fase.slice(5)); vozBotao(false); }
+    else if (ev.fase === 'texto' && ev.texto) {
+      // comandos falados que o KaniCode resolve sozinho: "para" interrompe; "cancela/esquece" não manda nada
+      const c = ev.texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z ]/g, '').trim();
+      if (/^(para|pare|parar|chega)( tudo)?$/.test(c)) { if (K.ocupada) { api().parar(); atividade('Parando…'); } return; }
+      if (/^(cancela|cancelar|esquece|deixa|deixa pra la|nada)$/.test(c)) { atividade('Pronto'); return; }
+      texto.value = ev.texto + ' (por voz)'; ajustar(); mandar();
+    }
+  }
+  $('voz').addEventListener('click', async () => {
+    const ligar = !$('voz').classList.contains('on');
+    const r = await api().voz(ligar);
+    vozBotao(r.on);
+    if (r.erro) bolha('erro', 'Ei Kani: ' + r.erro);
+    else bolha('sis', r.on ? '🎙 Ei Kani ligado: diga "Ei Kani" e o pedido.' : 'Ei Kani desligado.');
+  });
+  setTimeout(() => api().voz(null).then(r => vozBotao(r.on)).catch(() => {}), 2500);
   $('quem-bt').addEventListener('click', menuQuem);
   $('habil').addEventListener('click', habAbrir);
   $('c5').addEventListener('click', alternarUso);

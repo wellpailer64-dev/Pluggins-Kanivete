@@ -34,8 +34,8 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
   (`sessoes`), conversa da janela em `D:\Kanivete\KaniCode\conversas\<sessão>.jsonl`; reabrir = `--resume`.
 - Testar a janela: `py -3.13 kanicode.py --agente[=9350]` (CDP só nesse modo) — scripts em `D:\kanivete_testes\scripts\kc_*.py`.
 - Etapa 3 (permissões, status e cotas): `--permission-mode auto` (o classificador do Claude Code libera o seguro) +
-  regras "ask" do KaniCode (`sessao.REGRAS_PERGUNTAR`: git push/commit/reset…, gh, apagar, matar processo, desligar,
-  POST) mandadas por `--settings`; o pedido chega no canal da conversa com `--permission-prompt-tool stdio` + um
+  regras "ask" do KaniCode (`sessao.REGRAS_PERGUNTAR`, mandadas por `--settings`) — VAZIA desde 2026-10-20: o Pailer quis
+  as mesmas permissões do cmd (antes: git push/commit/reset…, gh, apagar, matar processo, desligar, POST); o pedido chega no canal da conversa com `--permission-prompt-tool stdio` + um
   `control_request initialize` no início (sem isso o "ask" é recusado sozinho). Apagar com todos os alvos dentro da pasta
   do projeto é liberado em `_apagar_dentro`, sem cartão. "Permitir sempre: git push" no cartão (`sessao.risco`/`sempre`,
   lista em `dados/sempre.json`) libera aquele item de `_RISCO` só com o comando sozinho (com `&&`, `;`, `|`, crase ou
@@ -73,3 +73,8 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
   - Aplicar ajuste sem fechar: `py -3.13 recarregar.py [--recarregar|--reiniciar]` manda `atualizar` pelo canal de
     controle; só ui/css/js mudou = recarrega a página; algum .py = abre um KaniCode novo (`--reaberto` espera a porta,
     `--abrir` volta com a janela aberta, `--resume` mantém a conversa) e este sai. No meio de uma resposta, espera o `fim`.
+- **Ei Kani** (voz, 2026-10-20, `kanicode/voz.py`, botão 🎙): microfone → openWakeWord com modelo próprio
+  (`modelos/hey_kani.onnx`, treinado em `D:\kanivete_testes\hey_kani`: Piper + OmniVoice, 2000 h de negativos do ACAV;
+  ~78% em voz sintética nunca vista, 1,8 falsos/h) → no disparo o Parakeet confere se ouviu "Kani" → bipe, grava até a pausa
+  (Silero VAD) → Parakeet pt-BR do KANIVETE transcreve → vai para a conversa com "(por voz)". "Para" interrompe a tarefa,
+  "cancela/esquece" descarta. Bolinha: pontinho = escutando, anel pulsando = ouvindo. Liga sozinho se estava ligado.
