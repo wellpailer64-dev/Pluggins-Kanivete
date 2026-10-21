@@ -1,0 +1,17 @@
+/* KaniCode no celular (movel.py): a janela do PC adaptada ao toque */
+html.movel body { border: 0; font-size: 15px; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); height: 100dvh; }
+html.movel .tam, html.movel #grande, html.movel #fixar, html.movel #recolher, html.movel #sair,
+html.movel #voz, html.movel #mic, html.movel #revisar { display: none !important; }
+html.movel .topo { height: 48px; }
+html.movel .bt { min-width: 40px; height: 40px; font-size: 17px; }
+html.movel textarea { font-size: 16px; line-height: 24px; }   /* 16px: o celular não dá zoom ao tocar */
+html.movel .enviar { min-height: 42px; padding: 0 16px; font-size: 15px; }
+html.movel .msg { max-width: 100%; }
+html.movel .conversa { padding: 12px 8px 8px; }
+html.movel .perm button, html.movel .perg .op, html.movel .perg .enviar-r { min-height: 40px; font-size: 14.5px; }
+html.movel .rodape { flex-wrap: wrap; row-gap: 4px; padding-top: 4px; }
+html.movel .lado:not(.aberto) { width: 0; padding: 0; border: 0; }   /* contas: no menu ▾ do rodapé */
+html.movel .atv.aberto .det { position: fixed; right: 0; top: 48px; bottom: 0; width: min(88vw, 320px); z-index: 50;
+                              background: var(--painel); box-shadow: -8px 0 24px #0008; }
+html.movel.sem-pc .topo::after { content: "sem conexão com o PC…"; position: fixed; left: 0; right: 0; top: calc(48px + env(safe-area-inset-top)); z-index: 60;
+                                 background: #3A2A10; color: var(--aviso); font: 12.5px var(--sans); text-align: center; padding: 4px; }

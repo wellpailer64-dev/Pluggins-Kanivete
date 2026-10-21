@@ -77,6 +77,7 @@ class App:
         self._por_voz = False
         self._respondendo = False  # resposta do Claude chegando (para falar o resto se a janela for minimizada)
         self._resposta = ""        # o texto da mensagem atual da resposta, desde o último "texto_novo"
+        self._pend = {}            # permissões/perguntas abertas, por id (para o celular, movel.py)
 
     # ── js_api ──
     def mostrar(self):
@@ -444,10 +445,12 @@ class App:
         return out
 
     # ── conversa (sessao.py) ──
-    def enviar(self, texto, imagens=None):
+    def enviar(self, texto, imagens=None, _de="pc"):
         texto = (texto or "").strip()
         if not texto and not imagens:
             return False
+        # a mensagem aparece também nos outros aparelhos abertos (janela do PC × celular, movel.py)
+        self._para_janela({"t": "eco_eu", "texto": texto, "de": _de, "minis": [i.get("mini") for i in imagens or [] if i.get("mini")]})
         # comandos que o próprio KaniCode resolve (os outros "/" vão para o Claude Code como no terminal)
         cmd, _, arg = texto.partition(" ")
         if cmd in ("/clear", "/nova", "/new"):
@@ -659,7 +662,22 @@ class App:
             acao, self._pendente = self._pendente, None
             threading.Timer(1.5, self._atualizar, args=(acao,)).start()   # a última bolha chega à tela antes
 
+    def pendentes(self):
+        """cartões de permissão/pergunta ainda sem resposta (o celular que abre agora mostra eles vivos)"""
+        return list(self._pend.values())
+
     def _para_janela(self, ev):
+        if ev.get("t") in ("permissao", "pergunta") and ev.get("id"):
+            self._pend[ev["id"]] = ev
+        elif ev.get("t") == "eco_resp":
+            self._pend.pop(ev.get("id"), None)
+        elif ev.get("t") in ("fim", "saiu"):
+            self._pend.clear()
+        try:
+            import movel
+            movel.publicar(ev)
+        except Exception:
+            pass
         try:
             self._janela.evaluate_js("window.kcEv && kcEv(%s)" % json.dumps(ev, ensure_ascii=False))
         except Exception:
@@ -859,6 +877,12 @@ def main():
     app._janela.events.closing += app._fechando
     threading.Thread(target=app._servir, args=(srv,), daemon=True).start()
     os.makedirs(DADOS, exist_ok=True)
+    if e.get("movel", True):   # KaniCode no celular (movel.py): só em 127.0.0.1; de fora, pelo Tailscale
+        try:
+            import movel
+            movel.iniciar(app, DADOS)
+        except Exception:
+            pass
 
     def comecar():
         app._criar_bola()

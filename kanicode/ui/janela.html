@@ -1115,6 +1115,7 @@
   function cartaoPergunta(ev, respondido) {
     const d = document.createElement('div');
     d.className = 'perg';
+    d.dataset.id = ev.id;
     const qs = ev.perguntas || [];
     d.innerHTML = qs.map((q, i) => `<div class="q" data-i="${i}">
         ${q.header ? `<span class="hd">${esc(q.header)}</span>` : ''}<div class="tx">${esc(q.question)}${q.multiSelect ? ' <small style="color:var(--fraco);font-weight:400">(pode marcar várias)</small>' : ''}</div>
@@ -1461,7 +1462,23 @@
     g.addEventListener('lostpointercapture', soltar);
     if (lado === 'se') g.addEventListener('dblclick', () => api().tam_padrao());
   });
-  window.addEventListener('pywebviewready', () => { carregar(); texto.focus(); });
+  // outros aparelhos (janela do PC × celular, movel.py): a mensagem e a resposta a um cartão aparecem aqui também
+  window.KC_DE = window.KC_DE || 'pc';
+  const kcEvBase = window.kcEv;
+  window.kcEv = ev => {
+    if (ev.t === 'eco_eu') {
+      if (ev.de !== KC_DE) { const b = bolha('eu', ev.texto); const m = minis(ev.minis); if (m) b.prepend(m); fim(); }
+      return;
+    }
+    if (ev.t === 'eco_resp') {
+      if (ev.de === KC_DE) return;
+      const d = document.querySelector(`.perm[data-id="${CSS.escape(ev.id)}"], .perg[data-id="${CSS.escape(ev.id)}"]`);
+      if (d && !d.classList.contains('respondida')) { if (d.classList.contains('perm')) marcarCartao(d, ev.ok); else d.classList.add('respondida'); K.espera = false; }
+      return;
+    }
+    kcEvBase(ev);
+  };
+  window.addEventListener('pywebviewready', () => { carregar(); if (!window.KC_MOVEL) texto.focus(); });
 </script>
 <script src="paineis.js"></script>
 </body>
