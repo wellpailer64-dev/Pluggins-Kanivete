@@ -43,7 +43,23 @@
   const V = { gravando: null, ler: false, conversa: localStorage.getItem('kc-conversa') === '1', buf: '', codigo: false,
               fila: [], tocando: false, fimResposta: false, audio: new Audio() };
   V.audio.setAttribute('playsinline', '');
-  function micVisual(on) { document.getElementById('mic').classList.toggle('on', on); }
+  function micVisual(on) { document.getElementById('mic').classList.toggle('on', on); if (window.KCApp) KCApp.estado(on ? 'ouvindo' : 'parado'); }
+  // app do celular (APK com a bolinha): mede o volume da voz que está tocando para a bolinha pulsar junto
+  function bolinhaMedir() {
+    if (!window.KCApp || V.medidor) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser();
+      ctx.createMediaElementSource(V.audio).connect(an); an.connect(ctx.destination); an.fftSize = 512;
+      const x = new Float32Array(an.fftSize); let falando = false;
+      V.medidor = setInterval(() => {
+        if (ctx.state === 'suspended') ctx.resume();
+        an.getFloatTimeDomainData(x); let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i];
+        const r = Math.sqrt(s / x.length);
+        if (r > 0.015) { if (!falando) { falando = true; KCApp.estado('falando'); } KCApp.nivel(Math.min(1, r * 6)); }
+        else if (falando) { falando = false; if (!V.gravando) KCApp.estado('parado'); }
+      }, 100);
+    } catch (e) { console.warn('medidor', e); }
+  }
   async function micLigar() {
     if (V.gravando) return micParar();
     pararFala();
@@ -70,6 +86,7 @@
   async function micParar() {
     const g = V.gravando; if (!g) return;
     V.gravando = null; micVisual(false);
+    setTimeout(fundoLigar, 300);   // o silêncio volta depois do microfone (com a tela aberta ele não atrapalha)
     g.proc.disconnect(); g.fonte.disconnect(); g.fluxo.getTracks().forEach(t => t.stop()); g.ctx.close();
     if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
     if (g.falou < 0.3) { atividade('Pronto'); return; }
@@ -78,12 +95,14 @@
     const tudo = new Float32Array(total); let o = 0; for (const p of g.partes) { tudo.set(p, o); o += p.length; }
     const pcm = new Int16Array(n);
     for (let i = 0; i < n; i++) pcm[i] = Math.max(-1, Math.min(1, tudo[Math.floor(i * passo)])) * 32767;
-    vozEv({ fase: 'transcrevendo' });
+    vozEv({ fase: 'transcrevendo' }); if (window.KCApp) KCApp.estado('pensando');
     try {
       const r = await (await fetch('/voz/ouvir', { method: 'POST', body: pcm.buffer })).json();
       if (r.erro) throw new Error(r.erro);
+      if (window.KCApp) KCApp.estado('parado');
       if (!r.texto) { atividade('Não entendi; toque no 🎤 e fale de novo'); return; }
-      V.ler = true;   // pediu por voz: a resposta volta falada
+      V.ler = true; V.porVoz = true;   // pediu por voz: a resposta volta falada (e no app, depois, ouve de novo)
+      fundoLigar();
       vozEv({ fase: 'texto', texto: r.texto });
     } catch (e) { bolha('erro', 'Transcrever: ' + (e.message || e)); atividade('Pronto'); }
   }
@@ -99,6 +118,7 @@
     }
   }
   function falarFrase(f) {
+    if (V.fundo) return;   // a rádio do PC já está lendo
     if ((f || '').replace(/\W/g, '').length < 2) return;
     V.fila.push(fetch('/voz/falar', { method: 'POST', body: JSON.stringify({ texto: f }) })
       .then(r => r.status === 200 ? r.blob() : null).catch(() => null));
@@ -110,6 +130,7 @@
       const blob = await V.fila.shift();
       if (!blob || !V.tocando) continue;
       const url = URL.createObjectURL(blob);
+      bolinhaMedir();
       V.audio.src = url;
       try {
         await V.audio.play();
@@ -119,19 +140,57 @@
     }
     V.tocando = false;
     if (V.fimResposta) { V.fimResposta = false; depoisDeFalar(); }
+    fundoLigar();
+  }
+  // rádio: com o modo conversa (ou um pedido por voz) o player toca /voz/radio, um fluxo contínuo que vem do PC; quem lê
+  // a resposta é o PC (radio.py). Rádio o celular deixa tocando com o app minimizado ou a tela apagada (a página congela,
+  // a rádio não). Fica ligada até desligar o 🎙 ou pausar na tela de bloqueio.
+  V.fundo = false;
+  function fundoLigar() {
+    if (window.KCApp) return;   // no app do celular a página não congela: a voz vem direto, frase a frase (sem o atraso da rádio)
+    if (!(V.conversa || V.ler) || V.gravando) return;
+    if (V.fundo && !V.audio.paused) return;
+    V.fila = []; V.fundo = true; V.audio.onended = V.audio.onpause = null; V.audio.loop = false;
+    V.audio.src = '/voz/radio?t=' + Date.now();
+    V.audio.play().catch(() => { V.fundo = false; });
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    // ao vivo: o player junta segundos de folga antes de tocar; se ficou mais de 1 s atrás do que já chegou, pula para perto do fim
+    V.audio.ontimeupdate = () => {
+      const b = V.audio.buffered; if (!V.fundo || !b.length) return;
+      const fim = b.end(b.length - 1);
+      if (fim - V.audio.currentTime > 1) V.audio.currentTime = fim - 0.25;
+    };
+  }
+  function fundoDesligar() {
+    if (!V.fundo) return;
+    V.fundo = false;
+    try { V.audio.pause(); V.audio.removeAttribute('src'); V.audio.load(); } catch (e) {}
   }
   function pararFala() { V.fila = []; V.buf = ''; V.codigo = false; V.fimResposta = false; try { V.audio.pause(); } catch (e) {} }
   function depoisDeFalar() {
     // modo conversa: terminou de falar → já ouve o próximo pedido (só com a tela aberta: o celular não libera o microfone em segundo plano)
-    if (V.conversa && document.visibilityState === 'visible' && !V.gravando) micLigar();
+    // no app (KCApp) o microfone segue com a tela apagada e o pedido feito pela bolinha também continua a conversa
+    const seguir = V.conversa || (window.KCApp && V.porVoz);
+    V.porVoz = false;
+    if (seguir && (document.visibilityState === 'visible' || window.KCApp) && !V.gravando) micLigar();
   }
   function conversaBotao() {
     const b = document.getElementById('voz');
     b.classList.toggle('on', V.conversa);
     b.title = V.conversa ? 'Modo conversa ligado: leio as respostas em voz alta e já ouço o próximo pedido' : 'Modo conversa';
   }
-  if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: 'KaniCode', artist: 'Claude',
-    artwork: [{ src: '/icone-512.png', sizes: '512x512', type: 'image/png' }] });
+  // modo conversa já ligado ao abrir: o 1º toque na tela libera o som de fundo (o celular exige um toque)
+  document.addEventListener('pointerdown', () => { if (V.conversa) fundoLigar(); }, { once: true, capture: true });
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: 'KaniCode', artist: 'Claude',
+      artwork: [{ src: '/icone-512.png', sizes: '512x512', type: 'image/png' }] });
+    // pausar na tela de bloqueio = desligar o modo conversa (e o som de fundo); tocar = ligar de novo
+    navigator.mediaSession.setActionHandler('pause', () => {
+      V.conversa = false; V.ler = false; localStorage.setItem('kc-conversa', '0'); conversaBotao(); pararFala(); fundoDesligar();
+      navigator.mediaSession.playbackState = 'paused';
+    });
+    navigator.mediaSession.setActionHandler('play', () => { V.conversa = true; localStorage.setItem('kc-conversa', '1'); conversaBotao(); fundoLigar(); });
+  }
 
   // ── aviso no celular (aviso_movel.py): 🔔 liga/desliga; chega quando termino ou preciso de você e o KaniCode não está à vista ──
   const post = (u, d) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d || {}) }).then(r => r.json());
@@ -173,12 +232,13 @@
     document.addEventListener('click', e => {
       const b = e.target.closest('#mic, #voz, #contas-bt, #aviso-bt'); if (!b) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      if (!V.tocando) { V.audio.play().catch(() => {}); V.audio.pause(); }   // libera o som neste toque (o celular exige um toque antes)
+      if (!V.tocando && !V.fundo) { V.audio.play().catch(() => {}); V.audio.pause(); }   // libera o som neste toque (o celular exige um toque antes)
       if (b.id === 'mic') micLigar();
       else if (b.id === 'voz') {
         V.conversa = !V.conversa; localStorage.setItem('kc-conversa', V.conversa ? '1' : '0'); conversaBotao();
         bolha('sis', V.conversa ? '🎙 Modo conversa: leio as respostas em voz alta e depois já ouço você.' : 'Modo conversa desligado.');
         if (V.conversa && !K.ocupada) micLigar(); else if (!V.conversa) pararFala();
+        if (V.conversa) fundoLigar(); else fundoDesligar();
       } else if (b.id === 'aviso-bt') avisoAlternar();
       else contasAbrir();
     }, true);
@@ -190,6 +250,11 @@
     // eventos da conversa → leitura em voz alta
     const ev0 = window.kcEv;
     window.kcEv = ev => {
+      if (window.KCApp) {   // a cara da bolinha do app acompanha a conversa (trabalhando / pergunta / parada)
+        if (ev.t === 'inicio' || ev.t === 'texto' || ev.t === 'passo') KCApp.tarefa('trabalhando');
+        else if (ev.t === 'permissao' || ev.t === 'pergunta') KCApp.tarefa('pergunta');
+        else if (ev.t === 'fim' || ev.t === 'saiu') KCApp.tarefa('parado');
+      }
       if (ev.t === 'inicio' || ev.t === 'texto_novo') { V.buf = ''; V.codigo = false; }
       else if (ev.t === 'texto' && (V.ler || V.conversa)) falarPedaco(ev.d || '');
       else if ((ev.t === 'permissao' || ev.t === 'pergunta') && (V.ler || V.conversa)) falarFrase('Preciso da sua decisão na tela.');

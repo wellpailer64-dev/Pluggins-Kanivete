@@ -91,7 +91,12 @@ A MESMA conversa no celular, de qualquer lugar; o PC faz tudo, o celular é tela
   respostas de cartões ecoam entre aparelhos (`eco_eu`, `eco_resp`); cartões abertos voltam vivos ao abrir (`App.pendentes`).
 - **Voz**: 🎤 grava no celular (16 kHz, para sozinho no silêncio) → `/voz/ouvir` (Parakeet do `voz.py`) → vai com "(por voz)".
   Resposta falada: frases → `/voz/falar` (Kokoro do `fala.py`, WAV) → toca no celular (continua com a aba minimizada).
-  🎙 Modo conversa = lê todas as respostas e reabre o microfone (só com a tela à vista).
+  🎙 Modo conversa = lê todas as respostas e reabre o microfone (no navegador só com a tela à vista; no app sempre).
+- **Rádio** (`radio.py`, navegador): página parada não fala (o celular congela o JS minimizado/tela apagada; "silêncio em
+  laço" no próprio celular NÃO resolveu). Com o 🎙, o player toca `GET /voz/radio` (MP3 32 kb/s contínuo, ≈ 14 MB/h); o
+  PC lê a resposta de pedido feito pelo celular (`X-KC-De` ≠ "pc" → `radio.marcar`), frase a frase (corta na vírgula se
+  passar de 70 letras), e mistura no fluxo; o resto é silêncio. Player pula para perto do fim se ficar > 1 s atrás.
+  Pausar na tela de bloqueio desliga.
 - **Avisos** 🔔 (`aviso_movel.py` + `ui/movel-sw.js`, Web Push com `pywebpush`; chaves VAPID e assinaturas em
   `D:\Kanivete\KaniCode\movel_push.json`): "terminei" / "preciso de você" só quando o pedido saiu do celular e nenhuma tela
   do KaniCode está à vista lá (`/push/visto`).
@@ -106,9 +111,38 @@ A MESMA conversa no celular, de qualquer lugar; o PC faz tudo, o celular é tela
   Pailer entrar (entrada automática recusada por segurança).
 - Testes (servidor com app de mentira, Playwright com tela de celular): `D:\kanivete_testes\kanicode_movel\*.py`.
 
+## App do celular (Android, 2026-10-21) — `kanicode/android`
+Java puro, sem Android Studio/Gradle: `py -3.13 kanicode/android/montar.py [--sem-instalar]` (aapt2 + javac + d8 +
+zipalign + apksigner; SDK em `D:\devndroid`: cmdline-tools, build-tools 34, android-34, platform-tools) monta
+`KaniCode.apk` e instala pelo cabo (`adb install -r`, depuração USB ligada). O endereço com a chave vai num `Config.java`
+gerado em `build/`; APK e build fora do git; assinatura em `D:\devndroid\kanicode.jks`.
+- `MainActivity`: a página do KaniCode num WebView que NÃO pausa (sem `onPause`/`pauseTimers`): conversa e voz seguem
+  minimizado, por isso no app a voz vem direto (`/voz/falar`), sem a rádio (menos atraso). Voltar = só esconde.
+- `BolinhaService` (serviço em primeiro plano microfone + mídia): bolinha por cima de tudo (`TYPE_APPLICATION_OVERLAY`);
+  arrastar (lembra a posição), soltar no ✕ embaixo fecha, 1 toque abre o app, 2 toques aperta o 🎤 da página.
+  `BolaView` + `Rosto` = a bolinha e o rosto 8-bit do PC (`bolinha.py`/`rosto.py`): neutro, trabalhando (arco),
+  ouvindo (anel), pensando, falando (boca + pulso pelo volume), pergunta (ponto vermelho).
+- Página ↔ app: `window.KCApp.estado(ouvindo|pensando|falando|parado)`, `.tarefa(trabalhando|pergunta|parado)`,
+  `.nivel(0..1)` (volume medido por um AnalyserNode no player). Pedido pela bolinha continua a conversa (ouve de novo
+  depois de falar; 8 s sem fala encerra).
+- Permissões (sobrepor apps, microfone, notificações): o app pede; pelo cabo `adb shell appops set com.pandalab.kanicode
+  SYSTEM_ALERT_WINDOW allow` + `pm grant … RECORD_AUDIO / POST_NOTIFICATIONS`.
+
 ## KaniBrowser sem o KANIVETE (2026-10-21)
 `kb.py` usa o KANIVETE (modo agente) se ele já está com o navegador aberto; senão o **KaniCode hospeda** o navegador
 (`kanicode/navegador.py`: linha `kb <chave> {"f", "a"}` no canal 47613, chave em `D:\Kanivete\KaniCode\kb_chave.txt`;
 roda numa thread). `--onde kanivete|kanicode` força. O mesmo perfil não abre nos dois ao mesmo tempo. Depois de
 ir/abrir/nova/js/instagram/chatgpt/link sai `tela: <jpg>` (`ponte.vista`, prints em `D:\Kanivete\KaniBrowser\prints`,
 40 últimos) e o KaniCode mostra a miniatura na conversa (PC e celular). `--sem-foto` não tira.
+
+## WhatsApp em um comando (`kanibrowser/wa.py`, 2026-10-21)
+`py -3.13 kanibrowser/wa.py ler --conversa "camila studio" [--n 30] [--transcrever]` · `arquivo --conversa X --nome parte`
+· `conversas [--busca termo]` · `enviar --conversa X --texto "…"` (só com o ok do Pailer). Nome sem acento/emoji; se não
+está na lista, usa a busca do WhatsApp; confere o cabeçalho antes de ler/colar. A lista do WhatsApp só guarda na tela um
+pedaço: `ler` junta rolando para cima um passo por chamada (o navegador corta comando longo) e lê só o que está visível
+(fora da tela vem vazio). Áudio: toca mudo, pega o arquivo (blob do player), Parakeet pt-BR local em pedaços de ~18 s
+cortados no ponto mais quieto; cache por mensagem em `D:\Kanivete\KaniBrowser\wa_audios` (8 min ≈ 44 s). Marca o áudio
+como ouvido. `arquivo`: abre o documento, aperta Baixar com o download desviado (createObjectURL / clique do link) para
+`D:\Kanivete\KaniBrowser\wa_arquivos`.
+**Regra (Pailer):** com o KANIVETE aberto, `kb.py` leva o navegador para ELE (fecha o do KaniCode, abre lá) e traz a aba
+do KaniBrowser para a frente (`mostrar_aba`): ele acompanha ao vivo.

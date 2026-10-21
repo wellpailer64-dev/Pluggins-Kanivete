@@ -56,8 +56,19 @@ def chamar(porta, funcao, args=None, timeout=420, onde="auto"):
     if "x" not in _onde:
         _onde["x"] = onde
         if onde == "auto":
+            # regra do Pailer (2026-10-21): com o KANIVETE aberto, o navegador mora NELE, na aba do KaniBrowser à
+            # vista, para ele acompanhar ao vivo; o KaniCode só hospeda quando o KANIVETE não está aberto
             try:
-                _onde["x"] = "kanivete" if chamar_kanivete(porta, "estado", {}, 15).get("aberto") else "kanicode"
+                aberto = chamar_kanivete(porta, "estado", {}, 15).get("aberto")
+                if not aberto:
+                    try:
+                        chamar_kanicode("fechar_navegador", {}, 30)   # mesmo perfil não abre nos dois
+                    except Exception:
+                        pass
+                    chamar_kanivete(porta, "abrir", {}, 120)
+                    import time; time.sleep(4)          # a 1ª aba logo depois de abrir falhava ("Failed to open a new tab")
+                _onde["x"] = "kanivete"
+                mostrar_aba(porta)
             except Exception:
                 _onde["x"] = "kanicode"
     if _onde["x"] == "kanicode":
@@ -65,11 +76,17 @@ def chamar(porta, funcao, args=None, timeout=420, onde="auto"):
     return chamar_kanivete(porta, funcao, args, timeout)
 
 
-def chamar_kanivete(porta, funcao, args=None, timeout=420):
+def mostrar_aba(porta):
+    """traz a aba do KaniBrowser para a frente no KANIVETE (o Pailer vê a Visão da Kani ao vivo)"""
+    chamar_kanivete(porta, None, expr="(async () => { if (typeof switchTool === 'function') switchTool('plugin-kanibrowser');"
+                    " return JSON.stringify({ok: 1, r: 1}); })()", timeout=20)
+
+
+def chamar_kanivete(porta, funcao, args=None, timeout=420, expr=None):
     from websockets.sync.client import connect
     with urllib.request.urlopen(f"http://127.0.0.1:{porta}/json", timeout=5) as r:
         alvo = next(t for t in json.loads(r.read()) if t.get("type") == "page" and "index.html" in t.get("url", ""))
-    expr = f"KPLUG.chamar('kanibrowser', {json.dumps(funcao)}, {json.dumps(args or {})}).then(r => JSON.stringify({{ok: 1, r}}), e => JSON.stringify({{ok: 0, e: e.message}}))"
+    expr = expr or f"KPLUG.chamar('kanibrowser', {json.dumps(funcao)}, {json.dumps(args or {})}).then(r => JSON.stringify({{ok: 1, r}}), e => JSON.stringify({{ok: 0, e: e.message}}))"
     with connect(alvo["webSocketDebuggerUrl"], max_size=None, open_timeout=10) as ws:
         ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
                             "params": {"expression": expr, "awaitPromise": True, "returnByValue": True}}))

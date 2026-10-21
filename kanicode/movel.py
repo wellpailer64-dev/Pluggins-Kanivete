@@ -49,7 +49,12 @@ def chave(dados):
 
 
 def publicar(ev):
-    """evento da conversa para todos os celulares abertos (e o aviso no celular, aviso_movel.py)"""
+    """evento da conversa para todos os celulares abertos (e o aviso no celular, aviso_movel.py; a rádio, radio.py)"""
+    try:
+        import radio
+        radio.evento(ev)
+    except Exception:
+        pass
     try:
         import aviso_movel
         aviso_movel.ver(ev)
@@ -107,6 +112,14 @@ class _H(BaseHTTPRequestHandler):
             return self._eventos(q.get("de", [""])[0])
         if u.path == "/tela":
             return self._tela()
+        if u.path == "/voz/radio":   # a voz da resposta como rádio (toca com o app minimizado e a tela apagada)
+            import radio
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return radio.servir(self.wfile)
         if u.path == "/tela/estado":
             import tela_movel
             return self._enviar(200, json.dumps({"aberto": bool(tela_movel.alvo())}).encode(), _TIPOS[".json"])
@@ -205,6 +218,8 @@ class _H(BaseHTTPRequestHandler):
             if nome in NADA:
                 r = None
             elif nome == "enviar":
+                import radio
+                radio.marcar(de)
                 r = _app.enviar(*args[:2], _de=de)
             elif nome in ("responder", "responder_pergunta"):
                 r = getattr(_app, nome)(*args)
@@ -281,8 +296,9 @@ def iniciar(app, dados):
     """liga o servidor do celular (127.0.0.1:PORTA) numa thread; devolve False se a porta estiver ocupada"""
     global _app, _chave
     _app, _chave = app, chave(dados)
-    import aviso_movel
+    import aviso_movel, radio
     aviso_movel.iniciar(dados)
+    radio.iniciar(app, _tts)
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", PORTA), _H)
     except OSError:
