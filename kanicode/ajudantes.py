@@ -8,7 +8,10 @@ Cada chamada avisa o andamento por ao_evento({...}) → a janela mostra o avatar
 Eventos: ajudante{quem, fase: "inicio"|"passo"|"fim", texto, tokens, cota, ms, ok}
   quem = "codex" | "kani"; cota (Codex) = {h5, h5_zera, sem, sem_zera} lida da sessão dele (~/.codex/sessions).
 """
-import glob, json, os, shutil, socket, subprocess, threading, time, urllib.request
+import glob, json, os, re, shutil, socket, subprocess, threading, time, urllib.request
+
+import codex_contexto
+import codex_processo
 
 CODEX_MODELO = "gpt-6.1-sol"   # o que a conta Plus aceita no Codex (os outros dão "not supported with a ChatGPT account")
 KANI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))),
@@ -23,97 +26,165 @@ def _nada(_ev):
 
 
 # ─────────────────────────── Codex ───────────────────────────
+def _codex_cauda(thread_id):
+    try:
+        if not thread_id:
+            return []
+        base = os.path.join(os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex"), "sessions")
+        arqs = glob.glob(os.path.join(base, "*", "*", "*", f"*{thread_id}*.jsonl"))
+        if not arqs:
+            return []
+        with open(arqs[-1], "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 262144))
+            return f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+
+
+def _codex_uso(thread_id):
+    """Último acumulado da sessão; permite medir só o turno atual no exec resume."""
+    for linha in reversed(_codex_cauda(thread_id)):
+        if '"token_count"' not in linha:
+            continue
+        try:
+            d = json.loads(linha)
+            uso = ((d.get("payload") or {}).get("info") or {}).get("total_token_usage")
+            if uso is not None:
+                return uso
+        except ValueError:
+            continue
+    return None
+
+
 def _codex_cota(thread_id):
     """cotas do Codex (5 h e semana) gravadas pelo próprio Codex no arquivo da sessão"""
     try:
-        base = os.path.join(os.path.expanduser("~"), ".codex", "sessions")
-        arqs = glob.glob(os.path.join(base, "*", "*", "*", f"*{thread_id}*.jsonl")) if thread_id else []
-        if not arqs:
-            arqs = sorted(glob.glob(os.path.join(base, "*", "*", "*", "*.jsonl")), key=os.path.getmtime)[-1:]
-        cota = None
-        with open(arqs[-1], encoding="utf-8") as f:
-            for linha in f:
-                if '"rate_limits"' in linha:
+        for linha in reversed(_codex_cauda(thread_id)):
+            if '"rate_limits"' in linha:
+                try:
                     d = json.loads(linha)
-                    rl = ((d.get("payload") or {}).get("rate_limits")) or d.get("rate_limits") or {}
-                    p, s = rl.get("primary") or {}, rl.get("secondary") or {}
-                    cota = {"h5": (p.get("used_percent") or 0) / 100, "h5_zera": p.get("resets_at"),
+                except ValueError:
+                    continue
+                rl = ((d.get("payload") or {}).get("rate_limits")) or d.get("rate_limits") or {}
+                p, s = rl.get("primary") or {}, rl.get("secondary") or {}
+                if p or s:
+                    return {"h5": (p.get("used_percent") or 0) / 100, "h5_zera": p.get("resets_at"),
                             "sem": (s.get("used_percent") or 0) / 100, "sem_zera": s.get("resets_at")}
-        return cota
+        return None
     except Exception:
         return None
 
 
-# O isolamento (sandbox) do Codex no Windows esconde o Python e o app (py e até o caminho completo "não existem"):
-# medido 2026-10-20 — sem este aviso ele gastava minutos caçando um jeito de testar em vez de entregar.
-AVISO_AMBIENTE = ("AMBIENTE: no seu terminal isolado NÃO existe Python nem o app (py, python e o caminho completo falham) e "
-                  "não há acesso à porta 9333. NÃO tente rodar testes nem procure alternativas: escreva o código com cuidado, "
-                  "confira lendo, e termine. O KaniCode roda a sintaxe e o teste logo depois e devolve o resultado.")
-CODEX_PRAZO = 600   # s: passou disso, o KaniCode encerra o Codex e devolve o que tiver (nunca esperar sem fim)
+CODEX_PRAZO = 600  # s: passou disso, o KaniCode encerra o Codex e devolve o que tiver (nunca esperar sem fim)
 
 
-def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None, prazo=CODEX_PRAZO):
+def _conversa(tarefa):
+    return codex_contexto.conversa(tarefa)
+
+
+def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None, prazo=CODEX_PRAZO, esforco=None):
     """roda uma tarefa no Codex (codex exec) na pasta; retomar = id da sessão anterior (continua sem reler tudo).
-    Devolve {ok, texto, tokens, arquivos, comandos, cota, ms, sessao, estourou}"""
+    Devolve {ok, texto, tokens, uso, arquivos, comandos, cota, ms, sessao, estourou, cancelado}.
+    tokens mantém a medida antiga (entrada não cacheada + saída), não um preço em dinheiro."""
     exe = shutil.which("codex")
     if not exe:
         raise RuntimeError("o Codex não está instalado (npm install -g @openai/codex)")
-    t0 = time.time()
-    ao_evento({"t": "ajudante", "quem": "codex", "fase": "inicio", "texto": ("continuando: " if retomar else "") + tarefa[:160]})
-    sand = ["-s", "workspace-write" if editar else "read-only"]
+    esforco = esforco or codex_contexto.esforco(tarefa)
+    if esforco not in ("low", "medium", "high"):
+        raise ValueError("esforço do Codex deve ser low, medium ou high")
+    def avisar(fase, texto, **extra):
+        ao_evento({"t": "ajudante", "quem": "codex", "fase": fase, "texto": texto, **extra})
+    avisar("inicio", ("continuando: " if retomar else "") + tarefa[:160], esforco=esforco)
+    # Opções de exec vêm ANTES de resume. Configuração só desta chamada, sem mudar ~/.codex.
+    cmd = [exe, "exec", "-s", "danger-full-access" if editar else "read-only",
+           "-c", f'model_reasoning_effort="{esforco}"', "-c", 'model_verbosity="low"',
+           "-c", "tool_output_token_limit=2500"]
     if retomar:
-        cmd = [exe, "exec", "resume", "--json", "--skip-git-repo-check", "-m", CODEX_MODELO, *sand, retomar, "-"]
-    else:
-        cmd = [exe, "exec", "--json", "--skip-git-repo-check", "-m", CODEX_MODELO, *sand, "-"]
-    p = subprocess.Popen(cmd, cwd=pasta, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         encoding="utf-8", errors="replace", creationflags=_SEM_JANELA)
-    p.stdin.write(tarefa + "\n\n" + AVISO_AMBIENTE)
-    p.stdin.close()
-    estourou = threading.Event()
+        cmd += ["resume"]
+    cmd += ["--json", "--skip-git-repo-check", "-m", CODEX_MODELO]
+    cmd += [retomar, "-"] if retomar else ["-"]
+    entrada = codex_contexto.preparar(tarefa, pasta, editar, retomar)
+    textos, arquivos, comandos, erros = [], [], [], []
+    anterior = _codex_uso(retomar) if retomar else {}
+    campos_uso = {"entrada": "input_tokens", "cache": "cached_input_tokens",
+                  "saida": "output_tokens", "raciocinio": "reasoning_output_tokens"}
+    uso = {"entrada": 0, "cache": 0, "saida": 0, "raciocinio": 0}
+    thread, completo, falhou = retomar, False, False
 
-    def vigia():   # prazo: encerra o Codex (e o que ele abriu) e deixa a leitura terminar com o que já veio
-        while p.poll() is None:
-            if time.time() - t0 > prazo or (parar and parar.is_set()):
-                estourou.set()
-                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True, creationflags=_SEM_JANELA)
-                return
-            time.sleep(1)
-    threading.Thread(target=vigia, daemon=True).start()
-    textos, arquivos, comandos, tokens, thread = [], [], [], 0, retomar
-    for linha in p.stdout:
+    def receber(linha):
+        nonlocal thread, completo, falhou
         try:
             d = json.loads(linha)
         except ValueError:
-            continue
+            return
+        if not isinstance(d, dict):
+            return
         if d.get("type") == "thread.started":
-            thread = d.get("thread_id")
+            thread = d.get("thread_id") or thread
+            avisar("passo", "conectado", sessao=thread)
+        elif d.get("type") == "turn.started":
+            avisar("passo", "pensando")
+        elif d.get("type") in ("error", "turn.failed"):
+            erro = d.get("error") or d.get("message") or "o turno do Codex falhou"
+            erros.append(str(erro.get("message", erro) if isinstance(erro, dict) else erro))
+            falhou = falhou or d.get("type") == "turn.failed"
         it = d.get("item") or {}
+        tipo = it.get("type")
+        if d.get("type") in ("item.started", "item.updated"):
+            atividade = {"command_execution": "executando " + str(it.get("command", ""))[:120],
+                         "mcp_tool_call": "usando " + str(it.get("tool", "ferramenta")),
+                         "web_search": "pesquisando", "file_change": "editando arquivos", "reasoning": "pensando"}
+            if tipo in atividade:
+                avisar("passo", atividade[tipo], id=it.get("id"), operacao="inicio",
+                       entrada={"command": str(it.get("command", ""))[:12000], "changes": it.get("changes") or [],
+                                **(it.get("arguments") if isinstance(it.get("arguments"), dict) else {})})
         if d.get("type") == "item.completed":
-            tipo = it.get("type")
             if tipo == "agent_message" and it.get("text"):
                 textos.append(it["text"])
+                avisar("passo", it["text"][:160])
             elif tipo == "command_execution":
                 comandos.append(it.get("command", ""))
-                ao_evento({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "rodou " + str(it.get("command", ""))[:90]})
+                avisar("passo", "rodou " + str(it.get("command", ""))[:120])
             elif tipo == "file_change":
                 for ch in it.get("changes") or []:
-                    arquivos.append(ch.get("path"))
-                    ao_evento({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "editou " + os.path.basename(str(ch.get("path")))})
-            elif tipo == "reasoning":
-                ao_evento({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "pensando"})
+                    caminho = ch.get("path")
+                    if caminho and caminho not in arquivos:
+                        arquivos.append(caminho)
+                        avisar("passo", "editou " + os.path.basename(caminho))
+            if tipo != "agent_message":
+                avisar("passo", "pensando", id=it.get("id"), operacao="fim",
+                       ok=it.get("exit_code") in (None, 0) and it.get("status") != "failed")
         elif d.get("type") == "turn.completed":
+            completo = True
             u = d.get("usage") or {}
-            tokens += (u.get("input_tokens") or 0) - (u.get("cached_input_tokens") or 0) + (u.get("output_tokens") or 0)
-            ao_evento({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "terminando", "tokens": tokens})
-    p.wait()
-    erro = "" if p.returncode == 0 else (p.stderr.read() or "")[-400:]
-    if estourou.is_set():
-        erro = f"o Codex passou do prazo de {prazo // 60} min e foi encerrado (o que ele já escreveu ficou nos arquivos)"
-    res = {"ok": p.returncode == 0 and not estourou.is_set(), "texto": "\n\n".join(textos + ([erro] if estourou.is_set() else [])) or erro,
-           "tokens": tokens, "arquivos": arquivos, "comandos": comandos, "cota": _codex_cota(thread),
-           "ms": int((time.time() - t0) * 1000), "sessao": thread, "estourou": estourou.is_set()}
-    ao_evento({"t": "ajudante", "quem": "codex", "fase": "fim", "ok": res["ok"], "tokens": tokens, "cota": res["cota"], "ms": res["ms"],
-               "texto": (textos[-1] if textos else erro)[:200]})
+            for chave, campo in campos_uso.items():
+                uso[chave] = max(0, (u.get(campo) or 0) - ((anterior or {}).get(campo) or 0))
+            avisar("passo", "terminando", tokens=max(0, uso["entrada"] - uso["cache"]) + uso["saida"])
+    processo = codex_processo.executar(cmd, pasta, entrada, receber,
+                                      lambda: avisar("passo", "aguardando o Codex; Parar continua disponível"),
+                                      parar=parar, prazo=prazo)
+    acumulado = _codex_uso(thread)
+    if acumulado is not None and anterior is not None:
+        # O CLI 0.163 emite usage acumulado ao retomar; a diferença do log evita contar turnos antigos outra vez.
+        for chave, campo in campos_uso.items():
+            uso[chave] = max(0, (acumulado.get(campo) or 0) - (anterior.get(campo) or 0))
+    ok = processo["codigo"] == 0 and completo and not falhou and not processo["cancelado"] and not processo["estourou"]
+    erro = ""
+    if processo["cancelado"]:
+        erro = "Codex interrompido pelo usuário. Alterações já feitas continuam nos arquivos."
+    elif processo["estourou"]:
+        erro = f"O Codex passou do prazo de {prazo:g} s e foi encerrado. Alterações já feitas continuam nos arquivos."
+    elif not ok:
+        erro = "\n".join(erros[-3:]) or processo["erro"] or "O Codex encerrou sem confirmar o fim da resposta."
+    uso["novos"] = max(0, uso["entrada"] - uso["cache"])
+    uso["total"] = uso["entrada"] + uso["saida"]
+    res = {"ok": ok, "texto": "\n\n".join(t for t in [textos[-1] if textos else "", erro] if t),
+           "tokens": uso["novos"] + uso["saida"], "uso": uso, "arquivos": arquivos, "comandos": comandos,
+           "cota": _codex_cota(thread), "ms": processo["ms"], "sessao": thread, "esforco": esforco,
+           "primeiro_evento_ms": processo["primeiro_evento_ms"],
+           "estourou": processo["estourou"], "cancelado": processo["cancelado"]}
+    avisar("fim", res["texto"][:200], ok=ok, tokens=res["tokens"], uso=uso, cota=res["cota"], ms=res["ms"])
     return res
 
 

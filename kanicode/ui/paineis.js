@@ -15,6 +15,7 @@
   async function abrirDir(on, auto = false) {
     if (on === PAINEL.dir) return;
     PAINEL.dir = on; PAINEL.dirAuto = on && auto;
+    $('atv-trilho').setAttribute('aria-expanded', String(on));
     if (on) { await crescer(0, ATV_EXTRA); $('atv').classList.add('aberto'); desenhar(); }
     else { $('atv').classList.remove('aberto'); await crescer(0, -ATV_EXTRA); }
   }
@@ -49,8 +50,11 @@
   // ── coluna das Atividades ──
   const corpo = document.querySelector('.corpo');
   corpo.insertAdjacentHTML('beforeend', `<div class="atv" id="atv">
-    <div class="trilho" id="atv-trilho" title="Atividades: o que está rodando e o que já foi feito">
-      <span class="ic">⚡</span><span class="cont" id="atv-cont" hidden></span><span class="vert">ATIVIDADES</span></div>
+    <div class="trilho-coluna">
+      <button class="ferramentas-bt" id="ferramentas-bt" title="Ferramentas e ajustes" aria-label="Ferramentas e ajustes" aria-expanded="false" aria-controls="ferramentas-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-1 3-3 1-3-1-1 4 3 2v2l-2 2 2 3 3-1 3 1 1 3 4-1v-3l2-2 3-1-1-4-3 1-2-2V3z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button class="trilho" id="atv-trilho" title="Atividades: o que está rodando e o que já foi feito" aria-label="Atividades" aria-expanded="false" aria-controls="atv-lista">
+        <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 11h6l-1 9 9-13h-6z"/></svg></span><span class="cont" id="atv-cont" hidden></span><span class="vert">ATIVIDADES</span></button>
+    </div>
     <div class="det"><div class="cab"><b>Atividades</b><span class="esp"></span><button class="bt" id="atv-fechar" title="Recolher">»</button></div>
       <div class="rolo" id="atv-lista"></div></div></div>`);
   $('atv-trilho').addEventListener('click', () => abrirDir(!PAINEL.dir));
@@ -68,7 +72,7 @@
     const { ic, tit } = titulo(nome, e);
     const it = { id, nome, ic, tit, cmd: e.command || e.prompt || '', t0: vivo ? Date.now() : 0, t1: 0, ok: null, bg: ehBg(nome, e) };
     A.itens.set(id, it); A.ordem.push(id);
-    if (it.bg && vivo) abrirDir(true, true);
+    // O trilho sinaliza trabalho em segundo plano; expandir só por clique.
     desenhar();
   }
   function termino(id, ok, saida) {
@@ -227,6 +231,16 @@
   window.kcEv = ev => {
     aoVivo = true;
     kcEv0(ev);
+    if (ev.t === 'ajudante' && ev.quem === 'codex') {
+      const id = 'codex:' + ev.id;
+      if (ev.operacao === 'inicio' && (ev.entrada?.command || ev.entrada?.changes?.length))
+        inicio(id, 'Codex', {command: ev.entrada.command, description: ev.texto}, true);
+      if (ev.operacao === 'fim') termino(id, ev.ok !== false, '');
+      if (ev.fase === 'fim') for (const it of A.itens.values()) {
+        if (it.id.startsWith('codex:') && !it.t1) { it.t1 = Date.now(); it.ok = !!ev.ok; }
+      }
+      desenhar();
+    }
     if (ev.t === 'tarefa') tarefa(ev);
     if (ev.t === 'ferr' || ev.t === 'ferr_fim' || ev.t === 'fim') desenhar();
   };

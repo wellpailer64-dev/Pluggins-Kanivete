@@ -18,11 +18,11 @@ PORTA = 47614
 # o que o celular pode chamar (o resto da js_api mexe na janela do PC: no celular não faz nada)
 LIBERADOS = {"info", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
              "nova", "quem", "ajudante", "habilidades", "miniatura", "tarefas_ler", "contas_listar", "conta_atualizar",
-             "conta_usar", "pendentes"}
+             "conta_usar", "pendentes", "gpu_info"}
 NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "tam_fim", "tam_padrao", "abrir_imagem",
         "escolher_pasta", "sair", "voz", "ouvir", "conta_adicionar", "conta_entrar_de_novo", "conta_renomear", "conta_remover"}
 _TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-          ".webp": "image/webp", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json"}
+          ".webp": "image/webp", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json"}
 
 ICONES = ("icone.png", "icone-192.png", "icone-512.png", "icone-mascara-512.png", "icone-badge.png")   # icone_oculos.py
 

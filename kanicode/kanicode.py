@@ -8,6 +8,7 @@ Uma instância só: o canal de controle (127.0.0.1:PORTA, só aceita "ping", "mo
 Rodar à mão: pyw -3.13 kanicode.py   (ferramentas do navegador: --console; testes por CDP: --agente[=9350])
 """
 import json, os, re, socket, sys, threading, time
+from collections import deque
 
 import webview
 
@@ -23,6 +24,7 @@ AUMID = "Pandalab.KaniCode"   # o mesmo dos atalhos (atalhos.py): ícone fixado 
 # pasta padrão das conversas: o KANIVETE (ao lado da pasta dos plugins)
 # (realpath: aberto pela junção D:\Kanivete\Plugins, o "ao lado" seria D:\Kanivete — pasta que não existe, WinError 267)
 PROJETO_PADRAO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "CANIVETE DO PAILER")
+_ESTADO_TRAVA = threading.RLock()
 
 
 def _ler_estado():
@@ -34,13 +36,14 @@ def _ler_estado():
 
 
 def _gravar_estado(**kw):
-    os.makedirs(DADOS, exist_ok=True)
-    e = _ler_estado()
-    e.update(kw)
-    tmp = ESTADO + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(e, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, ESTADO)
+    with _ESTADO_TRAVA:
+        os.makedirs(DADOS, exist_ok=True)
+        e = _ler_estado()
+        e.update(kw)
+        tmp = ESTADO + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(e, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, ESTADO)
 
 
 def _tamanho():
@@ -69,6 +72,9 @@ class App:
         self._saindo = False
         self._limite = _ler_estado().get("limite")   # o último visto (a cota aparece antes da 1ª resposta)
         self._sessao = None
+        self._ajudante_trava = threading.Lock()
+        self._ajudante_ativo = None
+        self._codex_parar = None
         self._comandos = []
         self._pendente = None      # "recarregar"/"reiniciar" pedido no meio de uma resposta: roda quando ela terminar
         self._carregado = time.time()   # para o "atualizar" saber o que mudou depois de aberto
@@ -87,7 +93,7 @@ class App:
         self._janela.show()
         self._janela.restore()
         self._aberta = True
-        ocupada = bool(self._sessao and self._sessao.ocupada)
+        ocupada = self._ocupada()
         self._na_ui(lambda: self._bola and self._bola.definir(aberta=True, estado="trabalhando" if ocupada else ""))
 
     # ── tamanho: a janela é sem moldura, então as bordas são desenhadas no HTML e o redimensionar vem por aqui ──
@@ -296,9 +302,14 @@ class App:
     def info(self):
         e = _ler_estado()
         return {"versao": VERSAO, "pasta": self._pasta(), "fixa": bool(e.get("fixa", True)), "limite": self._limite,
-                "ocupada": bool(self._sessao and self._sessao.ocupada), "comandos": self._comandos,
+                "ocupada": self._ocupada(), "comandos": self._comandos,
                 "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": e.get("quem") or "claude",
                 "modo": getattr(self, "_modo", "auto")}
+
+    def gpu_info(self):
+        """Telemetria do PC, solicitada pela interface apenas no modo Kani visível."""
+        import gpu
+        return gpu.info()
 
     # ── contas do Claude (contas.py): salvas, com apelido e e-mail; troca MANUAL ──
     def _contas(self):
@@ -310,7 +321,13 @@ class App:
 
     def contas_listar(self):
         lista, ativa = self._contas()
-        return {"lista": lista, "ativa": ativa}
+        return self._contas_com_fotos(lista, ativa)
+
+    def _contas_com_fotos(self, lista, ativa):
+        import avatares
+        fotos = avatares.fotos(c.get("email") for c in lista)
+        # Fotos só na resposta da API; não duplicar base64 no estado nem nas credenciais.
+        return {"lista": [dict(c, foto=fotos.get((c.get("email") or "").strip().casefold())) for c in lista], "ativa": ativa}
 
     def conta_atualizar(self, conta_id=None):
         """lê e-mail, plano e cotas (sem gastar tokens) de uma conta ou de todas; guarda no estado"""
@@ -340,7 +357,7 @@ class App:
                     if c is not fica:
                         c["oculta"] = True
         _gravar_estado(contas=lista)
-        return {"lista": lista, "ativa": ativa}
+        return self._contas_com_fotos(lista, ativa)
 
     def conta_adicionar(self, apelido):
         import contas, re as _re
@@ -367,33 +384,33 @@ class App:
             if c["id"] == conta_id and (apelido or "").strip():
                 c["apelido"] = apelido.strip()[:40]
         _gravar_estado(contas=lista)
-        return {"lista": lista, "ativa": ativa}
+        return self._contas_com_fotos(lista, ativa)
 
     def conta_remover(self, conta_id):
         import contas
         lista, ativa = self._contas()
         if conta_id == "principal":
-            return {"lista": lista, "ativa": ativa}
+            return self._contas_com_fotos(lista, ativa)
         contas.remover(conta_id)
         lista = [c for c in lista if c["id"] != conta_id]
         if ativa == conta_id:
             ativa = "principal"
             self._encerrar()
         _gravar_estado(contas=lista, conta=ativa)
-        return {"lista": lista, "ativa": ativa}
+        return self._contas_com_fotos(lista, ativa)
 
     def conta_usar(self, conta_id):
         """troca manual: a próxima mensagem já vai pela conta escolhida, na MESMA conversa"""
         lista, ativa = self._contas()
         if conta_id == ativa or not any(c["id"] == conta_id for c in lista):
-            return {"lista": lista, "ativa": ativa}
+            return self._contas_com_fotos(lista, ativa)
         if self._sessao and self._sessao.ocupada:
             raise RuntimeError("espere a resposta terminar para trocar de conta")
         self._encerrar()
         c = next(c for c in lista if c["id"] == conta_id)
         self._limite = c.get("cotas")
         _gravar_estado(conta=conta_id, limite=self._limite)
-        return {"lista": lista, "ativa": conta_id}
+        return self._contas_com_fotos(lista, conta_id)
 
     # ── falar direto com um ajudante ("Quem responde": Codex ou Kani) ──
     def quem(self, nome):
@@ -402,19 +419,40 @@ class App:
         return True
 
     def bola_quem(self, nome):
-        """selo na bolinha: logo da Kani (modo Kani) ou do Claude"""
-        self._na_ui(lambda: self._bola and self._bola.definir(quem="kani" if nome == "kani" else "claude"))
+        """selo do agente selecionado, junto do rosto animado"""
+        self._na_ui(lambda: self._bola and self._bola.definir(quem=nome if nome in ("claude", "codex", "kani") else "claude"))
         return True
 
     def ajudante(self, quem, texto):
         import ajudantes
+        if quem not in ("codex", "kani"):
+            raise ValueError("ajudante desconhecido")
+        if not texto or not texto.strip():
+            return False
+        if self._ocupada() or not self._ajudante_trava.acquire(blocking=False):
+            raise RuntimeError("Espere a resposta terminar ou use Parar antes de enviar outra demanda.")
+        self._ajudante_ativo = quem
+        pasta = self._pasta()   # não deixar uma troca de pasta mudar o destino no meio da tarefa
+        editar = getattr(self, "_modo", "auto") != "plan"
+        if quem == "codex":
+            self._codex_parar = threading.Event()
+
+        def evento_codex(ev):
+            if ev.get("sessao"):
+                self._codex_guardar(pasta, ev["sessao"])
+            self._evento(ev)
 
         def rodar():
-            self._bola_estado("trabalhando")
             por_voz = self._por_voz
+            resposta = None
             try:
+                self._bola_estado("trabalhando")
                 if quem == "codex":
-                    r = ajudantes.codex(texto, self._pasta(), editar=True, ao_evento=self._evento)
+                    r = ajudantes.codex(texto, pasta, editar=editar, ao_evento=evento_codex,
+                                        retomar=self._codex_id(pasta), parar=self._codex_parar)
+                    if r.get("sessao"):
+                        self._codex_guardar(pasta, r["sessao"])
+                    self._codex_registrar(pasta, texto, r)
                 else:   # modo Kani: em etapas (kani_modo.py), com a conversa recente como contexto
                     import kani_modo
                     self._kani_parar = threading.Event()
@@ -449,14 +487,68 @@ class App:
                         f.pedaco(r["texto"])
                         f.terminar()
                         self._por_voz = False
-                self._para_janela({"t": "ajudante_resposta", "quem": quem, "texto": r["texto"], "ok": r["ok"], "tokens": r["tokens"]})
+                resposta = {"t": "ajudante_resposta", "quem": quem, "texto": r["texto"], "ok": r["ok"],
+                            "tokens": r["tokens"], "uso": r.get("uso")}
                 self._na_ui(lambda: self._bola and self._bola.definir(humor="feliz" if r["ok"] else "erro", segundos=3))
             except Exception as e:
-                self._para_janela({"t": "ajudante_resposta", "quem": quem, "texto": str(e), "ok": False, "tokens": 0})
-            self._bola_atividade("")
-            self._bola_estado("" if self._aberta else "pergunta")
-        threading.Thread(target=rodar, daemon=True).start()
+                resposta = {"t": "ajudante_resposta", "quem": quem, "texto": str(e), "ok": False, "tokens": 0}
+            finally:
+                self._ajudante_ativo = None
+                self._codex_parar = None
+                self._ajudante_trava.release()
+                if resposta:
+                    self._para_janela(resposta)   # só liberar a caixa da janela depois de liberar o motor
+                self._bola_atividade("")
+                self._bola_estado("" if self._aberta else "pergunta")
+                if self._pendente:
+                    acao, self._pendente = self._pendente, None
+                    threading.Timer(1.5, self._atualizar, args=(acao,)).start()
+        try:
+            threading.Thread(target=rodar, daemon=True).start()
+        except Exception:
+            self._ajudante_ativo = None
+            self._codex_parar = None
+            self._ajudante_trava.release()
+            raise
         return True
+
+    def _ocupada(self):
+        return bool(self._ajudante_ativo or (self._sessao and self._sessao.ocupada))
+
+    def _codex_id(self, pasta):
+        chave = os.path.normcase(os.path.realpath(pasta))
+        return (_ler_estado().get("codex_sessoes") or {}).get(chave)
+
+    def _codex_guardar(self, pasta, sessao):
+        chave = os.path.normcase(os.path.realpath(pasta))
+        with _ESTADO_TRAVA:
+            sessoes = _ler_estado().get("codex_sessoes") or {}
+            if sessoes.get(chave) != sessao:
+                sessoes[chave] = sessao
+                _gravar_estado(codex_sessoes=sessoes)
+
+    def _codex_registrar(self, pasta, texto, r):
+        """Histórico para a janela; medidas separadas sem copiar prompts para a telemetria."""
+        try:
+            with _ESTADO_TRAVA:
+                os.makedirs(DADOS, exist_ok=True)
+                medida = {k: r.get(k) for k in ("sessao", "ok", "uso", "tokens", "ms", "primeiro_evento_ms",
+                                               "esforco", "cancelado", "estourou")}
+                medida.update(quando=time.strftime("%Y-%m-%d %H:%M:%S"), pasta=pasta,
+                              comandos=len(r.get("comandos") or []))
+                with open(os.path.join(DADOS, "codex_uso.jsonl"), "a", encoding="utf-8") as f:
+                    f.write(json.dumps(medida, ensure_ascii=False) + "\n")
+                sid = r.get("sessao")
+                if not sid or not re.fullmatch(r"[a-fA-F0-9-]{36}", sid):
+                    return
+                diretorio = os.path.join(DADOS, "conversas_codex")
+                os.makedirs(diretorio, exist_ok=True)
+                with open(os.path.join(diretorio, sid + ".jsonl"), "a", encoding="utf-8") as f:
+                    for ev in ({"t": "eu", "texto": texto},
+                               {"t": "ajudante_resposta", "quem": "codex", "texto": r["texto"], "ok": r["ok"]}):
+                        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        except OSError:
+            pass   # falha de registro não deve esconder uma resposta que já terminou
 
     def habilidades(self):
         """o que sabemos fazer, para o painel 🧰: guias e ferramentas do KANIVETE (Instructions/mapa.json) + skills"""
@@ -558,6 +650,9 @@ class App:
         return self._comandos
 
     def parar(self):
+        parar = self._codex_parar
+        if parar:
+            parar.set()
         if getattr(self, "_kani_parar", None):
             self._kani_parar.set()
         if self._sessao:
@@ -601,6 +696,14 @@ class App:
 
     def nova(self):
         """conversa nova nesta pasta (a anterior continua guardada)"""
+        if self._ocupada():
+            raise RuntimeError("Espere a resposta terminar ou use Parar antes de abrir outra conversa.")
+        if _ler_estado().get("quem") == "codex":
+            with _ESTADO_TRAVA:
+                sessoes = _ler_estado().get("codex_sessoes") or {}
+                sessoes.pop(os.path.normcase(os.path.realpath(self._pasta())), None)
+                _gravar_estado(codex_sessoes=sessoes)
+            return True
         self._encerrar()
         e = _ler_estado()
         ss = e.get("sessoes") or {}
@@ -609,6 +712,21 @@ class App:
         return True
 
     def historico(self):
+        if _ler_estado().get("quem") == "codex":
+            sid = self._codex_id(self._pasta())
+            if not sid or not re.fullmatch(r"[a-fA-F0-9-]{36}", sid):
+                return []
+            try:
+                with open(os.path.join(DADOS, "conversas_codex", sid + ".jsonl"), encoding="utf-8") as f:
+                    eventos = []
+                    for linha in deque(f, maxlen=400):
+                        try:
+                            eventos.append(json.loads(linha))
+                        except ValueError:
+                            continue
+                    return eventos
+            except OSError:
+                return []
         sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
         if not sid:
             return []
@@ -616,6 +734,8 @@ class App:
         return Sessao(self._pasta(), DADOS, None, sessao_id=sid).historico()
 
     def escolher_pasta(self):
+        if self._ocupada():
+            return None
         r = self._janela.create_file_dialog(webview.FOLDER_DIALOG, directory=self._pasta())
         if not r:
             return None
@@ -645,6 +765,9 @@ class App:
         return p if p and os.path.isdir(p) else PROJETO_PADRAO
 
     def _encerrar(self):
+        parar = self._codex_parar
+        if parar:
+            parar.set()
         if self._sessao:
             s, self._sessao = self._sessao, None
             threading.Thread(target=s.fechar, daemon=True).start()
@@ -847,7 +970,7 @@ class App:
             acao = self._o_que_mudou()
             if not acao:
                 return "nada"
-        if self._sessao and self._sessao.ocupada:
+        if self._ocupada():
             if self._pendente != "reiniciar":
                 self._pendente = acao
             return "depois:" + acao

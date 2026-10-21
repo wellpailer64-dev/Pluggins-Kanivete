@@ -56,7 +56,7 @@ class Bolinha:
         self.humor, self._humor_ate = "", 0.0   # "feliz"/"erro" por alguns segundos (fim da tarefa)
         self._mexeu = time.time()                # parada há muito tempo = dorme
         self._fase = 0.0
-        self.quem = "claude"      # selo no canto: "claude" | "kani" (modo Kani)
+        self.quem = "claude"      # selo no canto: "claude" | "codex" | "kani"
         self.atividade = ""       # "" | "lendo" | "digitando" | "procurando" | "pensando" (rosto enquanto trabalha)
         self._selos = {}
         f = self.form = Form()
@@ -228,7 +228,7 @@ class Bolinha:
         return self._selos[lado]
 
     def _selo(self, g, T, L, m):
-        """quem responde, no canto de baixo à direita: logo da Kani ou o asterisco laranja do Claude"""
+        """quem responde, no canto de baixo à direita; Codex usa o mesmo desenho de ui/codex.svg"""
         r = int(L * 0.36)
         x, y = float(m + L - r * 0.92), float(m + L - r * 0.92)
         g.FillEllipse(SolidBrush(_cor(FUNDO)), x - 2, y - 2, float(r + 4), float(r + 4))
@@ -236,6 +236,13 @@ class Bolinha:
             g.DrawImage(self._selo_kani(r), x, y, float(r), float(r))
             return
         g.FillEllipse(SolidBrush(_cor((0xF5, 0xF0, 0xE6))), x, y, float(r), float(r))
+        if self.quem == "codex":
+            pen = Pen(_cor((0x15, 0x20, 0x1B)), max(1.2, r * 2.5 / 32))
+            pen.StartCap = pen.EndCap = LineCap.Round
+            for a, b, c, d in ((8, 10, 14, 16), (14, 16, 8, 22), (18, 22, 25, 22)):
+                g.DrawLine(pen, x + r * a / 32, y + r * b / 32, x + r * c / 32, y + r * d / 32)
+            pen.Dispose()
+            return
         cx, cy = x + r / 2, y + r / 2
         pen = Pen(_cor((0xD9, 0x77, 0x57)), max(1.2, r * 0.075))
         pen.StartCap = pen.EndCap = LineCap.Round
