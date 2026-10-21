@@ -60,7 +60,7 @@
       }, 100);
     } catch (e) { console.warn('medidor', e); }
   }
-  async function micLigar() {
+  async function micLigar(auto) {
     if (V.gravando) return micParar();
     pararFala();
     let fluxo;
@@ -68,7 +68,7 @@
     catch (e) { bolha('erro', 'Microfone: o celular não deixou usar (' + (e.message || e) + ').'); return; }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const fonte = ctx.createMediaStreamSource(fluxo), proc = ctx.createScriptProcessor(4096, 1, 1);
-    const g = { ctx, fluxo, fonte, proc, partes: [], sr: ctx.sampleRate, inicio: Date.now(), falou: 0, silencio: 0 };
+    const g = { auto: auto === true, ctx, fluxo, fonte, proc, partes: [], sr: ctx.sampleRate, inicio: Date.now(), falou: 0, silencio: 0 };
     proc.onaudioprocess = e => {
       if (V.gravando !== g) return;
       const x = e.inputBuffer.getChannelData(0);
@@ -76,8 +76,8 @@
       let s = 0; for (let i = 0; i < x.length; i += 4) s += x[i] * x[i];
       const alto = Math.sqrt(s / (x.length / 4)) > 0.02, dt = x.length / g.sr;
       if (alto) { g.falou += dt; g.silencio = 0; } else g.silencio += dt;
-      // para sozinho: 1,4 s de silêncio depois de falar; 8 s sem falar nada; 60 s no máximo
-      if ((g.falou > 0.3 && g.silencio > 1.4) || (!g.falou && Date.now() - g.inicio > 8000) || Date.now() - g.inicio > 60000) micParar();
+      // para sozinho: 1,4 s de silêncio depois de falar; sem falar nada: 3 s quando reabriu sozinho, 8 s no toque; 60 s no máximo
+      if ((g.falou > 0.3 && g.silencio > 1.4) || (!g.falou && Date.now() - g.inicio > (g.auto ? 3000 : 8000)) || Date.now() - g.inicio > 60000) micParar();
     };
     fonte.connect(proc); proc.connect(ctx.destination);
     V.gravando = g; micVisual(true); vozEv({ fase: 'ouvindo' });
@@ -172,7 +172,7 @@
     // no app (KCApp) o microfone segue com a tela apagada e o pedido feito pela bolinha também continua a conversa
     const seguir = V.conversa || (window.KCApp && V.porVoz);
     V.porVoz = false;
-    if (seguir && (document.visibilityState === 'visible' || window.KCApp) && !V.gravando) micLigar();
+    if (seguir && (document.visibilityState === 'visible' || window.KCApp) && !V.gravando) micLigar(true);
   }
   function conversaBotao() {
     const b = document.getElementById('voz');
