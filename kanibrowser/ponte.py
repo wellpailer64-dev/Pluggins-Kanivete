@@ -8,7 +8,32 @@ import visao
 API_KANIVETE = ("estado", "abrir", "fechar_navegador", "abas", "ir", "nova", "fechar", "frente", "foto", "texto",
                 "imagens", "destinos", "baixar_imagens", "abrir_pasta", "visitar", "instagram", "baixar_link", "pesquisar", "ler_pagina",
                 "ajustar", "entrada", "escolher", "dialogo", "arquivo", "navegar", "ponto", "kani_ir", "abrir_downloads",
-                "favoritos", "favorito", "favorito_remover", "favorito_renomear", "favoritos_ordem", "chatgpt", "diagnostico_chatgpt", "js_kani", "kani_parar")
+                "favoritos", "favorito", "favorito_remover", "favorito_renomear", "favoritos_ordem", "chatgpt", "diagnostico_chatgpt", "js_kani", "kani_parar", "vista")
+
+
+def vista(aba=None):
+    """print pequeno (JPEG) da aba da Kani depois de uma ação do agente: o caminho sai no kb.py e o KaniCode mostra na
+    conversa (PC e celular). Guarda os 40 últimos em <RAIZ>/prints."""
+    import base64, time
+    tid = aba or kb._k.get("aba")
+    if not tid or not kb.ativo():
+        return None
+    try:
+        dados = kb._cdp(tid, "Page.captureScreenshot", {"format": "jpeg", "quality": 60}, timeout=20)["data"]
+    except kb.ErroKB:
+        return None
+    pasta = os.path.join(kb.RAIZ, "prints")
+    os.makedirs(pasta, exist_ok=True)
+    velhos = sorted(os.listdir(pasta))
+    for v in velhos[:-39]:
+        try:
+            os.remove(os.path.join(pasta, v))
+        except OSError:
+            pass
+    cam = os.path.join(pasta, time.strftime("tela_%Y%m%d_%H%M%S.jpg"))
+    with open(cam, "wb") as f:
+        f.write(base64.b64decode(dados))
+    return cam
 
 
 def kani_parar():

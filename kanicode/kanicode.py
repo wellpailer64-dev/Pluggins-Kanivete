@@ -802,6 +802,16 @@ class App:
                          creationflags=0x00000008 | 0x00000200)
         self.sair()
 
+    def _kb(self, c, linha):
+        with c:
+            try:
+                import navegador
+                r = navegador.chamar(linha, DADOS, self._pasta())
+                c.settimeout(30)
+                c.sendall(json.dumps(r, ensure_ascii=False, default=str).encode("utf-8") + b"\n")
+            except OSError:
+                pass
+
     def _servir(self, srv):
         while not self._saindo:
             try:
@@ -819,6 +829,9 @@ class App:
                         buf += pedaco
                     cmd = buf.decode("utf-8", "replace").strip()
                 except OSError:
+                    continue
+                if cmd.startswith("kb "):   # KaniBrowser hospedado aqui (navegador.py; kb.py manda): numa thread, pode demorar
+                    threading.Thread(target=self._kb, args=(c.dup(), cmd[3:]), daemon=True).start()
                     continue
                 if cmd.startswith("evento "):   # andamento dos ajudantes (mcp_equipe.py, aberto pelo Claude Code)
                     c.sendall(b"ok\n")
