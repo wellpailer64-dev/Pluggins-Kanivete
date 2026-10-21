@@ -9,8 +9,8 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
 | Plugin | O que faz |
 |---|---|
 | `pandalab` | Demandas do Laboratório Panda: listar, baixar na pasta certa do cliente, status, comentários, entrega |
-| `kanibrowser` | Chrome do KANIVETE por canal privado (pipe, sem porta), com os logins guardados |
-| `kanicode` | Conversa com o Claude (depois Codex e Kani) numa bolinha na área de trabalho; processo à parte, sobrevive ao KANIVETE fechar |
+| `kanibrowser` | Chrome do KANIVETE por canal privado (pipe, sem porta), com os logins guardados; funciona também só com o KaniCode aberto |
+| `kanicode` | Conversa com o Claude (depois Codex e Kani) numa bolinha na área de trabalho e no celular (Tailscale); processo à parte, sobrevive ao KANIVETE fechar |
 
 ## Não vão para o git (`.gitignore`)
 - `pandalab/config.json`: endereço e chave do sistema. Copie `config.exemplo.json` e preencha.
@@ -78,3 +78,37 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
   ~78% em voz sintética nunca vista, 1,8 falsos/h) → no disparo o Parakeet confere se ouviu "Kani" → bipe, grava até a pausa
   (Silero VAD) → Parakeet pt-BR do KANIVETE transcreve → vai para a conversa com "(por voz)". "Para" interrompe a tarefa,
   "cancela/esquece" descarta. Bolinha: pontinho = escutando, anel pulsando = ouvindo. Liga sozinho se estava ligado.
+
+## KaniCode no celular (2026-10-21)
+A MESMA conversa no celular, de qualquer lugar; o PC faz tudo, o celular é tela, microfone e alto-falante.
+- **Acesso**: `movel.py` serve `ui/janela.html` (+ `ui/movel.js`/`movel.css`) em **127.0.0.1:47614 apenas**. De fora, só
+  pelo Tailscale (conta well.pailer64; PC `pcpailer`, celular Motorola Edge 40): `tailscale serve --bg 47614` →
+  `https://pcpailer.taile07425.ts.net` (HTTPS só dentro da rede particular). Chave de pareamento em
+  `D:\Kanivete\KaniCode\movel.json` (fora do git), vira cookie (`SameSite=Lax`: com `Strict` o link vindo da câmera não
+  guardava). Link + QR na tela: `py -3.13 kanicode/movel.py`. Liga sozinho (`estado.json` › `movel`: false desliga).
+- **Ponte**: `movel.js` imita o `window.pywebview.api` (POST `/api/<método>`, só os de `LIBERADOS`; os de janela do PC
+  ficam em `NADA`) e recebe os eventos por SSE (`/eventos?de=<id>`). `App._para_janela` → `movel.publicar`. Mensagens e
+  respostas de cartões ecoam entre aparelhos (`eco_eu`, `eco_resp`); cartões abertos voltam vivos ao abrir (`App.pendentes`).
+- **Voz**: 🎤 grava no celular (16 kHz, para sozinho no silêncio) → `/voz/ouvir` (Parakeet do `voz.py`) → vai com "(por voz)".
+  Resposta falada: frases → `/voz/falar` (Kokoro do `fala.py`, WAV) → toca no celular (continua com a aba minimizada).
+  🎙 Modo conversa = lê todas as respostas e reabre o microfone (só com a tela à vista).
+- **Avisos** 🔔 (`aviso_movel.py` + `ui/movel-sw.js`, Web Push com `pywebpush`; chaves VAPID e assinaturas em
+  `D:\Kanivete\KaniCode\movel_push.json`): "terminei" / "preciso de você" só quando o pedido saiu do celular e nenhuma tela
+  do KaniCode está à vista lá (`/push/visto`).
+- **📺 KANIVETE ao vivo** (`tela_movel.py`): `Page.startScreencast` do KANIVETE em modo agente (9222; 9333 = teste) →
+  MJPEG em `/tela`; só a página do app, só manda quadro quando muda; ✕ fecha a conexão e para. ⛶ tela cheia deitada.
+  Fechado: "Abrir o KANIVETE" (`/tela/abrir` → exe do `dist` com `--agente`). Só assistir (clicar = próxima etapa).
+- **Tela**: topo só marca + 📺 + ☰ (menu: conversa nova, habilidades, modo conversa, avisos, contas, atividades,
+  recarregar); sem zoom e sem arrastar para o lado (`.meio` com `min-width: 0`); contas = painel por cima, só trocar.
+- **Ícone**: carinha 8-bit de óculos escuros — `py -3.13 kanicode/icone_oculos.py` gera `icone*.png` (192/512/máscara/
+  notificação) e o `kanicode.ico` do atalho. Trocou: apagar e reinstalar o app no celular.
+- O PC nunca dorme (energia) e KaniCode + Tailscale iniciam com o Windows; se o Windows reiniciar, fica na senha até o
+  Pailer entrar (entrada automática recusada por segurança).
+- Testes (servidor com app de mentira, Playwright com tela de celular): `D:\kanivete_testes\kanicode_movel\*.py`.
+
+## KaniBrowser sem o KANIVETE (2026-10-21)
+`kb.py` usa o KANIVETE (modo agente) se ele já está com o navegador aberto; senão o **KaniCode hospeda** o navegador
+(`kanicode/navegador.py`: linha `kb <chave> {"f", "a"}` no canal 47613, chave em `D:\Kanivete\KaniCode\kb_chave.txt`;
+roda numa thread). `--onde kanivete|kanicode` força. O mesmo perfil não abre nos dois ao mesmo tempo. Depois de
+ir/abrir/nova/js/instagram/chatgpt/link sai `tela: <jpg>` (`ponte.vista`, prints em `D:\Kanivete\KaniBrowser\prints`,
+40 últimos) e o KaniCode mostra a miniatura na conversa (PC e celular). `--sem-foto` não tira.
