@@ -113,9 +113,9 @@ A MESMA conversa no celular, de qualquer lugar; o PC faz tudo, o celular é tela
 
 ## App do celular (Android, 2026-10-21) — `kanicode/android`
 Java puro, sem Android Studio/Gradle: `py -3.13 kanicode/android/montar.py [--sem-instalar]` (aapt2 + javac + d8 +
-zipalign + apksigner; SDK em `D:\devndroid`: cmdline-tools, build-tools 34, android-34, platform-tools) monta
+zipalign + apksigner; SDK em `D:/dev/android`: cmdline-tools, build-tools 34, android-34, platform-tools) monta
 `KaniCode.apk` e instala pelo cabo (`adb install -r`, depuração USB ligada). O endereço com a chave vai num `Config.java`
-gerado em `build/`; APK e build fora do git; assinatura em `D:\devndroid\kanicode.jks`.
+gerado em `build/`; APK e build fora do git; assinatura em `D:/dev/android\kanicode.jks`.
 - `MainActivity`: a página do KaniCode num WebView que NÃO pausa (sem `onPause`/`pauseTimers`): conversa e voz seguem
   minimizado, por isso no app a voz vem direto (`/voz/falar`), sem a rádio (menos atraso). Voltar = só esconde.
 - `BolinhaService` (serviço em primeiro plano microfone + mídia): bolinha por cima de tudo (`TYPE_APPLICATION_OVERLAY`);
