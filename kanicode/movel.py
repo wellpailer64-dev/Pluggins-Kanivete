@@ -105,6 +105,11 @@ class _H(BaseHTTPRequestHandler):
             return self._pagina()
         if u.path == "/eventos":
             return self._eventos(q.get("de", [""])[0])
+        if u.path == "/tela":
+            return self._tela()
+        if u.path == "/tela/estado":
+            import tela_movel
+            return self._enviar(200, json.dumps({"aberto": bool(tela_movel.alvo())}).encode(), _TIPOS[".json"])
         return self._arquivo(u.path.lstrip("/"))
 
     def _arquivo(self, nome):
@@ -130,6 +135,22 @@ class _H(BaseHTTPRequestHandler):
                '<link rel="stylesheet" href="/movel.css"><script src="/movel.js"></script>')
         h = h.replace("<title>", cab + "<title>", 1)
         self._enviar(200, h.encode("utf-8"), _TIPOS[".html"])
+
+    def _tela(self):
+        """o KANIVETE ao vivo (tela_movel.py) até o celular fechar a telinha"""
+        import tela_movel
+        if not tela_movel.alvo():
+            return self._enviar(503, "KANIVETE fechado".encode())
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=" + tela_movel.LIMITE)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            tela_movel.transmitir(self.wfile)
+        except Exception:
+            pass
+        self.close_connection = True
 
     def _eventos(self, de=""):
         fila = queue.Queue(maxsize=5000)
@@ -170,6 +191,10 @@ class _H(BaseHTTPRequestHandler):
             return self._voz(u.path[5:])
         if u.path.startswith("/push/"):
             return self._push(u.path[6:])
+        if u.path == "/tela/abrir":
+            import tela_movel
+            r = tela_movel.abrir_kanivete(_app._pasta())
+            return self._enviar(200, json.dumps({"r": r}).encode(), _TIPOS[".json"])
         if not u.path.startswith("/api/"):
             return self._enviar(404)
         nome = u.path[5:]

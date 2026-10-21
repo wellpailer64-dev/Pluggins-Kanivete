@@ -203,6 +203,87 @@
     const t = document.getElementById('texto');
     t.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) e.stopImmediatePropagation(); }, true);
     t.placeholder = 'Fale com o Claude…';
+    menuMontar();
+    telaMontar();
     setTimeout(() => window.dispatchEvent(new Event('pywebviewready')), 0);
   });
+
+  // ── menu ☰: os botões do topo moram aqui (o topo fica só com a marca, 📺 e ☰) ──
+  const $$ = id => document.getElementById(id);
+  function menuMontar() {
+    const topo = document.querySelector('.topo');
+    topo.insertAdjacentHTML('beforeend', '<button class="bt" id="kv-bt" title="KANIVETE ao vivo">📺</button><button class="bt" id="menu-bt" title="Menu">☰</button>');
+    document.body.insertAdjacentHTML('beforeend', '<div class="menu-m" id="menu-m" hidden></div>');
+    $$('menu-bt').onclick = e => { e.stopPropagation(); const m = $$('menu-m'); m.hidden ? menuAbrir() : (m.hidden = true); };
+    $$('kv-bt').onclick = () => ($$('kv').hidden ? telaAbrir() : telaFechar());
+    document.addEventListener('click', e => { if (!e.target.closest('#menu-m, #menu-bt')) $$('menu-m').hidden = true; });
+  }
+  function menuAbrir() {
+    const n = ($$('atv-cont') && !$$('atv-cont').hidden) ? $$('atv-cont').textContent : '';
+    const itens = [
+      ['nova', '＋', 'Conversa nova', ''],
+      ['habil', '🧰', 'Habilidades', ''],
+      ['voz', '🎙', 'Modo conversa', V.conversa ? 'ligado' : 'desligado'],
+      ['aviso-bt', '🔔', 'Avisos no celular', $$('aviso-bt')?.classList.contains('on') ? 'ligados' : 'desligados'],
+      ['contas-bt', '👤', 'Contas do Claude', ''],
+      ['atv-trilho', '⚡', 'Atividades', n ? n + ' rodando' : ''],
+      ['recarregar', '⟳', 'Recarregar a tela', ''],
+    ];
+    const m = $$('menu-m');
+    m.innerHTML = itens.map(([id, ic, nome, est]) => `<button data-id="${id}"><i>${ic}</i><span>${nome}</span>${est ? `<small class="${/ligad/.test(est) && !/des/.test(est) ? 'on' : ''}">${est}</small>` : ''}</button>`).join('');
+    m.hidden = false;
+    m.onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      m.hidden = true;
+      if (b.dataset.id === 'recarregar') location.reload(); else $$(b.dataset.id).click();
+    };
+  }
+
+  // ── 📺 KANIVETE ao vivo (tela_movel.py): telinha horizontal em cima da conversa; ⛶ tela cheia deitada; ✕ fecha e para ──
+  let kvVigia = null;
+  function telaMontar() {
+    document.querySelector('.topo').insertAdjacentHTML('afterend', `<div class="kv" id="kv" hidden>
+      <img id="kv-img" alt="">
+      <div class="kv-msg" id="kv-msg" hidden><span id="kv-txt"></span><button id="kv-abrir">Abrir o KANIVETE</button></div>
+      <div class="kv-bts"><button id="kv-cheia" title="Tela cheia">⛶</button><button id="kv-fechar" title="Fechar">✕</button></div></div>`);
+    const img = $$('kv-img');
+    img.onload = () => $$('kv-msg').hidden = true;
+    img.onerror = () => { if (!$$('kv').hidden) telaConferir(); };
+    img.ondblclick = telaCheia;
+    $$('kv-cheia').onclick = telaCheia;
+    $$('kv-fechar').onclick = telaFechar;
+    $$('kv-abrir').onclick = async () => {
+      $$('kv-abrir').disabled = true; $$('kv-txt').textContent = 'Abrindo o KANIVETE no PC…';
+      await post('/tela/abrir');
+      for (let i = 0; i < 45 && !$$('kv').hidden; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        if ((await (await fetch('/tela/estado')).json()).aberto) { $$('kv-abrir').disabled = false; return telaLigar(); }
+      }
+      $$('kv-abrir').disabled = false; $$('kv-txt').textContent = 'O KANIVETE não abriu a tempo.';
+    };
+    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) try { screen.orientation.unlock(); } catch (e) {} });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !$$('kv').hidden) telaLigar(); });
+  }
+  function telaLigar() { $$('kv-img').src = '/tela?t=' + Date.now(); }
+  async function telaConferir() {
+    let aberto = false;
+    try { aberto = (await (await fetch('/tela/estado')).json()).aberto; } catch (e) {}
+    if (aberto) { if (!$$('kv-img').complete || !$$('kv-img').naturalWidth) setTimeout(telaLigar, 1500); return; }
+    $$('kv-txt').textContent = 'O KANIVETE está fechado (ou fora do modo agente).';
+    $$('kv-msg').hidden = false;
+  }
+  function telaAbrir() {
+    $$('kv').hidden = false; $$('kv-bt').classList.add('on'); telaLigar();
+    clearInterval(kvVigia); kvVigia = setInterval(telaConferir, 10000);   // o app fechou no meio: avisa
+  }
+  function telaFechar() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    const img = $$('kv-img'); img.removeAttribute('src'); img.src = '';   // fecha a conexão: o PC para de mandar quadros
+    $$('kv').hidden = true; $$('kv-bt').classList.remove('on'); clearInterval(kvVigia);
+  }
+  async function telaCheia() {
+    const kv = $$('kv');
+    if (document.fullscreenElement) return document.exitFullscreen().catch(() => {});
+    try { await kv.requestFullscreen(); await screen.orientation.lock('landscape'); } catch (e) {}
+  }
 })();

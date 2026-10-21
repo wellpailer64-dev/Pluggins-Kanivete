@@ -30,3 +30,32 @@ html.movel.sem-pc .topo::after { content: "sem conexão com o PC…"; position: 
                                  background: #3A2A10; color: var(--aviso); font: 12.5px var(--sans); text-align: center; padding: 4px; }
 html.movel .lado.aberto { position: fixed; left: 0; top: calc(48px + env(safe-area-inset-top)); bottom: 0; width: min(92vw, 360px); z-index: 70;
                           background: var(--painel); box-shadow: 10px 0 40px #000b; border-right: 1px solid var(--borda); }
+/* topo limpo: marca, 📺 e ☰ (o resto no menu, movel.js menuAbrir) */
+html.movel #nova, html.movel #habil, html.movel #voz, html.movel #contas-bt, html.movel #aviso-bt { display: none !important; }
+html.movel .atv { border-left: 0; }
+html.movel .atv .trilho { display: none; }
+html.movel .rodape .pasta { display: none; }
+html.movel .rodape { justify-content: flex-end; }
+html.movel #kv-bt.on { color: var(--lima); }
+.menu-m { position: fixed; top: calc(52px + env(safe-area-inset-top)); right: 8px; z-index: 80; min-width: 240px; padding: 6px;
+          background: var(--painel); border: 1px solid var(--borda); border-radius: 14px; box-shadow: 0 14px 40px #000c;
+          display: flex; flex-direction: column; animation: entra .18s ease; }
+.menu-m[hidden] { display: none; }
+.menu-m button { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 12px; border: 0; border-radius: 10px;
+                 background: transparent; color: var(--texto); font: 15px var(--sans); text-align: left; }
+.menu-m button:active { background: #1F2723; }
+.menu-m i { font-style: normal; width: 22px; text-align: center; }
+.menu-m span { flex: 1; }
+.menu-m small { color: var(--fraco); font: 11.5px var(--mono); } .menu-m small.on { color: var(--lima); }
+/* 📺 a telinha do KANIVETE */
+.kv { position: relative; flex: none; background: #000; border-bottom: 1px solid var(--borda); display: flex; justify-content: center; }
+.kv[hidden] { display: none; }
+.kv img { display: block; width: 100%; max-height: 42dvh; object-fit: contain; min-height: 120px; }
+.kv-bts { position: absolute; top: 6px; right: 6px; display: flex; gap: 6px; }
+.kv-bts button { width: 34px; height: 34px; border: 0; border-radius: 9px; background: #000a; color: #fff; font-size: 16px; }
+.kv-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+          color: var(--fraco); font-size: 13.5px; background: #0b0e0d; text-align: center; padding: 12px; }
+.kv-msg[hidden] { display: none; }
+.kv-msg button { height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--lima); color: var(--fundo); font-weight: 600; }
+.kv:fullscreen { align-items: center; border: 0; }
+.kv:fullscreen img { max-height: 100vh; height: 100vh; }
