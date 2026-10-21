@@ -66,11 +66,30 @@ def desenhar(lado, mascara=False):
     return im.resize((lado, lado), Image.LANCZOS)
 
 
+def badge(lado=96):
+    """ícone pequeno da barra de notificações do Android: só a silhueta branca (a bola com os óculos vazados)"""
+    k = 4
+    L = lado * k
+    im = Image.new("L", (L, L), 0)
+    g = ImageDraw.Draw(im)
+    g.ellipse((L * 0.04, L * 0.04, L * 0.96, L * 0.96), fill=255)
+    p = L * 0.92 * 0.82 / 16
+    x0 = y0 = (L - 16 * p) / 2
+    for y, linha in enumerate(GRADE):
+        for x, c in enumerate(linha):
+            if c == "#":
+                g.rectangle((round(x0 + x * p), round(y0 + y * p), round(x0 + (x + 1) * p) - 1, round(y0 + (y + 1) * p) - 1), fill=0)
+    out = Image.new("RGBA", (L, L), (255, 255, 255, 0))
+    out.putalpha(im)
+    return out.resize((lado, lado), Image.LANCZOS)
+
+
 def gerar():
     desenhar(256).save(os.path.join(PASTA, "icone.png"))
     desenhar(192).save(os.path.join(PASTA, "icone-192.png"))
     desenhar(512).save(os.path.join(PASTA, "icone-512.png"))
     desenhar(512, mascara=True).save(os.path.join(PASTA, "icone-mascara-512.png"))
+    badge().save(os.path.join(PASTA, "icone-badge.png"))
     sys.path.insert(0, PASTA)
     import kanicode as kc
     ico = os.path.join(kc.DADOS, "kanicode.ico")

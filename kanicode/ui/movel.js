@@ -27,7 +27,7 @@
   // eventos ao vivo; caiu (celular dormiu, trocou de rede): reconecta e recarrega a conversa do arquivo
   let fonte, caiu = false;
   function ligar() {
-    fonte = new EventSource('/eventos');
+    fonte = new EventSource('/eventos?de=' + KC_DE);
     fonte.onopen = () => {
       document.documentElement.classList.remove('sem-pc');
       if (caiu && typeof carregar === 'function') carregar();
@@ -133,11 +133,45 @@
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: 'KaniCode', artist: 'Claude',
     artwork: [{ src: '/icone-512.png', sizes: '512x512', type: 'image/png' }] });
 
+  // ── aviso no celular (aviso_movel.py): 🔔 liga/desliga; chega quando termino ou preciso de você e o KaniCode não está à vista ──
+  const post = (u, d) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d || {}) }).then(r => r.json());
+  const b64 = s => { const p = (s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+                     return Uint8Array.from(atob(p), c => c.charCodeAt(0)); };
+  let swReg = null;
+  async function avisoBotao() {
+    const b = document.getElementById('aviso-bt'); if (!b) return;
+    const sub = swReg && await swReg.pushManager.getSubscription();
+    const on = !!sub && Notification.permission === 'granted';
+    b.classList.toggle('on', on); b.textContent = on ? '🔔' : '🔕';
+    b.title = on ? 'Avisos ligados: chega notificação quando eu terminar ou precisar de você' : 'Ligar avisos no celular';
+  }
+  async function avisoAlternar() {
+    if (!swReg || !('PushManager' in window)) { bolha('erro', 'Este navegador não aceita avisos.'); return; }
+    const sub = await swReg.pushManager.getSubscription();
+    if (sub && Notification.permission === 'granted') {
+      await post('/push/sair', { endpoint: sub.endpoint }); await sub.unsubscribe();
+      bolha('sis', '🔕 Avisos desligados neste celular.');
+    } else {
+      if (await Notification.requestPermission() !== 'granted') { bolha('erro', 'Avisos bloqueados: libere as notificações do KaniCode nas configurações do Android.'); return; }
+      const chave = (await post('/push/chave')).r;
+      const nova = sub || await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(chave) });
+      await post('/push/assinar', { sub: nova.toJSON() });
+      await post('/push/teste');
+      bolha('sis', '🔔 Avisos ligados. Mandei um de teste agora. Daqui em diante: quando você pedir algo pelo celular e sair do KaniCode, eu aviso ao terminar ou se precisar de você.');
+    }
+    avisoBotao();
+  }
+  const visto = () => post('/push/visto', { de: KC_DE, on: document.visibilityState === 'visible' }).catch(() => {});
+  document.addEventListener('visibilitychange', visto);
+  window.addEventListener('pagehide', () => navigator.sendBeacon && navigator.sendBeacon('/push/visto', new Blob([JSON.stringify({ de: KC_DE, on: false })], { type: 'application/json' })));
+
   window.addEventListener('DOMContentLoaded', () => {
     ligar();
+    visto();
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(r => { swReg = r; avisoBotao(); }).catch(() => {});
     // 🎤 e 🎙 do celular no lugar dos do PC (que usam o microfone do PC); 👤 abre as contas
     document.addEventListener('click', e => {
-      const b = e.target.closest('#mic, #voz, #contas-bt'); if (!b) return;
+      const b = e.target.closest('#mic, #voz, #contas-bt, #aviso-bt'); if (!b) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (!V.tocando) { V.audio.play().catch(() => {}); V.audio.pause(); }   // libera o som neste toque (o celular exige um toque antes)
       if (b.id === 'mic') micLigar();
@@ -145,11 +179,14 @@
         V.conversa = !V.conversa; localStorage.setItem('kc-conversa', V.conversa ? '1' : '0'); conversaBotao();
         bolha('sis', V.conversa ? '🎙 Modo conversa: leio as respostas em voz alta e depois já ouço você.' : 'Modo conversa desligado.');
         if (V.conversa && !K.ocupada) micLigar(); else if (!V.conversa) pararFala();
-      } else contasAbrir();
+      } else if (b.id === 'aviso-bt') avisoAlternar();
+      else contasAbrir();
     }, true);
     const voz = document.getElementById('voz'); conversaBotao();
     const ct = document.createElement('button'); ct.className = 'bt'; ct.id = 'contas-bt'; ct.title = 'Contas do Claude: trocar'; ct.textContent = '👤';
     voz.after(ct);
+    const av = document.createElement('button'); av.className = 'bt'; av.id = 'aviso-bt'; av.textContent = '🔕';
+    ct.after(av); avisoBotao();
     // eventos da conversa → leitura em voz alta
     const ev0 = window.kcEv;
     window.kcEv = ev => {

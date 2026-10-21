@@ -24,7 +24,7 @@ NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "
 _TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
           ".webp": "image/webp", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json"}
 
-ICONES = ("icone.png", "icone-192.png", "icone-512.png", "icone-mascara-512.png")   # icone_oculos.py
+ICONES = ("icone.png", "icone-192.png", "icone-512.png", "icone-mascara-512.png", "icone-badge.png")   # icone_oculos.py
 
 _app = None
 _asr = None               # voz.Voz só para transcrever (o mesmo Parakeet do "Ei Kani"; carrega no 1º uso)
@@ -49,7 +49,12 @@ def chave(dados):
 
 
 def publicar(ev):
-    """evento da conversa para todos os celulares abertos"""
+    """evento da conversa para todos os celulares abertos (e o aviso no celular, aviso_movel.py)"""
+    try:
+        import aviso_movel
+        aviso_movel.ver(ev)
+    except Exception:
+        pass
     with _trava:
         for q in list(_ouvintes):
             try:
@@ -89,6 +94,9 @@ class _H(BaseHTTPRequestHandler):
                 return self._enviar(302, extra={"Location": "/", "Set-Cookie":
                                     f"kc_chave={_chave}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax; Secure"})
             return self._enviar(403, "Chave errada.".encode())
+        if u.path == "/sw.js":   # o "carteiro" do aviso no celular (precisa morar na raiz)
+            with open(os.path.join(UI, "movel-sw.js"), "rb") as f:
+                return self._enviar(200, f.read(), _TIPOS[".js"], {"Service-Worker-Allowed": "/"})
         if u.path == "/manifest.webmanifest" or u.path.lstrip("/") in ICONES:   # o Chrome pede sem cookie em alguns casos
             return self._arquivo(u.path.lstrip("/"))
         if not self._autorizado():
@@ -96,7 +104,7 @@ class _H(BaseHTTPRequestHandler):
         if u.path == "/":
             return self._pagina()
         if u.path == "/eventos":
-            return self._eventos()
+            return self._eventos(q.get("de", [""])[0])
         return self._arquivo(u.path.lstrip("/"))
 
     def _arquivo(self, nome):
@@ -123,7 +131,7 @@ class _H(BaseHTTPRequestHandler):
         h = h.replace("<title>", cab + "<title>", 1)
         self._enviar(200, h.encode("utf-8"), _TIPOS[".html"])
 
-    def _eventos(self):
+    def _eventos(self, de=""):
         fila = queue.Queue(maxsize=5000)
         with _trava:
             _ouvintes.append(fila)
@@ -149,6 +157,9 @@ class _H(BaseHTTPRequestHandler):
             with _trava:
                 if fila in _ouvintes:
                     _ouvintes.remove(fila)
+            if de:   # a página fechou ou caiu: não está mais à vista
+                import aviso_movel
+                aviso_movel.visto(de, False)
             self.close_connection = True
 
     def do_POST(self):
@@ -157,6 +168,8 @@ class _H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path in ("/voz/ouvir", "/voz/falar"):
             return self._voz(u.path[5:])
+        if u.path.startswith("/push/"):
+            return self._push(u.path[6:])
         if not u.path.startswith("/api/"):
             return self._enviar(404)
         nome = u.path[5:]
@@ -180,6 +193,28 @@ class _H(BaseHTTPRequestHandler):
         except Exception as e:
             return self._enviar(500, json.dumps({"erro": str(e)}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
 
+
+    def _push(self, o_que):
+        """chave | assinar {sub} | sair {endpoint} | visto {de, on} | teste"""
+        import aviso_movel
+        n = int(self.headers.get("Content-Length") or 0)
+        d = json.loads(self.rfile.read(n) or b"{}") if n else {}
+        try:
+            if o_que == "chave":
+                r = aviso_movel.chave_publica()
+            elif o_que == "assinar":
+                r = aviso_movel.assinar(d["sub"])
+            elif o_que == "sair":
+                r = aviso_movel.sair(d.get("endpoint"))
+            elif o_que == "visto":
+                r = aviso_movel.visto(str(d.get("de") or ""), bool(d.get("on")))
+            elif o_que == "teste":
+                r = aviso_movel.avisar("KaniCode", "Pronto: os avisos chegam aqui quando eu terminar ou precisar de você.", "kc-teste")
+            else:
+                return self._enviar(404)
+            return self._enviar(200, json.dumps({"r": r}).encode(), _TIPOS[".json"])
+        except Exception as e:
+            return self._enviar(500, json.dumps({"erro": str(e)}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
 
     def _voz(self, o_que):
         """ouvir: corpo = PCM 16 bits mono 16 kHz do microfone do celular → {"texto"}; falar: {"texto"} → WAV (Kokoro)"""
@@ -221,6 +256,8 @@ def iniciar(app, dados):
     """liga o servidor do celular (127.0.0.1:PORTA) numa thread; devolve False se a porta estiver ocupada"""
     global _app, _chave
     _app, _chave = app, chave(dados)
+    import aviso_movel
+    aviso_movel.iniciar(dados)
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", PORTA), _H)
     except OSError:
