@@ -37,7 +37,9 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
   regras "ask" do KaniCode (`sessao.REGRAS_PERGUNTAR`: git push/commit/reset…, gh, apagar, matar processo, desligar,
   POST) mandadas por `--settings`; o pedido chega no canal da conversa com `--permission-prompt-tool stdio` + um
   `control_request initialize` no início (sem isso o "ask" é recusado sozinho). Apagar com todos os alvos dentro da pasta
-  do projeto é liberado em `_apagar_dentro`, sem cartão. O `initialize` devolve a lista dos comandos "/" (com descrição).
+  do projeto é liberado em `_apagar_dentro`, sem cartão. "Permitir sempre: git push" no cartão (`sessao.risco`/`sempre`,
+  lista em `dados/sempre.json`) libera aquele item de `_RISCO` só com o comando sozinho (com `&&`, `;`, `|`, crase ou
+  `$(` volta a perguntar); passou sozinho = linha "✓ … liberado sempre · não liberar mais". O `initialize` devolve a lista dos comandos "/" (com descrição).
   Comandos internos ("/context", "/usage") voltam como resposta "<synthetic>" inteira, sem pedaços.
   Status ao vivo: tokens (`message_start/delta.usage`), contexto, tempo, ação atual; cotas de 5 h e semana do
   `rate_limit_event.unifiedWindows` (`five_hour`, `seven_day`), com contagem regressiva. Sons sintetizados (Web Audio).
