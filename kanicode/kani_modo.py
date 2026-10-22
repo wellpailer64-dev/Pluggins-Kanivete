@@ -19,6 +19,14 @@ PANDA = r"D:\Kanivete\Plugins\pandalab\panda.py"
 FERRAMENTAS = {
     "responder": "Responde ao Pailer e TERMINA. args: {mensagem}",
     "passar_para_claude": "Passa ao Claude e TERMINA quando faltar ferramenta ou a tarefa for complexa demais. Código pode ser feito por codigo_ na cópia. args: {motivo}",
+    "agenda_google": "Consulta eventos dos próximos 7 dias nos calendários Google conectados em Configurações > Conexões. Somente leitura. args: {}",
+    "drive_buscar": "Busca arquivos/pastas pelo nome. Retorna IDs e links. pasta vazia busca em tudo; root = Meu Drive; lixeira=true consulta excluídos recuperáveis. args: {busca, proxima: token opcional, pasta: ID opcional, lixeira: false}",
+    "drive_criar_pasta": "Cria pasta no Drive, somente se solicitada pelo usuário. args: {nome, pasta: ID da pasta destino ou root}",
+    "drive_renomear": "Renomeia arquivo/pasta do Drive solicitado pelo usuário. Primeiro consulte o ID exato. args: {id, nome}",
+    "drive_mover": "Move arquivo/pasta do Drive para a pasta solicitada. Primeiro confira os IDs de origem e destino. args: {id, pasta: ID destino ou root}",
+    "drive_lixeira": "Move arquivo/pasta para a lixeira, recuperável, somente a pedido do usuário. restaurar=true restaura. Não exclui definitivamente. Confira o ID exato. args: {id, restaurar: false}",
+    "drive_enviar": "Envia um arquivo local ao Drive, somente a pedido do usuário; cria um arquivo novo, sem sobrescrever. args: {caminho: caminho local completo, pasta: ID destino ou root}",
+    "drive_baixar": "Baixa um arquivo do Drive na pasta local informada, sem sobrescrever. Google Docs/Sheets/Slides exportam para docx/xlsx/pptx por padrão; pdf opcional. Pasta inteira não é baixada automaticamente. args: {id, destino: pasta local completa, formato: opcional}",
     "espaco_disco": "Espaço livre e usado dos discos C e D. args: {}",
     "listar_pasta": "Lista o que tem numa pasta (com tamanhos). args: {caminho}",
     "ler_arquivo": "Lê o começo de um arquivo de texto (md, py, js, txt, json...). args: {caminho}",
@@ -295,6 +303,30 @@ _RECEITAS = {
 
 def _executar(acao, a, pasta):
     """roda a ferramenta; devolve o resumo (texto curto) que volta para o modelo"""
+    if acao.startswith("drive_"):
+        import google_drive
+        operacoes = {
+            "drive_buscar": lambda: google_drive.drive.buscar(a.get("busca", ""), a.get("proxima", ""), a.get("pasta", ""), a.get("lixeira", False)),
+            "drive_criar_pasta": lambda: google_drive.drive.criar_pasta(a.get("nome"), a.get("pasta", "root")),
+            "drive_renomear": lambda: google_drive.drive.renomear(a.get("id"), a.get("nome")),
+            "drive_mover": lambda: google_drive.drive.mover(a.get("id"), a.get("pasta")),
+            "drive_lixeira": lambda: google_drive.drive.lixeira(a.get("id"), a.get("restaurar", False)),
+            "drive_enviar": lambda: google_drive.drive.enviar(a.get("caminho", ""), a.get("pasta", "root")),
+            "drive_baixar": lambda: google_drive.drive.baixar(a.get("id"), a.get("destino", ""), a.get("formato", "")),
+        }
+        try:
+            if acao not in operacoes:
+                return 'NÃO FEITO: operação do Drive desconhecida.'
+            return json.dumps(operacoes[acao](), ensure_ascii=False)
+        except (google_drive.FalhaDrive, OSError, ValueError, TypeError) as e:
+            return 'NÃO FEITO: ' + str(e)
+    if acao == "agenda_google":
+        import google_calendar
+        try:
+            resultado = google_calendar.calendar.sincronizar()
+            return json.dumps({k: resultado[k] for k in ('conta', 'ultima_sync', 'eventos')}, ensure_ascii=False)
+        except google_calendar.FalhaCalendar as e:
+            return 'NÃO FEITO: ' + str(e)
     if acao == "consultar_receita":
         tipo = str(a.get("tipo") or "").strip().lower()
         if tipo not in _RECEITAS:

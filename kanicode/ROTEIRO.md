@@ -3,6 +3,9 @@
 Plugin separado do Kanivete. Execute os comandos nesta pasta, com `py -3.13`.
 Preserve alterações existentes. Sem commit, push, exclusões ou dependências novas.
 Não controle o app do usuário para testar; nunca conecte à porta 9222 durante testes.
+O Pailer autoriza reiniciar o KaniCode para aplicar atualizações pelo botão de reinício do topo
+ou pelo mesmo fluxo no canal local (`py -3.13 kanicode.py reiniciar`). O reinício aguarda todas
+as abas terminarem. Esta autorização não inclui o Kanivete nem outros programas.
 
 ## Encontrar o trecho e o teste
 

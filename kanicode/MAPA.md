@@ -43,6 +43,8 @@ testes simulados: `tests/test_modelo_ferramenta.py`.
 | Ctrl+Shift+K abre o KaniCode (tecla do atalho do menu Iniciar) | `atalhos.py` (`TECLA`; recriar: `py -3.13 atalhos.py criar menu`) |
 | Selo do Codex (terminal >_) | `ui/codex.svg`, `Bolinha._selo` |
 | Selo circular do Claude (asterisco) | `ui/claude.svg`, `Bolinha._selo` |
+| Google Calendar: Configurações → Conexões, OAuth desktop/DPAPI, agendas, consulta da Kani e avisos falados | `google_calendar.py`, `App.google_*`, `ui/conexoes.js/css`, `compromissos.py`, `kani_modo.agenda_google`; guia `CONEXOES.md`; testes `test_google_calendar.py`, `test_conexoes_ui.py` |
+| Google Drive: OAuth independente, busca/navegação, upload, download/exportação, criar pasta, mover, renomear, lixeira/restaurar; Kani `drive_*` | `google_drive.py`, `google_drive_arquivos.py`, `App.drive_*`, `ui/conexoes_drive.js`; guia `CONEXOES.md`; testes `test_google_drive.py`, `test_google_drive_arquivos.py`, `test_conexoes_ui.py` |
 | Voz, fala e áudio | `voz.py`, `fala.py` (`TOM_SEMITONS = 2`, fala e prontidão), `radio.py`; prontidão nos quatro motores em `App._prontidao_agendar`; verificar `--area voz` |
 | Vinhetas vocais de 8 bits da bolinha (entrada, conclusão e saída) | `sons_bolinha.py`, `ui/sons_bolinha/*.wav`, `App.sons_acoes`, `Bolinha._som` |
 | Celular, HTTP e notificações | `movel.py`, `ui/movel.js`, `ui/movel.css`, `aviso_movel.py` |

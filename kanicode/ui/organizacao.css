@@ -169,3 +169,8 @@ html.movel .seletor { min-height: 36px; }
 .msg.eu.mensagem-urgente { border-color: var(--aviso); }
 .mensagem-fila-nota { display: block; margin-top: 5px; color: var(--fraco); font-size: 10px; line-height: 1.4; }
 .msg.eu.mensagem-pendente { cursor: pointer; }
+.janela-reiniciar { display:grid; place-items:center; width:16px; height:16px; padding:0; border:0; background:transparent; color:var(--fraco); opacity:.45; cursor:pointer; }
+.janela-reiniciar svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.janela-reiniciar:hover, .janela-reiniciar:focus-visible { opacity:1; color:var(--texto); }
+.janela-reiniciar:focus-visible { outline:1px solid var(--texto); outline-offset:4px; border-radius:3px; }
+.janela-reiniciar:disabled { cursor:wait; opacity:.3; }

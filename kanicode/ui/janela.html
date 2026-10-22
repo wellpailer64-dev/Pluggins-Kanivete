@@ -177,6 +177,10 @@
   .aj .nm { font: 600 12px var(--sans); color: var(--texto); white-space: nowrap; }
   .aj .nm small { color: var(--fraco); font: 11px var(--mono); margin-left: 4px; }
   .aj .oq { font: 11px var(--sans); color: var(--fraco); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 230px; }
+  /* compromisso: anel parado; pulsa quando falta pouco */
+  .aj.comp .av::before { animation: none; background: var(--cor); opacity: .45; }
+  .aj.comp.perto .av::before { animation: pulsa 1.2s ease-in-out infinite; }
+  @keyframes pulsa { 50% { opacity: 1; } }
   /* resposta de ajudante (falando direto com o Codex/Kani) */
   .msg.aju { align-self: flex-start; background: var(--painel); border: 1px solid var(--borda); border-left: 3px solid var(--cor); }
   .msg.aju .quem { display: flex; align-items: center; gap: 6px; font: 600 12px var(--sans); color: var(--fraco); margin-bottom: 4px; }
@@ -380,6 +384,7 @@
     <span class="marca">Kc</span><span class="nome">KaniCode</span>
     <span class="esp pywebview-drag-region"></span>
     <div class="janela-bolas">
+      <button class="janela-reiniciar" id="reiniciar" aria-label="Reiniciar KaniCode" title="Reiniciar KaniCode (aguarda as tarefas terminarem)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M19 12a7 7 0 1 0-2 5M20 12a8 8 0 0 0-3-6"/></svg></button>
       <button class="janela-bola minimizar" id="recolher" aria-label="Recolher na bolinha" title="Recolher na bolinha (Esc)"></button>
       <button class="janela-bola ampliar" id="grande" aria-label="Ampliar janela" aria-pressed="false" title="Ampliar ou restaurar janela"></button>
       <button class="janela-bola fechar" id="sair" aria-label="Fechar KaniCode" title="Sair do KaniCode"></button>
@@ -392,7 +397,7 @@
   <div class="corpo">
     <div class="lado" id="lado" title=""><div id="lado-contas" style="display:flex;flex-direction:column;gap:22px;align-items:center"></div>
       <button class="mais" id="lado-mais" title="Entrar com outra conta do Claude">＋</button><span class="esp2"></span>
-      <button class="mais ajustes" id="lado-aj" aria-label="Gerenciar contas" title="Contas: renomear, remover, atualizar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg></button></div>
+      <button class="mais ajustes" id="lado-aj" aria-label="Contas do Claude" title="Contas do Claude"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg></button></div>
     <div class="meio"><div class="saudacao" id="saudacao" hidden>Olá, Pailer.</div><div class="conversa" id="conversa"></div><div class="equipe" id="equipe"></div></div>
   </div>
   <div class="msg plano fixo" id="planoFixo" hidden></div>
@@ -430,10 +435,68 @@
     <button class="bt" id="som" title="Sons suaves das ações"><span class="icone">◖</span><span>Sons das ações</span></button>
     <div class="menu-divisor"></div>
     <button class="bt" id="fixar" title="Sempre por cima"><span class="icone">⌖</span><span>Sempre por cima</span></button>
+    <button class="bt" id="config-conexoes" title="Conectar serviços"><span class="icone">⇄</span><span>Conexões</span></button>
+
     <label class="navegador-links">Abrir links com<select id="navegador-links" title="Navegador externo; a última escolha fica salva"><option value="chrome">Chrome (ou padrão)</option><option value="padrao">Padrão do Windows</option></select></label>
   </div>
+  <link rel="stylesheet" href="conexoes.css">
   <div class="uso" id="uso" hidden></div>
   <div class="contas" id="contas" hidden></div>
+  <dialog id="configuracoes" aria-labelledby="config-titulo">
+    <header><div><span class="config-sobre">CONFIGURAÇÕES</span><h3 id="config-titulo">Conexões</h3></div><button id="config-fechar" aria-label="Fechar configurações">×</button></header>
+    <section id="conexoes-catalogo" aria-label="Aplicativos e serviços">
+      <div class="conexoes-intro"><p>Seus aplicativos, junto da Kani.</p><span id="conexoes-resumo" role="status">Verificando conexões…</span></div>
+      <div id="conexoes-grade"></div>
+      <p class="config-nota">Escolha um aplicativo para ver a conexão e suas preferências. Os cards marcados como sugestão mostram possibilidades para as próximas integrações.</p>
+      <p id="conexoes-erro" role="status" hidden></p><button id="conexoes-repetir" hidden>Tentar novamente</button>
+    </section>
+    <nav id="conexoes-nav" aria-label="Navegação de conexões" hidden><button id="conexoes-voltar">← Todas as conexões</button></nav>
+    <section id="conexao-drive" aria-labelledby="drive-titulo" hidden>
+      <h4 id="drive-titulo" tabindex="-1">Google Drive <small id="drive-permissao">Verificando permissão</small></h4>
+      <p>Seus arquivos e pastas: envie, baixe, renomeie e organize. Itens apagados vão para a lixeira e podem ser restaurados.</p>
+      <p id="drive-status" role="status" aria-live="polite">Verificando conexão…</p>
+      <div class="config-acoes"><button id="drive-reutilizar" disabled>Usar configuração do Calendar</button><button id="drive-importar" disabled>Importar JSON OAuth</button><button id="drive-conectar" disabled>Conectar Google Drive</button><button id="drive-sync" hidden>Sincronizar agora</button><button id="drive-desconectar" hidden>Desconectar Drive</button></div>
+      <details id="drive-ajuda"><summary>Como conectar o Google Drive</summary><ol><li>No mesmo projeto do Google Cloud, ative a <b>Google Drive API</b>.</li><li>Use a configuração OAuth do Calendar ou importe o JSON de um cliente do tipo <b>Aplicativo para computador</b>.</li><li>Clique em <b>Conectar Google Drive</b> e autorize o controle dos arquivos no navegador.</li></ol><p>O login e as permissões do Drive são independentes do Calendar. Desconectar um não desconecta o outro.</p></details>
+      <div id="drive-consulta" hidden>
+        <div class="drive-ferramentas"><select id="drive-visao" aria-label="Onde consultar"><option value="">Todos os arquivos</option><option value="root">Meu Drive</option><option value="lixeira">Lixeira</option></select><button id="drive-enviar">Enviar arquivo</button><button id="drive-criar">Nova pasta</button></div>
+        <div class="drive-trilha"><button id="drive-voltar" hidden>← Voltar</button><span id="drive-local">Todos os arquivos · novos itens em Meu Drive</span></div>
+        <form id="drive-operacao" hidden>
+          <h4 id="drive-op-titulo"></h4><label id="drive-op-escolha">Ação <select id="drive-op-acao"></select></label>
+          <label id="drive-op-campo">Nome <input id="drive-op-valor" maxlength="255" autocomplete="off"></label>
+          <label id="drive-op-exportacao" hidden>Formato de exportação <select id="drive-op-formato"><option value="">Formato padrão</option><option value="pdf">PDF</option></select></label>
+          <p id="drive-op-ajuda" class="config-nota"></p><div class="config-acoes"><button id="drive-op-confirmar" type="submit">Confirmar</button><button id="drive-op-cancelar" type="button">Cancelar</button></div>
+        </form>
+        <form id="drive-busca"><label for="drive-termo">Buscar arquivos e pastas pelo nome</label><div class="drive-campo"><input id="drive-termo" maxlength="200" placeholder="Ex.: orçamento, cliente, referências…" autocomplete="off"><button type="submit">Buscar</button></div></form>
+        <p id="drive-resultado-status" role="status"></p><div id="drive-arquivos"></div><button id="drive-mais" hidden>Carregar mais</button>
+        <p class="config-nota">A Kani também pode gerenciar os arquivos pela conversa, quando você pedir. Downloads não sobrescrevem arquivos locais. Documentos Google são exportados; pastas são baixadas arquivo por arquivo. Itens da lixeira seguem o prazo de retenção do Google.</p>
+      </div>
+    </section>
+    <section id="conexao-sugestao" aria-labelledby="sugestao-titulo" hidden>
+      <div id="sugestao-icone" class="conexao-icone" aria-hidden="true"></div>
+      <span class="conexao-etiqueta">INTEGRAÇÃO SUGERIDA</span><h4 id="sugestao-titulo" tabindex="-1"></h4>
+      <p id="sugestao-descricao"></p><h4>Como poderia ajudar</h4><ul id="sugestao-usos"></ul>
+      <div class="conexao-futuro"><b>Ainda não disponível</b><p>Esta conexão ainda precisa ser implementada no KaniCode. Quando estiver disponível, a configuração e a autorização da conta ficarão aqui.</p></div>
+    </section>
+    <section id="conexao-google" aria-labelledby="google-titulo" hidden>
+      <h4 id="google-titulo" tabindex="-1">Google Calendar <small>Somente leitura</small></h4>
+      <p>A Kani consulta os calendários selecionados e prepara lembretes falados. Seu computador precisa estar ligado e sua sessão Windows aberta para tocar os avisos.</p>
+      <p id="google-status" role="status" aria-live="polite">Carregando conexão…</p>
+      <div class="config-acoes"><button id="google-importar">Importar JSON OAuth</button><button id="google-conectar">Conectar conta Google</button><button id="google-sync">Sincronizar agora</button><button id="google-desconectar">Desconectar</button></div>
+      <details id="google-ajuda"><summary>Configuração inicial do Google</summary>
+        <ol><li>No Google Cloud, crie ou selecione um projeto e ative a Google Calendar API.</li>
+        <li>Configure a tela de consentimento. Se o aplicativo estiver em teste, inclua seu e-mail nos usuários de teste.</li>
+        <li>Crie um cliente OAuth do tipo <b>Aplicativo para computador (Desktop app)</b>, baixe o JSON e importe aqui.</li></ol>
+        <p>Depois, use Conectar conta Google. Credenciais e autorização ficam protegidas pelo seu usuário Windows. Em modo de teste do Google, pode ser necessário reconectar após 7 dias.</p>
+      </details>
+      <form id="google-preferencias" hidden>
+        <fieldset><legend>Calendários que a Kani acompanha</legend><div id="google-calendarios"></div></fieldset>
+        <label>Avisar <input id="google-antes" type="number" min="1" max="1440" value="10" required> minutos antes</label>
+        <button type="submit">Salvar preferências</button>
+      </form>
+      <h4>Próximos eventos <small>7 dias</small></h4><div id="google-eventos"></div>
+      <p class="config-nota">Eventos de dia inteiro aparecem na agenda, sem alarme falado. Sincronização automática a cada 30 minutos. Desconectar remove o acesso local; você também pode revogá-lo na sua Conta Google.</p>
+    </section>
+  </dialog>
   <div class="hab" id="hab" hidden>
     <div class="cab">
       <p>Tudo o que sabemos fazer juntos. Clique num item para usar: ele vai para a caixa de mensagem, pronto para você completar.</p>
@@ -918,6 +981,33 @@
     }
     desenharAj(ev.quem, a);
   }
+  // ── próximo compromisso (compromissos.py): selo da Kani com contagem regressiva; some 5 min depois do início ──
+  let COMP = null;
+  async function compromissos() {
+    try { COMP = ((await api().compromissos()) || []).find(c => new Date(c.inicio) > Date.now() - 300000) || null; } catch { COMP = null; }
+    desenharComp();
+  }
+  function desenharComp() {
+    let el = $('compromisso');
+    const seg = COMP ? (new Date(COMP.inicio) - Date.now()) / 1000 : 0;
+    if (!COMP || seg > 12 * 3600 || seg < -300) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'compromisso';
+      el.className = 'aj comp';
+      el.style.setProperty('--cor', EQUIPE.kani.cor);
+      el.innerHTML = `<span class="av">${EQUIPE.kani.av}</span><span class="info"><span class="nm">Kani<small></small></span><span class="oq"></span></span>`;
+      $('equipe').prepend(el);
+    }
+    const h = new Date(COMP.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    el.querySelector('small').textContent = seg > 0 ? 'em ' + relogio(seg) : 'agora';
+    el.querySelector('.oq').textContent = `🗓 ${COMP.titulo} · ${h}`;
+    el.title = [COMP.titulo, COMP.obs, 'às ' + h].filter(Boolean).join(' · ');
+    el.classList.toggle('perto', seg <= 900);
+  }
+  setInterval(desenharComp, 1000);
+  setInterval(compromissos, 60000);
+  window.addEventListener('pywebviewready', compromissos);
   function desenharAj(quem, a = AJ[quem]) {
     if (!a) return;
     const seg = (Date.now() - a.t0) / 1000;
@@ -1076,7 +1166,7 @@
     contasEsperarLogin(r.id);
   }
   $('lado-mais').addEventListener('click', contaNova);
-  $('lado-aj').addEventListener('click', () => contasAbrir());
+  $('lado-aj').addEventListener('click', () => window.contasAbrir());
   // as cotas das contas paradas andam sozinhas (zeram com o tempo): lê de novo a cada 10 min, sem gastar tokens
   setInterval(async () => { if (CT.dados) { CT.dados = await api().conta_atualizar(); contaBotao(); } }, 600000);
   function contasDesenhar() {
@@ -1591,6 +1681,7 @@
   };
   window.addEventListener('pywebviewready', () => { carregar(); if (!window.KC_MOVEL) texto.focus(); });
 </script>
+<script src="reiniciar.js"></script>
 <script src="paineis.js"></script>
 <script src="organizacao.js"></script>
 <script src="kani_gpu.js"></script>
@@ -1603,5 +1694,8 @@
 <script src="kaniball.js"></script>
 <script src="mensagens.js"></script>
 <script src="abas.js"></script>
+<script src="conexoes.js"></script>
+<script src="conexoes_drive.js"></script>
+
 </body>
 </html>

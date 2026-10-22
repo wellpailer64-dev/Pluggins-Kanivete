@@ -53,6 +53,8 @@ class LayoutTest(unittest.TestCase):
             if (nome === 'historico') return historicoTeste;
             if (nome === 'gpu_info') return gpuTeste;
             if (nome === 'voz') return {on:false};
+            if (nome === 'google_status') return {configurado:false,conectado:false,conectando:false,
+              mensagem:'',conta:'',ultima_sync:null,calendarios:[],selecionados:[],eventos:[],antes:10,avisos:{}};
             return true;
           }})};
         """)
@@ -65,8 +67,8 @@ class LayoutTest(unittest.TestCase):
 
     def test_controles_nas_posicoes_pedidas_e_fotos(self):
         p = self.page
-        self.assertEqual(p.locator('.topo button').count(), 3)
-        self.assertEqual(p.locator('#ferramentas-menu button').count(), 8)
+        self.assertEqual(p.locator('.topo button').count(), 4)
+        self.assertEqual(p.locator('#ferramentas-menu button').count(), 9)
         self.assertEqual(p.get_by_role('button', name='OpenCode · teste Big Pickle', exact=True, include_hidden=True).count(), 1)
         self.assertEqual(p.locator('#lado-contas img').count(), 2)
         self.assertEqual(p.locator('#lado-contas .cnt').count(), 3)

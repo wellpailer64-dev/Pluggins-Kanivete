@@ -190,6 +190,130 @@ class App:
             self._na_ui(lambda: self._bola and self._bola.definir(quem=q))
         return self.abas()
 
+    def drive_status(self):
+        import google_drive
+        return google_drive.drive.status()
+
+    def drive_importar(self):
+        import google_drive
+        arquivos = self._janela.create_file_dialog(webview.FileDialog.OPEN,
+                                                   file_types=('Credenciais Google (*.json)',))
+        return google_drive.drive.importar(arquivos[0]) if arquivos else google_drive.drive.status()
+
+    def drive_usar_calendar(self):
+        import google_drive
+        return google_drive.drive.usar_calendar()
+
+    def drive_conectar(self):
+        import google_drive
+        return google_drive.drive.conectar()
+
+    def drive_sincronizar(self):
+        import google_drive
+        return google_drive.drive.sincronizar()
+
+    def drive_buscar(self, busca="", proxima="", pasta="", lixeira=False):
+        import google_drive
+        return google_drive.drive.buscar(busca, proxima, pasta, lixeira)
+
+    def drive_criar_pasta(self, nome, pasta="root"):
+        import google_drive
+        return google_drive.drive.criar_pasta(nome, pasta)
+
+    def drive_renomear(self, id, nome):
+        import google_drive
+        return google_drive.drive.renomear(id, nome)
+
+    def drive_mover(self, id, pasta):
+        import google_drive
+        return google_drive.drive.mover(id, pasta)
+
+    def drive_lixeira(self, id, restaurar=False):
+        import google_drive
+        return google_drive.drive.lixeira(id, restaurar)
+
+    def drive_enviar(self, caminho=None, pasta="root"):
+        import google_drive
+        if caminho is None:
+            arquivos = self._janela.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=False)
+            if not arquivos:
+                return {"cancelado": True}
+            caminho = arquivos[0]
+        return google_drive.drive.enviar(caminho, pasta)
+
+    def drive_baixar(self, id, destino=None, formato=""):
+        import google_drive
+        if destino is None:
+            pastas = self._janela.create_file_dialog(webview.FileDialog.FOLDER)
+            if not pastas:
+                return {"cancelado": True}
+            destino = pastas[0]
+        return google_drive.drive.baixar(id, destino, formato)
+
+    def drive_desconectar(self):
+        import google_drive
+        return google_drive.drive.desconectar()
+
+    def google_status(self):
+        import google_calendar
+        return google_calendar.calendar.status()
+
+    def google_importar(self):
+        import google_calendar
+        arquivos = self._janela.create_file_dialog(webview.FileDialog.OPEN,
+                                                   file_types=('Credenciais Google (*.json)',))
+        return google_calendar.calendar.importar(arquivos[0]) if arquivos else google_calendar.calendar.status()
+
+    def google_conectar(self):
+        import google_calendar
+        return google_calendar.calendar.conectar(self._google_preparar_avisos)
+
+    def google_sincronizar(self):
+        import google_calendar
+        resultado = google_calendar.calendar.sincronizar()
+        self._google_preparar_avisos()
+        return resultado
+
+    def google_selecionar(self, ids, antes=10):
+        import google_calendar
+        try:
+            return google_calendar.calendar.selecionar(ids, antes)
+        finally:
+            self._google_preparar_avisos()
+
+    def google_desconectar(self):
+        import google_calendar
+        resultado = google_calendar.calendar.desconectar()
+        self._google_preparar_avisos()
+        return resultado
+
+    def _google_preparar_avisos(self):
+        # Subprocesso evita carregar o sintetizador de voz na janela.
+        def preparar():
+            import datetime, subprocess
+            from pathlib import Path
+            from google_calendar import _salvar
+            pasta = Path(DADOS) / 'avisos'
+            estado = pasta / 'preparar_estado.json'
+            try:
+                _salvar(estado, {'estado': 'preparando'})
+                with (pasta / 'preparar.log').open('a', encoding='utf-8') as log:
+                    r = subprocess.run([sys.executable, os.path.join(PASTA, 'compromissos.py'), 'preparar'],
+                                       stdout=log, stderr=log, creationflags=0x08000000, timeout=300)
+                _salvar(estado, {'estado': 'pronto' if r.returncode == 0 else 'erro',
+                                'atualizado': datetime.datetime.now().isoformat()})
+            except (OSError, subprocess.TimeoutExpired):
+                _salvar(estado, {'estado': 'erro', 'atualizado': datetime.datetime.now().isoformat()})
+        threading.Thread(target=preparar, daemon=True).start()
+
+    def compromissos(self):
+        """próximos compromissos com aviso falado (compromissos.py preparar grava a cada 30 min), para o selo da janela"""
+        try:
+            with open(os.path.join(DADOS, "avisos", "agenda.json"), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return []
+
     def aba_ajudante(self, aba, quem, texto):
         """o Claude de outra aba manda um pedido nesta (vigiar o Big Pickle, 2026-10-22)"""
         if str(aba) not in self._abas:
@@ -586,7 +710,8 @@ class App:
     def fixar(self, on):
         """janela sempre por cima (alfinete)"""
         if self._janela:
-            self._janela.on_top = bool(on)
+            # O pywebview altera TopMost diretamente; a ponte chama fora da thread da interface.
+            self._na_ui(lambda: setattr(self._janela, "on_top", bool(on)))
         _gravar_estado(fixa=bool(on))
         return bool(on)
 
@@ -1421,6 +1546,10 @@ class App:
             _gravar_estado(projeto=nova)
         return nova
 
+    def reiniciar(self):
+        """Reabre o KaniCode; tarefas em andamento terminam antes do reinício."""
+        return self._pedir("reiniciar")
+
     def sair(self):
         self._saindo = True
         if self._bola and self._bola.na_doca:   # dentro do chat: sai dele e a despedida parte dali
@@ -1878,9 +2007,15 @@ def main():
             app._na_ui(encaixar)
         if e.get("voz"):   # o Ei Kani estava ligado: volta ligado
             threading.Timer(1.5, app.voz, args=(True,)).start()
-        # ao iniciar vem só a KaniBall, sempre (2026-10-21, pedido do Pailer): o chat abre no clique
+        # Reinício pelo topo retoma o chat; abertura normal continua só com a KaniBall.
+        if reaberto and "--abrir" in sys.argv:
+            app.mostrar()
     webview.start(comecar, debug="--console" in sys.argv, storage_path=os.path.join(DADOS, "webview"))
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["reiniciar"]:
+        resposta = avisar("reiniciar")
+        print(resposta or "KaniCode não está aberto.")
+        sys.exit(0 if resposta else 1)
     main()
