@@ -148,6 +148,18 @@ def guardar_tentativa(tentativa, credito, ativa):
     (BASE / "reset_pendente.json").write_text(json.dumps({"tentativa": tentativa, "credito": credito, "pendente": ativa}), encoding="utf-8")
 
 
+def identidade():
+    """Identificação pública da conta atual; nunca devolve tokens nem credenciais."""
+    with _TRAVA:
+        try:
+            with conexao() as cliente:
+                conta = cliente.pedir("account/read", {"refreshToken": False}).get("account") or {}
+            return {"ok": True, "email": conta.get("email") or "", "plano": conta.get("planType") or "",
+                    "tipo": conta.get("type") or "", "logado": bool(conta)}
+        except Exception:
+            return {"ok": False, "mensagem": "Não foi possível identificar a conta do Codex agora."}
+
+
 def consultar(forcar=False):
     with _TRAVA:
         if (not forcar and _CACHE["valor"] is not None and time.monotonic() - _CACHE["quando"] < 5

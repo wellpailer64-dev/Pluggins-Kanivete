@@ -1,5 +1,8 @@
 /* Controles recolhidos e pastas observadas nos passos dos agentes. Sem sondagem do disco. */
 (() => {
+  // Projeto e consumo ficam junto do estado da conversa; o topo fica livre para as abas.
+  $('status').prepend($('pastas-nav'));
+  $('status').appendChild(document.querySelector('.rodape'));
   const saudacao = () => { $('saudacao').hidden = K.ocupada || !!conversa.children.length; };
   new MutationObserver(saudacao).observe(conversa, {childList: true});
   const menu = $('ferramentas-menu'), botao = $('ferramentas-bt');
@@ -81,7 +84,7 @@
   function desenharPastas() {
     const pastas = new Map();
     for (const grupo of operacoes.values()) for (const p of grupo) pastas.set(chave(p), p);
-    const lista = [...pastas.values()], raiz = normal(K.pasta);
+    const lista = [...pastas.values()].filter(p => !(K.pastasInternas || []).some(interna => chave(interna) === chave(p))), raiz = normal(K.pasta);
     const assinatura = [raiz, ...lista].join('\n');
     if (assinatura === ultimaLista) return;
     ultimaLista = assinatura;
@@ -106,7 +109,9 @@
   };
   const carregarAntes = window.carregar;
   window.carregar = async () => {
-    operacoes.clear(); desenharPastas();
-    return carregarAntes();
+    operacoes.clear();
+    const r = await carregarAntes();
+    desenharPastas();
+    return r;
   };
 })();

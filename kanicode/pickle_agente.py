@@ -33,6 +33,9 @@ _EDITAR = re.compile(r"\b(?:corrij|corrig|consert|arrum|mud[ae]|alter|edit|adici
 _APP = re.compile(r"kanivete|canivete|kanibrowser|\bphoto\b|\bvetor\b|\bv[ií]deo\b|\bslider\b|\bsound\b|\blux\b|"
                   r"whats|instagram|\babr[ae]\b|\babrir\b|\bclic|\bfech[ae]|\bnavegador|\bsite\b|\bdisco\b|\bespa[cç]o\b|"
                   r"programas abertos|demanda|panda", re.I)
+# peça de arte (flyer, carrossel, post...) se faz no Photo aberto, nunca na cópia de código (teste do flyer, 2026-10-21)
+_ARTE = re.compile(r"flyer|panfleto|cartaz|carross|\bpost\b|\bstor(?:y|ies)\b|\bfeed\b|banner|thumb|\barte\b|\blogo|"
+                   r"convite|pinterest|card[aá]pio|\b\d{3,4}\s*[x×]\s*\d{3,4}\b", re.I)
 
 _RUIDO = re.compile(r"(?:^|/)__pycache__/|\.py[co]$")   # cache do Python: nem copia nem conta como mudança
 
@@ -66,7 +69,33 @@ def _sem_acento(t):
 
 def para_ponte(pedido):
     """pedido sobre o APP (KANIVETE, sites, disco, demandas) e não sobre código: vai para a ponte em etapas"""
+    # as ferramentas da receita de arte (knv.py, refs.py...) citadas no pedido não fazem dele um pedido de código
+    limpo = re.sub(r"\b(?:knv|refs|vk_cena|sd|imgprep|briefing|medir_ref|esqueleto|olho|revisor)\.py\b", "", pedido, flags=re.I)
+    if _ARTE.search(pedido) and not re.search(r"c[oó]digo|\.(?:py|js|css)\b|\bbug\b|traceback", limpo, re.I):
+        return True
     return bool(_APP.search(pedido)) and not _CODIGO.search(pedido)
+
+
+_SEGUE = re.compile(r"^\W*(?:pode\s+)?(?:continu|segue|segu[ei]r?\b|vai\b|bora|manda ver|tenta de novo|de novo|faz(?:er)?\b|"
+                    r"e a[ií]|termina|prossiga|ok\b|sim\b)", re.I)
+
+
+def rota_ponte(pedido, anteriores):
+    """'pode continuar?' sem assunto herda o caminho do último pedido de verdade (teste do flyer, 2026-10-22:
+    a continuação caía na cópia de código e o agente forjava scripts)"""
+    if para_ponte(pedido):
+        return pedido
+    if len(pedido) <= 60 and _SEGUE.search(pedido):
+        for ant in reversed(anteriores):
+            if ant and not (len(ant) <= 60 and _SEGUE.search(ant)):
+                if para_ponte(ant):
+                    return "Continue este pedido do começo ao fim: " + ant + "\n(Pailer agora: " + pedido + ")"
+                break
+    return None
+
+
+def eh_arte(pedido):
+    return bool(_ARTE.search(pedido))
 
 
 def quer_editar(pedido):

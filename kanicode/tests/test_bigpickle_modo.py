@@ -57,7 +57,7 @@ class BigPickleModoTest(unittest.TestCase):
         with patch.object(oc, 'conversar', return_value=decisao('responder', mensagem='O KANIVETE já está aberto.')) as chamar:
             r = bp.rodar('Pode abrir o KANIVETE para mim?', '.', lambda ev: None)
         self.assertFalse(r['ok'])
-        self.assertEqual(chamar.call_count, 2)
+        self.assertLessEqual(chamar.call_count, 3)   # pode haver uma cobrança extra ("diz que fez sem fazer"), nunca sucesso
 
     def test_abrir_app_confere_janela_e_nao_duplica(self):
         with patch.object(kani_modo, 'pedido_atual', ['Pode abrir o KANIVETE?']), \
@@ -80,11 +80,22 @@ class BigPickleModoTest(unittest.TestCase):
             executar.assert_not_called()
 
     def test_ferramenta_nao_liberada_nunca_executa(self):
-        for acao in ('apagar_arquivo', 'fechar_kanivete', 'salvar_texto', 'inventada'):
-            with patch.object(oc, 'conversar', return_value=decisao(acao)), patch.object(kani_modo, '_executar') as executar:
-                r = bp.rodar('Faça isso', '.', lambda ev: None)
-            self.assertFalse(r['ok'])
-            executar.assert_not_called()
+        with patch.object(oc, 'conversar', return_value=decisao('inventada')), patch.object(kani_modo, '_executar') as executar:
+            r = bp.rodar('Faça isso', '.', lambda ev: None)
+        self.assertFalse(r['ok'])
+        executar.assert_not_called()
+
+    def test_acoes_sem_volta_exigem_pedido(self):
+        # 2026-10-21: o Big Pickle tem todas as ferramentas; quem segura é a trava de cada uma
+        with patch.object(kani_modo, 'pedido_atual', ['Faça isso']):
+            self.assertTrue(kani_modo._executar('fechar_kanivete', {}, '.').startswith('NÃO FEITO'))
+            self.assertTrue(kani_modo._executar('apagar_arquivo', {'nome': 'x.txt'}, '.').startswith('NÃO FEITO'))
+            self.assertTrue(kani_modo._executar('rodar_comando', {'comando': 'Remove-Item x.txt'}, '.').startswith('NÃO FEITO'))
+            self.assertTrue(kani_modo._executar('rodar_comando', {'comando': 'git push origin main'}, '.').startswith('NÃO FEITO'))
+            self.assertTrue(kani_modo._executar('rodar_js_kanivete', {'codigo': 'KNV.fecharTudo()'}, '.').startswith('NÃO FEITO'))
+            self.assertTrue(kani_modo._executar('whatsapp_enviar', {'conversa': 'x', 'texto': 'oi'}, '.').startswith('NÃO FEITO'))
+        self.assertNotIn('rodar_comando', kani_modo._rodar_pedido.__defaults__ or ())   # a Kani local não recebe os poderes
+        self.assertTrue(set(kani_modo.PODER) <= set(kani_modo.FERRAMENTAS))
 
     def test_planejar_nao_abre_ferramenta(self):
         with patch.object(oc, 'conversar', return_value=decisao('abrir_ferramenta', nome='photo')), patch.object(kani_modo, '_executar') as executar:

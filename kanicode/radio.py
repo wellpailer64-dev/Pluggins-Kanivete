@@ -71,14 +71,14 @@ def _pedaco(d):
 
 def _falador():
     import numpy as np
-    from fala import VELOCIDADE, VOZ, limpar
+    from fala import limpar, sintetizar
     while True:
         frase = limpar(_frases.get() or "")
         if len(re.sub(r"\W", "", frase)) < 2 or not _ouvintes:
             continue
         try:
             with _tts:
-                a, sr = _app._fala_obj().carregar().create(frase, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
+                a, sr = sintetizar(_app._fala_obj().carregar(), frase)
             a = np.asarray(a, np.float32)
             if sr != SR:
                 a = np.interp(np.arange(0, len(a), sr / SR), np.arange(len(a)), a).astype(np.float32)

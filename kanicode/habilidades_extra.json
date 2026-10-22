@@ -1,0 +1,108 @@
+{
+ "_leia": "Habilidades feitas à mão (com parâmetro e conferência) e frases do jeito que o Pailer fala para as coletadas do app. id das coletadas: 'photo:Arquivo › Novo...' (veja com: py -3.13 habilidades.py termo). Bateria: py -3.13 bateria_kani.py",
+ "habilidades": [
+  {
+   "id": "photo:documento novo",
+   "f": "editor-imagem",
+   "tipo": "js",
+   "desc": "cria um documento NOVO no Photo numa aba nova (os abertos ficam intactos)",
+   "args": {
+    "nome": "Sem título",
+    "largura": 1080,
+    "altura": 1080,
+    "fundo": "branco|preto|transparente"
+   },
+   "busca_extra": "criar novo documento arquivo em branco photo imagem começar",
+   "js": "async a => { const antes = IE.docs.length; const w = +a.largura || 1080, h = +a.altura || 1080; const f = ['branco','preto','transparente'].includes(a.fundo) ? a.fundo : 'branco'; const d = KNV.novo(String(a.nome || 'Sem título'), w, h, f); await new Promise(r => setTimeout(r, 400)); return (IE.docs.length === antes + 1 && IE.doc.id === d.id ? 'CONFIRMADO: ' : 'NÃO CONFERIDO: ') + 'documento novo ' + d.w + '×' + d.h + ' aberto no Photo; os outros continuam sem mudança.'; }"
+  },
+  {
+   "id": "photo:escrever texto",
+   "f": "editor-imagem",
+   "tipo": "js",
+   "desc": "escreve um texto centralizado no documento aberto do Photo",
+   "args": {
+    "texto": "o que escrever",
+    "tamanho": 120,
+    "cor": "#000000"
+   },
+   "busca_extra": "escrever palavra frase texto titulo letra digitar no documento",
+   "js": "async a => { if (!IE.doc) return 'NÃO FEITO: nenhum documento aberto no Photo (use photo:documento novo antes).'; const t = String(a.texto || '').trim(); if (!t) return 'ERRO: faltou o texto'; const d = IE.doc, tam = Math.max(8, Math.min(2000, +a.tamanho || Math.round(Math.min(d.w, d.h) / 8))); const cor = /^#[0-9a-f]{3,8}$/i.test(a.cor || '') ? a.cor : '#000000'; await KNV.texto(t, { x: d.w / 2, y: Math.max(0, d.h / 2 - tam * 0.6), tam, cor, alin: 'center' }); const ok = KNV.camadas().some(c => c.tipo === 'texto' && c.texto === t); return (ok ? 'CONFIRMADO: ' : 'NÃO CONFERIDO: ') + 'escrevi \"' + t + '\" no documento ' + d.nome + '.'; }"
+  },
+  {
+   "id": "photo:colocar imagem do arquivo",
+   "f": "editor-imagem",
+   "tipo": "js",
+   "desc": "põe uma imagem do disco (ex.: a que baixou) no documento aberto do Photo, ajustada para caber",
+   "args": {
+    "caminho": "D:/.../imagem.jpg"
+   },
+   "busca_extra": "colocar inserir importar imagem foto baixada arquivo no documento",
+   "js": "async a => { if (!IE.doc) return 'NÃO FEITO: nenhum documento aberto no Photo (use photo:documento novo antes).'; const c = String(a.caminho || a.arquivo || '').trim(); if (!c) return 'ERRO: faltou o caminho da imagem'; const d = IE.doc, antes = KNV.camadas().length; await ieColocarArquivo(c); const L = ieAtiva(d); if (L && L.c) { const k = Math.min(1, d.w / L.c.width, d.h / L.c.height); const w = L.c.width * k, h = L.c.height * k; KNV.transformar({ x: (d.w - w) / 2, y: (d.h - h) / 2, largura: w }); } return (KNV.camadas().length > antes ? 'CONFIRMADO: ' : 'NÃO CONFERIDO: ') + 'imagem colocada no documento ' + d.nome + '.'; }"
+  }
+ ],
+ "frases": {
+  "photo:Arquivo › Novo...": [
+   "janela de novo documento escolher tamanho"
+  ],
+  "photo:Arquivo › Salvar": [
+   "salvar o documento gravar arquivo"
+  ],
+  "photo:Arquivo › Exportar como...": [
+   "exportar png jpg salvar imagem"
+  ],
+  "photo:Editar › Desfazer": [
+   "desfazer voltar o que fez control z"
+  ],
+  "video:Arquivo › Novo projeto": [
+   "criar projeto novo de video timeline nova"
+  ],
+  "video:Arquivo › Exportar mídia...": [
+   "exportar video renderizar mp4 gerar o video final"
+  ],
+  "vetor:Arquivo › Novo...": [
+   "documento novo no vetor illustrator prancheta nova"
+  ],
+  "slider:comando novo": [
+   "apresentação nova slides novos powerpoint novo"
+  ],
+  "slider:comando slide_novo": [
+   "adicionar slide novo inserir slide"
+  ],
+  "vetor:Texto › Criar contornos": [
+   "converter texto em curvas vetorizar texto"
+  ],
+  "photo:Imagem › Rotação da imagem › Inverter tela na horizontal": [
+   "espelhar a imagem na horizontal"
+  ],
+  "photo:Janela › Camadas": [
+   "painel de camadas mostrar camadas"
+  ],
+  "video:Editar › Desfazer": [
+   "desfazer voltar o que fez control z"
+  ],
+  "slider:botão › Apresentar (F5)": [
+   "começar a apresentar apresentação em tela cheia"
+  ],
+  "lux:Arquivo › Exportar foto (Full HD)": [
+   "renderizar a foto render da cena"
+  ],
+  "photo:Imagem › Tamanho da tela...": [
+   "aumentar a área da tela do documento canvas espaço em volta sem esticar"
+  ],
+  "photo:Imagem › Tamanho da imagem...": [
+   "redimensionar esticar a imagem inteira pixels"
+  ],
+  "vetor:Editar › Duplicar": [
+   "duplicar o objeto copiar o objeto selecionado"
+  ],
+  "video:reproducao › Ir para o início": [
+   "voltar a agulha para o começo do vídeo"
+  ],
+  "video:Janela › Painéis › Painel Efeitos": [
+   "abrir o painel de efeitos lista de efeitos"
+  ],
+  "photo:Arquivo › Colocar imagem...": [
+   "abre a janela do Windows para escolher (prefira photo:colocar imagem do arquivo com o caminho)"
+  ]
+ }
+}

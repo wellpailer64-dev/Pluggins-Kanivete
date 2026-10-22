@@ -12,6 +12,9 @@ Não controle o app do usuário para testar; nunca conecte à porta 9222 durante
 | `pickle` | `bigpickle_modo.py`, `opencode_mvp.py`, `App._pickle_*`; guia `BIGPICKLE.md` | `test_bigpickle_*.py`, `test_opencode_mvp.py`, `test_kani_historico.py` |
 | `codex` | `ajudantes.py`: `codex`; `codex_contexto.py`, `codex_processo.py`, `codex_conta.py`, `codex_alteracoes.py`, `ui/codex_uso.js` | `test_codex_*.py`; guia `CODEX_PARIDADE.md` |
 | `codigo` | `codigo_agente.py`, `codigo_testes.py`, `ui/codigo_agente.js`; ponte compartilhada pela Kani e Big Pickle | `test_codigo_*.py` |
+| `claude` | `sessao.py`, `continuidade.py`, `mcp_equipe.py` | `test_continuidade.py`; guia `CONTINUIDADE.md` |
+| `voz` | `fala.py`, `radio.py`, `kanicode.py` (tom e prontidão de todos os motores) | `test_fala_tom.py`, `test_codex_prontidao.py`, `test_codex_voz.py` |
+| `mensagens` | `mensagens.py`, `kanicode.py`, `sessao.py`, `ui/mensagens.js` | `test_mensagens.py`, teste de Enter e duplo clique em `test_layout.py`; guia `MENSAGENS.md` |
 | `interface` | `ui/janela.html`, `ui/organizacao.js`, `ui/kani_gpu.js` | `test_layout.py` |
 | `respostas` | `recursos_resposta.py`, `ui/respostas.js`, `ui/respostas_render.js` | `test_recursos_resposta.py`, `test_respostas_ui.py` |
 | `gpu` | `gpu.py`; `App.gpu_info` em `kanicode.py` | `test_gpu.py` |

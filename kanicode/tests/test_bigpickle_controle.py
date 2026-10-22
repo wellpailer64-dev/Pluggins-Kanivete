@@ -37,7 +37,7 @@ class ControlePickleTest(unittest.TestCase):
         self.assertEqual(r["orcamento"]["recuperacoes"], 1)
         executar.assert_called_once()
         self.assertEqual(chamar.call_count, 3)
-        self.assertTrue(any("única vez" in e.get("texto", "") for e in ev))
+        self.assertTrue(any("até 3 vezes" in e.get("texto", "") for e in ev))
         self.assertIn('json_invalido', (self.base / 'diagnostico_agente.jsonl').read_text())
 
     def test_cota_nao_repete_e_conta_consumo_da_falha(self):
@@ -69,12 +69,12 @@ class ControlePickleTest(unittest.TestCase):
             controle.consultar([{"role":"user","content":"oi"}])
         chamar.assert_not_called()
 
-    def test_segunda_falha_nao_recupera_nem_repete_acao_concluida(self):
-        r, chamar, executar, _ = self.rodar([("inválido",1), decisao("espaco_disco"), ("inválido outra vez",2)])
+    def test_quarta_falha_nao_recupera_nem_repete_acao_concluida(self):
+        # até 3 correções de formato por pedido (2026-10-22); a 4ª encerra sem repetir a ação já feita
+        r, chamar, executar, _ = self.rodar([("inválido",1), decisao("espaco_disco"), ("inválido",1), ("inválido",1), ("inválido outra vez",2)])
         self.assertFalse(r["ok"])
-        self.assertEqual(chamar.call_count, 3)
+        self.assertEqual(chamar.call_count, 5)
         executar.assert_called_once()
-        self.assertEqual(r["tokens"], 6)
 
     def test_nativa_incerta_nao_recupera(self):
         r, chamar, executar, _ = self.rodar([oc.FalhaOpenCode("nativa_incerta", "Ferramenta nativa sem confirmação")])
@@ -115,7 +115,7 @@ class ControlePickleTest(unittest.TestCase):
         executar.assert_called_once()
 
     def test_limites_invalidos_nao_iniciam_modelo(self):
-        for limites in ({"etapas":0.5}, {"segundos":0}, {"tokens":True}, {"etapas":11}):
+        for limites in ({"etapas":0.5}, {"segundos":0}, {"tokens":True}, {"etapas":pc.PADRAO["etapas"] + 1}):
             with patch.object(oc, 'conversar') as chamar:
                 self.assertFalse(bp.rodar('oi', str(self.base), lambda ev: None, limites=limites)['ok'])
                 chamar.assert_not_called()

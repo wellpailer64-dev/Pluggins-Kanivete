@@ -5,7 +5,7 @@ Kokoro 82M (Apache-2.0, kokoro-onnx), voz feminina pt-BR "pf_dora", só no proce
 Modelos (~350 MB) baixados no 1º uso para D:/Kanivete/KaniCode/modelos_voz (fora do git).
 Texto: tira markdown, blocos de código, caminhos e links (não se lê "D barra Kanivete…").
 """
-import os, queue, re, threading, urllib.request
+import os, queue, re, subprocess, threading, urllib.request
 
 import numpy as np
 
@@ -14,8 +14,9 @@ MODELOS = os.path.join(os.path.splitdrive(PASTA)[0] + os.sep, "Kanivete", "KaniC
 BASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 ARQUIVOS = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 VOZ, VELOCIDADE = "pf_dora", 1.08
+TOM_SEMITONS = 2
 PRONTIDAO = ("Recebi. Já vou analisar.", "Certo, estou verificando.", "Recebi seu pedido. Só um instante.")
-CACHE_PRONTIDAO = os.path.join(MODELOS, f"prontidao-v1-{VOZ}-{VELOCIDADE}.npz")
+CACHE_PRONTIDAO = os.path.join(MODELOS, f"prontidao-v2-{VOZ}-{VELOCIDADE}-tom{TOM_SEMITONS}.npz")
 FIM_FRASE = re.compile(r"(.+?[.!?…:;])(\s+|$)|(.+?)\n", re.S)
 
 
@@ -38,6 +39,36 @@ def limpar(t):
     t = re.sub(r"^\s*[-•]\s+", "", t, flags=re.M)
     t = t.replace("→", ", ").replace("×", " contra ").replace("~", "cerca de ")
     return re.sub(r"\s+", " ", t).strip()
+
+
+def ajustar_tom(audio, taxa):
+    """Sobe poucos semitons e compensa o tempo; processa em memória, sem arquivos temporários."""
+    a = np.asarray(audio, dtype=np.float32)
+    if not TOM_SEMITONS or not a.size:
+        return a, taxa
+    from voz import _app
+    ffmpeg = os.path.join(_app(), "modelos_ia", "ffmpeg.exe")
+    if not os.path.isfile(ffmpeg):
+        ffmpeg = "ffmpeg"
+    fator = 2 ** (TOM_SEMITONS / 12)
+    nova_taxa = round(taxa * fator)
+    filtro = f"asetrate={nova_taxa},aresample={taxa},atempo={taxa / nova_taxa:.10f}"
+    try:
+        r = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "f32le", "-ar", str(taxa),
+                            "-ac", "1", "-i", "pipe:0", "-af", filtro, "-f", "f32le", "-ar", str(taxa),
+                            "-ac", "1", "pipe:1"], input=a.astype('<f4').tobytes(), capture_output=True,
+                           timeout=10, creationflags=0x08000000)
+        if r.returncode == 0 and r.stdout:
+            saida = np.frombuffer(r.stdout, dtype='<f4').copy()
+            if np.isfinite(saida).all():
+                return saida, taxa
+    except (OSError, subprocess.SubprocessError):
+        pass  # se o processamento falhar, mantém a fala original em vez de ficar muda
+    return a, taxa
+
+
+def sintetizar(modelo, texto):
+    return ajustar_tom(*modelo.create(texto, voice=VOZ, speed=VELOCIDADE, lang="pt-br"))
 
 
 class Fala:
@@ -93,7 +124,7 @@ class Fala:
             audios = []
             for texto in PRONTIDAO:
                 with self._modelo_lock:
-                    a, taxa = self.carregar().create(texto, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
+                    a, taxa = sintetizar(self.carregar(), texto)
                 audios.append(np.asarray(a, dtype=np.float32))
             os.makedirs(MODELOS, exist_ok=True)
             temporario = CACHE_PRONTIDAO + ".parte.npz"
@@ -107,7 +138,15 @@ class Fala:
 
     def prontidao(self, ainda_valido):
         if self._prontidas is None and not self._carregar_prontidao():
-            threading.Thread(target=self.preparar_prontidao, daemon=True).start()
+            def preparar_e_confirmar():
+                self.preparar_prontidao()
+                if self._prontidas is None:
+                    # Outra solicitação pode já estar preparando o mesmo cache.
+                    with self._preparo_lock:
+                        pass
+                if self._prontidas is not None and ainda_valido():
+                    self.prontidao(ainda_valido)
+            threading.Thread(target=preparar_e_confirmar, daemon=True).start()
             return False
         if not ainda_valido():
             return False
@@ -189,7 +228,7 @@ class Fala:
                 continue
             try:
                 with self._modelo_lock:
-                    a, sr = self.carregar().create(f, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
+                    a, sr = sintetizar(self.carregar(), f)
             except Exception:
                 self._tocou(ger)
                 continue

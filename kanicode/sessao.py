@@ -15,6 +15,8 @@ Permissões (etapa 3): as mesmas do cmd — modo "auto" do Claude Code e as conf
 Apagar só dentro da pasta do projeto é liberado aqui mesmo, sem cartão.
 """
 import json, os, re, shlex, shutil, subprocess, sys, threading, time
+from collections import deque
+from continuidade import Registro
 
 # o que vai a mais que no cmd em CADA passo (medido 2026-10-20: o texto antigo era +800 tokens/passo): só o essencial;
 # o como-usar dos ajudantes mora na descrição das ferramentas (mcp_equipe.py), que só entra quando o Claude as abre
@@ -23,6 +25,11 @@ PROMPT_KANICODE = ("Você está no KaniCode: janela de ~500 px na área de traba
                    "Ajudantes que poupam a cota do Claude: mcp__equipe__codex (tarefa média bem delimitada, quando poupar cota "
                    "importa mais que tempo ou o Pailer pedir 'modo equipe') e mcp__equipe__kani (texto simples, local). "
                    "Com o Pailer esperando ou precisando do app rodando, faça você.\n"
+                   "Em missões com várias etapas, use mcp__equipe__missao no início, após cada etapa relevante e antes de "
+                   "encerrar: guarde objetivo, concluído, próximo passo e referências (IDs de clipes/timelines, faixas, "
+                   "tempos e arquivos; prefira isso a coordenadas de mouse). Após compactação ou interrupção, leia o "
+                   "registro e confira o projeto real antes de continuar. Registre só resultados que verificou; o fim "
+                   "de uma ferramenta não comprova que a edição ou exportação ficou correta.\n"
                    "Mexeu no próprio KaniCode (D:/Kanivete/Plugins/kanicode)? No fim rode "
                    "`py -3.13 D:/Kanivete/Plugins/kanicode/recarregar.py`.\n"
                    "Mensagem terminada em '(por voz)': o Pailer falou e pode estar só OUVINDO a resposta (lida em voz alta, "
@@ -82,6 +89,17 @@ class Sessao:
         self.modelo = None         # --model (None = o padrão do Claude Code)
         self.conta = None          # conta do Claude (contas.py; None = a principal)
         self.modo = "auto"         # "plan" = só planeja e pede aprovação antes de mexer (botão Planejar)
+        self.registro = Registro(dados, pasta, sessao_id)
+        self._falha_registro_avisada = False
+        self._turno = 0
+
+    def _registrar(self, tipo, dados=None):
+        try:
+            self.registro.evento(tipo, dados)
+        except (OSError, ValueError) as e:
+            if not self._falha_registro_avisada:
+                self._falha_registro_avisada = True
+                self.ao_evento({"t": "aviso", "texto": f"Não foi possível guardar a continuidade: {e}"})
 
     # ── processo ──
     def _abrir(self):
@@ -95,8 +113,9 @@ class Sessao:
                # ajudantes (mcp_equipe.py): Codex e Kani como ferramentas, liberadas sem cartão
                "--mcp-config", json.dumps({"mcpServers": {"equipe": {
                    "command": sys.executable.replace("pythonw.exe", "python.exe"),
-                   "args": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_equipe.py"), self.pasta]}}}),
-               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani", "mcp__equipe__licao"]
+                   "args": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_equipe.py"), self.pasta,
+                            str(self.registro.pasta)]}}}),
+               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani", "mcp__equipe__licao", "mcp__equipe__missao"]
         if self.modelo:
             cmd += ["--model", self.modelo]
         if self.sessao_id:
@@ -105,8 +124,10 @@ class Sessao:
         self.proc = subprocess.Popen(cmd, cwd=self.pasta, env=contas.ambiente(self.conta),
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      encoding="utf-8", errors="replace", bufsize=1, creationflags=0x08000000)   # sem console
+        self.proc._kanicode_erros = []
+        self.proc._kanicode_leitor_erro = threading.Thread(target=self._ler_erro, args=(self.proc,), daemon=True)
+        self.proc._kanicode_leitor_erro.start()
         threading.Thread(target=self._ler, args=(self.proc,), daemon=True).start()
-        threading.Thread(target=self._ler_erro, args=(self.proc,), daemon=True).start()
         self._escrever({"type": "control_request", "request_id": "kc_ini", "request": {"subtype": "initialize"}})
 
     def _escrever(self, obj):
@@ -142,18 +163,27 @@ class Sessao:
     def enviar(self, texto, imagens=None, contexto=""):
         """imagens = [{tipo: "image/png"|"image/jpeg"..., dados: base64, mini: dataURL pequena (só para a conversa guardada)}]"""
         with self._trava:
-            if not self.vivo():
+            retomada = not self.vivo()
+            continuidade = self.registro.contexto() if retomada and not texto.startswith('/') else ""
+            if retomada:
                 self._abrir()
             if self.ocupada:   # recado no meio da tarefa: o Claude Code lê no próximo passo (mesma volta, medido)
                 self._fechar_texto()
             self.ocupada = True
+            self._turno += 1
             self._texto = []
             imagens = imagens or []
             self._guardar({"t": "eu", "texto": texto, "minis": [i.get("mini") for i in imagens if i.get("mini")]})
             blocos = [{"type": "image", "source": {"type": "base64", "media_type": i.get("tipo") or "image/png", "data": i["dados"]}}
                       for i in imagens if i.get("dados")]
-            blocos.append({"type": "text", "text": contexto + (texto or "(veja a imagem)")})   # contexto: não vai para a conversa guardada
-            self._escrever({"type": "user", "message": {"role": "user", "content": blocos}})
+            blocos.append({"type": "text", "text": continuidade + contexto + (texto or "(veja a imagem)")})
+            self._registrar("pedido", {"texto": texto})
+            try:
+                self._escrever({"type": "user", "message": {"role": "user", "content": blocos}})
+            except (OSError, ValueError) as e:
+                self.ocupada = False
+                self._registrar("interrompida", {"erro": str(e), "fase": "envio"})
+                raise
 
     def definir_modo(self, modo):
         """auto | plan, na sessão aberta (control_request) e nas próximas"""
@@ -185,11 +215,11 @@ class Sessao:
             self.proc.stdin.flush()
         except OSError:
             pass
-        p = self.proc
+        p, turno = self.proc, self._turno
 
         def esperar():
             time.sleep(3)
-            if self.ocupada and p.poll() is None:
+            if self.ocupada and self.proc is p and self._turno == turno and p.poll() is None:
                 p.kill()
         threading.Thread(target=esperar, daemon=True).start()
 
@@ -203,24 +233,39 @@ class Sessao:
 
     # ── saída do claude → eventos ──
     def _ler_erro(self, proc):
-        self._erro = []
         for linha in proc.stderr:
-            self._erro = (self._erro + [linha.rstrip()])[-20:]
+            proc._kanicode_erros[:] = (proc._kanicode_erros + [linha.rstrip()])[-20:]
+            self._registrar("stderr", {"texto": linha.rstrip()})
 
     def _ler(self, proc):
         for linha in proc.stdout:
             try:
                 d = json.loads(linha)
             except ValueError:
+                self._registrar("saida_invalida", {"texto": linha.rstrip()})
                 continue
             try:
                 self._traduzir(d)
             except Exception as e:   # um evento estranho não derruba a conversa
+                self._registrar("evento_invalido", {"erro": str(e), "evento": d})
                 self.ao_evento({"t": "aviso", "texto": f"evento não entendido: {e}"})
         if proc is self.proc:
-            erro = "\n".join(getattr(self, "_erro", [])[-6:])
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            leitor = getattr(proc, "_kanicode_leitor_erro", None)
+            if leitor:
+                leitor.join(timeout=1)
+            erro = "\n".join(getattr(proc, "_kanicode_erros", [])[-6:])[-1200:]
+            interrompida = self.ocupada or proc.returncode not in (0, None)
+            self._fechar_texto()
             self.ocupada = False
-            self.ao_evento({"t": "saiu", "erro": erro if proc.returncode not in (0, None) else ""})
+            if interrompida:
+                erro = erro or f"A execução foi interrompida (código {proc.returncode}); confira o projeto antes de retomar."
+                self._registrar("interrompida", {"erro": erro, "codigo": proc.returncode})
+            self.ao_evento({"t": "saiu", "erro": erro if interrompida else "",
+                           "diagnostico": str(self.registro.pasta / "eventos.jsonl") if interrompida else ""})
 
     def _traduzir(self, d):
         t = d.get("type")
@@ -257,16 +302,22 @@ class Sessao:
                 self.ao_evento(ev)
             return
         if t == "system" and str(d.get("subtype") or "").startswith("task_"):
-            # tarefas em segundo plano (shell, monitor, agente): começo, andamento e fim — só para a coluna Atividades
-            self.ao_evento({"t": "tarefa", "sub": d.get("subtype"), "id": d.get("task_id") or d.get("id"),
-                            "status": d.get("status") or "", "resumo": (d.get("summary") or d.get("description") or "")[:300],
-                            "arquivo": d.get("output_file") or ""})
+            # Tarefas em segundo plano também ficam no registro para conferir ao retomar.
+            ev = {"t": "tarefa", "sub": d.get("subtype"), "id": d.get("task_id") or d.get("id"),
+                  "status": d.get("status") or "", "resumo": d.get("summary") or d.get("description") or "",
+                  "arquivo": d.get("output_file") or ""}
+            self._registrar("tarefa", ev)
+            self.ao_evento(dict(ev, resumo=ev["resumo"][:300]))
             return
         if t == "system" and d.get("subtype") == "init":
             novo = d.get("session_id")
             if novo and novo != self.sessao_id:
                 self.sessao_id = novo
+            if novo:
+                self._registrar("inicio", {"sessao": novo})
             self.ao_evento({"t": "inicio", "sessao": self.sessao_id, "modelo": d.get("model", "")})
+        elif t == "system" and d.get("subtype") == "compact_boundary":
+            self._registrar("compactacao", {"metadados": d.get("compact_metadata") or {}})
         elif t == "stream_event":
             e = d.get("event") or {}
             bloco = (e.get("content_block") or {}).get("type")
@@ -299,6 +350,7 @@ class Sessao:
                     self.ao_evento({"t": "texto", "d": b["text"]})
                 if b.get("type") == "tool_use":
                     ev = {"t": "ferr", "id": b.get("id"), "nome": b.get("name"), "entrada": b.get("input") or {}}
+                    self._registrar("ferr", ev)
                     self._guardar(ev)
                     self.ao_evento(ev)
         elif t == "user":
@@ -308,6 +360,7 @@ class Sessao:
                     if isinstance(c, list):
                         c = "\n".join(x.get("text", "") for x in c if isinstance(x, dict))
                     ev = {"t": "ferr_fim", "id": b.get("tool_use_id"), "ok": not b.get("is_error"), "saida": str(c or "")[:3000]}
+                    self._registrar("ferr_fim", dict(ev, saida=c) if b.get("is_error") else ev)
                     self._guardar(ev)
                     self.ao_evento(ev)
         elif t == "rate_limit_event":
@@ -322,6 +375,12 @@ class Sessao:
             u = d.get("usage") or {}
             ev = {"t": "fim", "custo": d.get("total_cost_usd"), "ms": d.get("duration_ms"), "erro": d.get("subtype") != "success",
                   "tokens": (u.get("input_tokens") or 0) + (u.get("output_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0)}
+            if ev["erro"]:
+                erros = d.get("errors") or [d.get("result") or d.get("subtype")]
+                ev["mensagem"] = ('\n'.join(str(x) for x in erros) if isinstance(erros, list) else str(erros))[:1200]
+                ev["diagnostico"] = str(self.registro.pasta / "eventos.jsonl")
+            self._registrar("resultado", d)
+            self._registrar("fim", ev)
             self._guardar(ev)
             self.ao_evento(ev)
 
@@ -349,5 +408,13 @@ class Sessao:
         if not a or not os.path.isfile(a):
             return []
         with open(a, encoding="utf-8") as f:
-            linhas = f.readlines()[-limite:]
-        return [json.loads(l) for l in linhas if l.strip()]
+            linhas = deque(f, maxlen=limite)
+        eventos = []
+        for linha in linhas:
+            try:
+                ev = json.loads(linha)
+                if isinstance(ev, dict):
+                    eventos.append(ev)
+            except ValueError:   # queda durante uma gravação não impede reabrir o restante da conversa
+                continue
+        return eventos

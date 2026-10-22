@@ -3,6 +3,7 @@
 O KaniCode não precisa do KANIVETE aberto: o atalho chama o pythonw do 3.13 com o kanicode.py (sem console). Todos levam
 o mesmo AppUserModelID do processo (kanicode.AUMID), para o ícone fixado na barra de tarefas ser o da janela aberta.
 Fixar na barra o Windows 11 só deixa a pessoa fazer (botão direito no atalho › Fixar na barra de tarefas).
+O do menu Iniciar leva a tecla de atalho Ctrl+Shift+K (TECLA).
 Rodar: py -3.13 atalhos.py estado | criar desktop|menu|inicio | apagar desktop|menu|inicio   (responde JSON)
 """
 import json, os, sys
@@ -11,6 +12,7 @@ import kanicode as kc
 
 ICO = os.path.join(kc.DADOS, "kanicode.ico")
 NOME = "KaniCode.lnk"
+TECLA = (0x02 | 0x01) << 8 | ord("K")   # HOTKEYF_CONTROL | HOTKEYF_SHIFT + K
 
 
 def _pastas():
@@ -46,6 +48,8 @@ def criar(lugar):
     lnk.SetWorkingDirectory(kc.PASTA)
     lnk.SetIconLocation(_icone(), 0)
     lnk.SetDescription("KaniCode — converse com o Claude numa bolinha na área de trabalho")
+    if lugar == "menu":   # Ctrl+Shift+K abre o KaniCode (fechado: inicia; aberto: mostra o chat) — o Windows só vale 1 atalho por tecla
+        lnk.SetHotkey(TECLA)
     ps = lnk.QueryInterface(propsys.IID_IPropertyStore)
     ps.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(kc.AUMID))
     ps.Commit()

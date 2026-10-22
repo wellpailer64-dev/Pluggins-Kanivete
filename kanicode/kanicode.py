@@ -9,6 +9,7 @@ Rodar à mão: pyw -3.13 kanicode.py   (ferramentas do navegador: --console; tes
 """
 import json, os, re, socket, sys, threading, time
 from collections import deque
+from mensagens import Fila
 
 import webview
 
@@ -62,19 +63,65 @@ def avisar(cmd):
         return None
 
 
+class _Aba:
+    """uma aba da janela (2026-10-21): conversa e tarefa próprias; várias rodam ao mesmo tempo.
+    A aba "1" usa as chaves antigas do estado.json (conversas de antes das abas continuam nela)."""
+
+    def __init__(self, id, quem="claude", nome=""):
+        self.id, self.quem, self.nome = str(id), quem, nome
+        self.assunto, self.modelo, self.manual = "", "", False
+        self.sessao = None             # Claude Code (sessao.py)
+        self.ajudante_ativo = None     # codex/kani/pickle trabalhando
+        self.ajudante_trava = threading.Lock()
+        self.codex_parar = None
+        self.kani_parar = None
+        self.modo = "auto"
+        self.kani_hist = []
+        self.respondendo = False
+        self.prontidao_pendente = None
+        self.mensagens = Fila()
+        self.resposta = ""
+
+    def ocupada(self):
+        return bool(self.ajudante_ativo or (self.sessao and self.sessao.ocupada))
+
+
+def _da_aba(nome):
+    """atributo da App que é da aba em contexto (a da tarefa que está rodando, ou a aba aberta na janela)"""
+    return property(lambda s: getattr(s._ctx(), nome), lambda s, v: setattr(s._ctx(), nome, v))
+
+
 class App:
     """o que a página da conversa pode chamar (js_api): só os métodos sem _ na frente"""
 
+    _sessao = _da_aba("sessao")
+    _ajudante_ativo = _da_aba("ajudante_ativo")
+    _ajudante_trava = _da_aba("ajudante_trava")
+    _codex_parar = _da_aba("codex_parar")
+    _kani_parar = _da_aba("kani_parar")
+    _modo = _da_aba("modo")
+    _kani_hist = _da_aba("kani_hist")
+    _respondendo = _da_aba("respondendo")
+    _resposta = _da_aba("resposta")
+    _prontidao_pendente = _da_aba("prontidao_pendente")
+
     def __init__(self):
+        self._local = threading.local()   # .aba = id da aba da tarefa que roda nesta thread
+        e = _ler_estado()
+        lista = [a for a in (e.get("abas") or []) if isinstance(a, dict) and a.get("id")]
+        if not lista:
+            lista = [{"id": "1", "quem": e.get("quem") or "claude", "nome": ""}]
+        self._abas = {str(a["id"]): _Aba(a["id"], a.get("quem") or "claude", a.get("nome") or "") for a in lista}
+        for a in lista:   # assunto atual e modelo, para a faixa das abas (2026-10-22)
+            ab = self._abas[str(a["id"])]
+            ab.assunto, ab.modelo, ab.manual = a.get("assunto") or "", a.get("modelo") or "", bool(a.get("manual"))
+        self._fechadas = {}   # abas fechadas com a tarefa ainda terminando (o fim dela não pode cair noutra aba)
+        self._aba_ativa = str(e.get("aba_ativa")) if str(e.get("aba_ativa")) in self._abas else next(iter(self._abas))
         self._bola = None
         self._janela = None
         self._aberta = False
         self._saindo = False
         self._limite = _ler_estado().get("limite")   # o último visto (a cota aparece antes da 1ª resposta)
-        self._sessao = None
-        self._ajudante_trava = threading.Lock()
-        self._ajudante_ativo = None
-        self._codex_parar = None
         self._comandos = []
         self._pendente = None      # "recarregar"/"reiniciar" pedido no meio de uma resposta: roda quando ela terminar
         self._carregado = time.time()   # para o "atualizar" saber o que mudou depois de aberto
@@ -87,20 +134,218 @@ class App:
         self._codex_lidos = set()
         self._codex_falando = False
         self._prontidao_pendente = None
-        self._respondendo = False  # resposta do Claude chegando (para falar o resto se a janela for minimizada)
-        self._resposta = ""        # o texto da mensagem atual da resposta, desde o último "texto_novo"
+        # _respondendo/_resposta (por aba): resposta do Claude chegando, para falar o resto se a janela for minimizada
         self._pend = {}            # permissões/perguntas abertas, por id (para o celular, movel.py)
+
+    # ── abas ──
+    def _ctx(self):
+        i = getattr(self._local, "aba", None)
+        return self._abas.get(i) or self._fechadas.get(i) or self._abas[self._aba_ativa]
+
+    def _na_aba(self, aba, fn):
+        """fn rodando no contexto da aba (callbacks de threads da tarefa: eventos, fim)"""
+        def f(*a, **k):
+            antes = getattr(self._local, "aba", None)
+            self._local.aba = aba
+            try:
+                return fn(*a, **k)
+            finally:
+                self._local.aba = antes
+        return f
+
+    def _sufixo(self):
+        """chave da conversa da aba no estado.json: a aba 1 usa as chaves antigas"""
+        i = self._ctx().id
+        return "" if i == "1" else "#aba" + i
+
+    def _alguma_ocupada(self):
+        return any(a.ocupada() for a in self._abas.values())
+
+    def _abas_gravar(self):
+        _gravar_estado(abas=[{"id": a.id, "quem": a.quem, "nome": a.nome, "assunto": a.assunto, "modelo": a.modelo,
+                              "manual": a.manual} for a in self._abas.values()],
+                       aba_ativa=self._aba_ativa)
+
+    def abas(self):
+        return {"ativa": self._aba_ativa, "lista": [{"id": a.id, "quem": a.quem, "nome": a.nome, "ocupada": a.ocupada(),
+                                                    "assunto": a.assunto, "modelo": a.modelo, "manual": a.manual}
+                                                    for a in self._abas.values()]}
+
+    def aba_nova(self):
+        # número nunca repetido: a conversa de uma aba fechada não reaparece numa aba nova
+        usados = [int(i) for i in list(self._abas) + list(self._fechadas) if i.isdigit()]
+        n = max(usados + [int(_ler_estado().get("aba_ultima") or 0)]) + 1
+        _gravar_estado(aba_ultima=n)
+        self._abas[str(n)] = _Aba(n, self._abas[self._aba_ativa].quem)
+        self._aba_ativa = str(n)
+        self._abas_gravar()
+        return self.abas()
+
+    def aba_ativar(self, aba):
+        aba = str(aba)
+        if aba in self._abas and aba != self._aba_ativa:
+            self._aba_ativa = aba
+            self._abas_gravar()
+            q = self._abas[aba].quem
+            self._na_ui(lambda: self._bola and self._bola.definir(quem=q))
+        return self.abas()
+
+    def aba_ajudante(self, aba, quem, texto):
+        """o Claude de outra aba manda um pedido nesta (vigiar o Big Pickle, 2026-10-22)"""
+        if str(aba) not in self._abas:
+            raise ValueError("aba não existe")
+        return self._na_aba(str(aba), self.ajudante)(quem, texto, _de="claude")
+
+    def aba_parar(self, aba):
+        if str(aba) not in self._abas:
+            raise ValueError("aba não existe")
+        return self._na_aba(str(aba), self.parar)()
+
+    def aba_renomear(self, aba, nome, manual=True):
+        if str(aba) in self._abas:
+            a = self._abas[str(aba)]
+            a.nome = str(nome or "").strip()[:40]
+            a.manual = bool(manual and a.nome)
+            self._abas_gravar()
+        return True
+
+    def aba_assunto(self, aba, assunto=None, modelo=None):
+        """o assunto atual (frase curta do último pedido) e o modelo em uso, mostrados na aba"""
+        a = self._abas.get(str(aba))
+        if a:
+            if assunto is not None:
+                a.assunto = str(assunto).strip()[:80]
+            if modelo is not None:
+                a.modelo = str(modelo).strip()[:60]
+            self._abas_gravar()
+        return True
+
+    def aba_fechar(self, aba):
+        """fecha a aba (a conversa fica guardada no disco); a tarefa dela é parada"""
+        aba = str(aba)
+        if aba not in self._abas or len(self._abas) < 2:
+            return self.abas()
+        self._na_aba(aba, self.parar)()
+        self._na_aba(aba, self._encerrar)()
+        ids = list(self._abas)
+        self._fechadas[aba] = self._abas.pop(aba)
+        if self._aba_ativa == aba:
+            self._aba_ativa = ids[max(0, ids.index(aba) - 1)] if ids[0] != aba else ids[1]
+        self._abas_gravar()
+        return self.abas()
 
     # ── js_api ──
     def mostrar(self):
         if not self._janela:
             return
-        self._janela.move(*self._perto_da_bola())
+        ja = self._aberta
+        if not ja:
+            self._janela.move(*self._perto_da_bola())
         self._janela.show()
         self._janela.restore()
         self._aberta = True
-        ocupada = self._ocupada()
+        ocupada = self._alguma_ocupada()
         self._na_ui(lambda: self._bola and self._bola.definir(aberta=True, estado="trabalhando" if ocupada else ""))
+        if not ja:
+            self._encaixar()
+
+    # ── KaniBall dentro do chat (2026-10-22, pedido do Pailer): ao abrir, a bolinha pula para cima da faixa de status
+    # e a cópia em HTML (ui/kaniball.js) fica espiando com o alto da cabeça para fora; ao recolher, volta ao lugar ──
+    def _doca_ligada(self):
+        return bool(_ler_estado().get("doca", True)) and self._bola is not None
+
+    def _doca_ponto(self):
+        """onde a bolinha nativa fica (pixels reais) para coincidir com a da página; None se a página não respondeu"""
+        try:
+            r = self._janela.evaluate_js("window.kbDocaAlvo ? kbDocaAlvo() : null")
+        except Exception:
+            return None
+        if not r:
+            return None
+        wx, wy, _, _ = self.tam_inicio()
+        k, b = float(r.get("dpr") or 1), self._bola
+        return round(wx + r["x"] * k) - b.margem, round(wy + r["y"] * k) - b.margem
+
+    def _encaixar(self):
+        if not self._doca_ligada() or self._bola.na_doca:
+            return
+        time.sleep(0.12)   # a janela acabou de aparecer: o layout da página assenta
+        ponto = self._doca_ponto()
+        if not ponto:
+            return
+        b = self._bola
+        if not b._voo:
+            self._bola_casa = (b.x, b.y)
+
+        def pousou():   # na thread da interface: a página mostra a cópia e só então a nativa some
+            def trocar():
+                try:
+                    self._janela.evaluate_js("window.kbDoca && kbDoca(true)")
+                except Exception:
+                    pass
+                self._na_ui(lambda: self._aberta and b.esconder())
+                self._doca_ultimo = None
+                self._na_ui(self._doca_sync)
+            threading.Thread(target=trocar, daemon=True).start()
+        self._som_bolinha("entrada_chat")
+        self._na_ui(lambda: b.voar(ponto, pousou))
+
+    def _desencaixar(self, voar=True, depois=None):
+        """a cópia da página sobe, a nativa aparece no mesmo lugar e (voar) volta para onde estava"""
+        b = self._bola
+        if not b or not b.na_doca:
+            if depois:
+                self._na_ui(depois)
+            return
+        if voar:
+            self._som_bolinha("saida_chat")
+        try:
+            self._janela.evaluate_js("window.kbDoca && kbDoca(false)")
+        except Exception:
+            pass
+        time.sleep(0.22)   # a subida da cópia (kaniball.js SOBE_MS)
+        ponto = self._doca_ponto() or (b.x, b.y)
+        casa = getattr(self, "_bola_casa", None) or ponto
+        done = threading.Event()
+
+        def sair_da_doca():
+            b.mostrar_em(*ponto)
+            done.set()
+        self._na_ui(sair_da_doca)
+        done.wait(1)
+        try:
+            self._janela.evaluate_js("window.kbDoca && kbDoca('fora')")
+        except Exception:
+            pass
+        if voar:
+            self._na_ui(lambda: b.voar(casa, depois))
+        elif depois:
+            self._na_ui(depois)
+
+    def _doca_sync(self):
+        """(thread da interface) manda à cópia da página a cara/estado da bolinha, quando muda"""
+        b = self._bola
+        if not b or not b.na_doca:
+            return
+        d = {"expr": b.expressao(), "estado": b.estado, "voz": b.voz, "quem": b.quem,
+             "humor_ate": max(0.0, b._humor_ate - time.time()) if b.humor else 0}
+        if d == getattr(self, "_doca_ultimo", None):
+            return
+        self._doca_ultimo = d
+        if d["humor_ate"]:   # a comemoração acaba sozinha: avisa a cópia quando voltar à cara de antes
+            threading.Timer(d["humor_ate"] + 0.05, lambda: self._na_ui(self._doca_sync)).start()
+        js = "window.kbDocaEstado && kbDocaEstado(%s)" % json.dumps(d)
+        threading.Thread(target=lambda: self._janela.evaluate_js(js), daemon=True).start()
+
+    def rosto_quadros(self, expressao):
+        """quadros do rosto 8-bit (rosto.py) a 10 por segundo, para a cópia da bolinha desenhar igual"""
+        import rosto
+        dur = 2.8 if expressao == "concluido" else 8.4
+        return {"fps": 10, "quadros": [rosto.quadro(expressao, i / 10) for i in range(int(dur * 10))]}
+
+    def bola_clique(self):
+        """clique na cópia dentro do chat = o mesmo da bolinha: recolhe"""
+        threading.Thread(target=self.esconder, daemon=True).start()
 
     # ── tamanho: a janela é sem moldura, então as bordas são desenhadas no HTML e o redimensionar vem por aqui ──
     def _hwnd(self):
@@ -289,9 +534,23 @@ class App:
         b = "falando" if e == "falando" else ("escutando" if self._voz and self._voz.ligada else "")
         self._na_ui(lambda: self._bola and self._bola.definir(voz=b))
 
-    def esconder(self):
-        if self._janela:
-            self._janela.hide()
+    def esconder(self, focar=False):
+        """focar: veio do Ctrl+Q — a bolinha fica com o teclado (outro Ctrl+Q fecha o KaniCode)"""
+        if not self._aberta and not focar:
+            return
+        b = self._bola
+        if b and b.na_doca:
+            def voltou():
+                if focar:
+                    b.focar()
+            self._desencaixar(True, voltou)
+            if self._janela:
+                self._janela.hide()
+        else:
+            if self._janela:
+                self._janela.hide()
+            if focar and b:
+                self._na_ui(b.focar)
         self._aberta = False
         self._na_ui(lambda: self._bola and self._bola.definir(aberta=False))
         if self._ajudante_ativo == "codex":
@@ -334,9 +593,18 @@ class App:
     def info(self):
         e = _ler_estado()
         return {"versao": VERSAO, "pasta": self._pasta(), "fixa": bool(e.get("fixa", True)), "limite": self._limite,
+                "pastas_internas": [PROJETO_PADRAO, PASTA],
                 "ocupada": self._ocupada(), "comandos": self._comandos,
-                "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": e.get("quem") or "claude",
+                "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": self._ctx().quem, "aba": self._ctx().id,
                 "modo": getattr(self, "_modo", "auto")}
+
+    def codex_identidade(self):
+        import codex_conta, avatares
+        conta = codex_conta.identidade()
+        if conta.get("ok"):
+            email = conta.get("email", "").strip().casefold()
+            conta["foto"] = avatares.fotos([email]).get(email) if email else None
+        return conta
 
     def codex_limites(self, forcar=False):
         import codex_conta
@@ -356,7 +624,7 @@ class App:
         import codigo_agente
         if self._ocupada():
             return {"ok": False, "mensagem": "Acompanhe os passos na conversa; espere a tarefa terminar para revisar o diff."}
-        agente = _ler_estado().get("quem")
+        agente = self._ctx().quem
         try:
             with codigo_agente.TRAVA:
                 ctx = codigo_agente.Contexto(self._pasta(), agente).carregar()
@@ -374,7 +642,7 @@ class App:
         import codigo_agente
         if self._ocupada() or getattr(self, "_modo", "auto") == "plan":
             return {"ok": False, "mensagem": "Termine a tarefa e saia de Planejar antes de aplicar."}
-        if agente != _ler_estado().get("quem"):
+        if agente != self._ctx().quem:
             return {"ok": False, "mensagem": "O agente selecionado mudou; abra a revisão novamente."}
         try:
             with codigo_agente.TRAVA:
@@ -498,7 +766,10 @@ class App:
 
     # ── falar direto com um ajudante ("Quem responde": Codex ou Kani) ──
     def quem(self, nome):
-        _gravar_estado(quem=nome if nome in ("claude", "codex", "kani", "pickle") else "claude")
+        nome = nome if nome in ("claude", "codex", "kani", "pickle") else "claude"
+        self._ctx().quem = nome
+        _gravar_estado(quem=nome)
+        self._abas_gravar()
         self.bola_quem(nome)
         return True
 
@@ -510,6 +781,7 @@ class App:
     # ── conversa da Kani: vai para a mesma conversa da janela (trocar Kani ⇄ Claude não apaga) e o Claude lê depois ──
     def _kani_arquivo(self, pasta, so_previa=False):
         """antes de existir conversa do Claude nesta pasta, a da Kani fica à parte (entra na dele na 1ª mensagem)"""
+        pasta = pasta + self._sufixo()
         sid = None if so_previa else (_ler_estado().get("sessoes") or {}).get(pasta)
         if sid:
             return os.path.join(DADOS, "conversas", sid + ".jsonl")
@@ -525,7 +797,8 @@ class App:
                     for ev in eventos:
                         f.write(json.dumps(ev, ensure_ascii=False) + "\n")
                 nv = _ler_estado().get("kani_nao_visto") or {}
-                nv[pasta] = ((nv.get(pasta) or []) + [{"pedido": pedido, "resposta": resposta}])[-8:]
+                k = pasta + self._sufixo()
+                nv[k] = ((nv.get(k) or []) + [{"pedido": pedido, "resposta": resposta}])[-8:]
                 _gravar_estado(kani_nao_visto=nv)
         except OSError:
             pass
@@ -548,7 +821,7 @@ class App:
         """trocas com a Kani que o Claude ainda não viu: vão junto da próxima mensagem (o Pailer não vê o bloco)"""
         with _ESTADO_TRAVA:
             nv = _ler_estado().get("kani_nao_visto") or {}
-            trocas = nv.pop(pasta, None)
+            trocas = nv.pop(pasta + self._sufixo(), None)
             if not trocas:
                 return ""
             _gravar_estado(kani_nao_visto=nv)
@@ -586,9 +859,10 @@ class App:
         self._ajudante_ativo = quem
         pasta = self._pasta()   # não deixar uma troca de pasta mudar o destino no meio da tarefa
         editar = getattr(self, "_modo", "auto") != "plan"
+        aba = self._ctx().id
         if quem == "codex":
             self._codex_parar = threading.Event()
-            self._prontidao_agendar()
+        self._prontidao_agendar()
 
         def evento_codex(ev):
             if ev.get("sessao"):
@@ -601,7 +875,7 @@ class App:
             try:
                 self._bola_estado("trabalhando")
                 if quem == "codex":
-                    r = ajudantes.codex(texto, pasta, editar=editar, ao_evento=evento_codex,
+                    r = ajudantes.codex(texto, pasta, editar=editar, ao_evento=self._na_aba(aba, evento_codex),
                                         retomar=self._codex_id(pasta), parar=self._codex_parar)
                     if r.get("sessao"):
                         self._codex_guardar(pasta, r["sessao"])
@@ -618,7 +892,7 @@ class App:
                             passos.append({k: e.get(k) for k in ("t", "nome", "entrada", "ok", "saida") if e.get(k) is not None})
                             vistos.append(dict(e))
                         self._evento(e)
-                    r = kani_modo.rodar(texto, pasta, ev, getattr(self, "_kani_hist", []), por_voz, self._kani_parar, editar=editar)
+                    r = kani_modo.rodar(texto, pasta, self._na_aba(aba, ev), getattr(self, "_kani_hist", []), por_voz, self._kani_parar, editar=editar)
                     try:   # registro de cada pedido do modo Kani: o Claude lê depois para achar limitações
                         with open(os.path.join(DADOS, "kani_modo.jsonl"), "a", encoding="utf-8") as f:
                             f.write(json.dumps({"quando": time.strftime("%Y-%m-%d %H:%M:%S"), "pedido": texto, "voz": por_voz,
@@ -652,6 +926,7 @@ class App:
             except Exception as e:
                 resposta = {"t": "ajudante_resposta", "quem": quem, "texto": str(e), "ok": False, "tokens": 0}
             finally:
+                self._prontidao_cancelar()
                 if quem == "codex" and resposta is not None:
                     resposta["cancelado"] = bool(self._codex_parar and self._codex_parar.is_set())
                 self._ajudante_ativo = None
@@ -664,10 +939,10 @@ class App:
                 self._bola_atividade("")
                 self._bola_estado("" if self._aberta else "pergunta")
                 if self._pendente:
-                    acao, self._pendente = self._pendente, None
-                    threading.Timer(1.5, self._atualizar, args=(acao,)).start()
+                    threading.Timer(1.5, self._pendente_rodar).start()
+                self._fila_tentar()
         try:
-            threading.Thread(target=rodar, daemon=True).start()
+            threading.Thread(target=self._na_aba(aba, rodar), daemon=True).start()
         except Exception:
             self._prontidao_cancelar()
             self._ajudante_ativo = None
@@ -681,7 +956,7 @@ class App:
 
     def _pickle_arquivo(self, pasta, nova=False):
         import uuid
-        chave = os.path.normcase(os.path.realpath(pasta))
+        chave = os.path.normcase(os.path.realpath(pasta)) + self._sufixo()
         with _ESTADO_TRAVA:
             sessoes = _ler_estado().get("pickle_sessoes") or {}
             sid = sessoes.get(chave, "")
@@ -723,10 +998,12 @@ class App:
             self._evento(ev)
 
         import pickle_agente
-        if pickle_agente.para_ponte(texto):   # mexer no KANIVETE, sites, disco: a ponte em etapas
-            r = bigpickle_modo.rodar(texto, pasta, evento, historico[-16:], por_voz, self._kani_parar, editar)
+        ponte = pickle_agente.rota_ponte(texto, [h["content"] for h in historico if h["role"] == "user"])
+        if ponte:   # mexer no KANIVETE, sites, disco, arte (e a continuação deles): a ponte em etapas
+            evento = self._na_aba(self._ctx().id, evento)
+            r = bigpickle_modo.rodar(ponte, pasta, evento, historico[-16:], por_voz, self._kani_parar, editar)
         else:   # código e conversa: o OpenCode nativo, numa cópia isolada (pickle_agente.py)
-            r = pickle_agente.rodar(texto, pasta, evento, historico[-16:], por_voz, self._kani_parar,
+            r = pickle_agente.rodar(texto, pasta, self._na_aba(self._ctx().id, evento), historico[-16:], por_voz, self._kani_parar,
                                     editar and getattr(self, "_modo", "auto") != "plan")
         eventos = [{"t": "eu", "texto": texto}] + vistos + [
             {"t": "ajudante_resposta", "quem": "pickle", "texto": r["texto"], "ok": r["ok"], "tokens": r["tokens"],
@@ -746,11 +1023,11 @@ class App:
         return r
 
     def _codex_id(self, pasta):
-        chave = os.path.normcase(os.path.realpath(pasta))
+        chave = os.path.normcase(os.path.realpath(pasta)) + self._sufixo()
         return (_ler_estado().get("codex_sessoes") or {}).get(chave)
 
     def _codex_guardar(self, pasta, sessao):
-        chave = os.path.normcase(os.path.realpath(pasta))
+        chave = os.path.normcase(os.path.realpath(pasta)) + self._sufixo()
         with _ESTADO_TRAVA:
             sessoes = _ler_estado().get("codex_sessoes") or {}
             if sessoes.get(chave) != sessao:
@@ -809,6 +1086,98 @@ class App:
             out["erro"] = str(e)
         return out
 
+    # ── mensagens aguardam o término; só a urgência explícita interrompe o turno ──
+    def mensagens_fila(self):
+        return self._ctx().mensagens.listar()
+
+    def mensagem_enviar(self, id_, texto, imagens=None, quem=None):
+        return self._na_aba(self._ctx().id, self._mensagem_enviar)(id_, texto, imagens, quem)
+
+    def _mensagem_enviar(self, id_, texto, imagens=None, quem=None):
+        texto = str(texto or '').strip()
+        if not texto and not imagens:
+            return False
+        if not isinstance(id_, str) or not id_ or len(id_) > 80:
+            raise ValueError('identificador de mensagem inválido')
+        a = self._ctx()
+        quem = quem or a.quem
+        if quem not in ('claude', 'codex', 'kani', 'pickle'):
+            raise ValueError('agente desconhecido')
+        if quem == 'pickle' and (imagens or (texto.startswith('/') and texto.split()[0] not in ('/clear', '/nova', '/new'))):
+            raise ValueError('Big Pickle recebe texto e os comandos de nova conversa')
+        item, nova = a.mensagens.adicionar({'id': id_, 'texto': texto, 'imagens': imagens or [],
+                                           'quem': quem, 'pasta': self._pasta()})
+        if nova:
+            self._fila_evento(item)
+            self._fila_tentar()
+        return a.mensagens.visivel(item)
+
+    def _fila_evento(self, item):
+        self._para_janela({'t': 'fila_mensagem', **self._ctx().mensagens.visivel(item)})
+
+    def mensagem_urgente(self, id_):
+        return self._na_aba(self._ctx().id, self._mensagem_urgente)(id_)
+
+    def _mensagem_urgente(self, id_):
+        fila = self._ctx().mensagens
+        # O término do turno não pode despachar a urgente antes de pedirmos a interrupção do anterior.
+        with fila.trava:
+            item, interromper = fila.urgente(id_)
+            if not item:
+                return False
+            if interromper:
+                if self._ocupada():
+                    self.parar(preservar_fila=True)
+                elif fila.enviando:
+                    fila.interromper_apos_envio = True
+        self._fila_evento(item)
+        self._fila_tentar()
+        return True
+
+    def _fila_tentar(self):
+        a = self._ctx()
+        with a.mensagens.trava:
+            if a.ocupada():
+                return
+            item = a.mensagens.proxima()
+        if not item:
+            return
+        self._fila_evento(item)
+
+        def entregar():
+            ok, erro = False, ''
+            try:
+                if self._abas.get(a.id) is not a or a.mensagens.pausada:
+                    raise RuntimeError('A aba foi fechada ou a entrega foi pausada antes do envio.')
+                if os.path.normcase(os.path.realpath(item['pasta'])) != os.path.normcase(os.path.realpath(self._pasta())):
+                    raise RuntimeError('A pasta do projeto mudou; a mensagem não foi entregue em outra pasta.')
+                if a.quem != item['quem']:
+                    self.quem(item['quem'])
+                if item['quem'] != 'claude' and not item['texto'].startswith('/') and not item['imagens']:
+                    ok = bool(self.ajudante(item['quem'], item['texto'], _de='fila'))
+                else:
+                    ok = bool(self.enviar(item['texto'], item['imagens'], _de='fila'))
+                if not ok:
+                    erro = 'O motor não confirmou o recebimento da mensagem.'
+            except Exception as e:
+                erro = str(e)
+            finally:
+                if a.mensagens.interromper_apos_envio:
+                    a.mensagens.interromper_apos_envio = False
+                    if a.ocupada():
+                        self.parar(preservar_fila=True)
+                a.mensagens.concluir(item, ok, erro)
+                self._fila_evento(item)
+                if ok:
+                    if not a.ocupada():
+                        self._para_janela({'t': 'fila_livre'})
+                    self._fila_tentar()   # comandos locais e respostas rápidas podem terminar antes desta confirmação
+        try:
+            threading.Thread(target=self._na_aba(a.id, entregar), daemon=True).start()
+        except Exception as e:
+            a.mensagens.concluir(item, False, str(e))
+            self._fila_evento(item)
+
     # ── conversa (sessao.py) ──
     def enviar(self, texto, imagens=None, _de="pc"):
         texto = (texto or "").strip()
@@ -834,8 +1203,8 @@ class App:
             return True
         if not self._sessao:
             from sessao import Sessao
-            sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
-            self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
+            sid = (_ler_estado().get("sessoes") or {}).get(self._pasta() + self._sufixo())
+            self._sessao = Sessao(self._pasta(), DADOS, self._na_aba(self._ctx().id, self._evento), sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
             self._sessao.conta = _ler_estado().get("conta") or None
             self._sessao.modo = getattr(self, "_modo", "auto")
@@ -846,9 +1215,13 @@ class App:
         if not self._sessao.sessao_id:   # conversa nova: o que a Kani falou antes entra no começo dela
             self._sessao._pendentes = self._kani_previa(pasta, tirar=True) + (getattr(self._sessao, "_pendentes", None) or [])
         contexto = "" if texto.startswith("/") else self._kani_para_claude(pasta)
+        if not texto.startswith("/"):
+            self._prontidao_agendar()
         try:
             self._sessao.enviar(texto, imagens, contexto=contexto)
         except Exception as e:
+            self._prontidao_cancelar()
+            self._respondendo = False
             self._bola_estado("")
             self._para_janela({"t": "saiu", "erro": str(e)})
             return False
@@ -875,8 +1248,8 @@ class App:
         """abre o Claude Code já ao mostrar a janela (a lista de comandos "/" e a 1ª resposta chegam mais rápido)"""
         if not self._sessao:
             from sessao import Sessao
-            sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
-            self._sessao = Sessao(self._pasta(), DADOS, self._evento, sessao_id=sid)
+            sid = (_ler_estado().get("sessoes") or {}).get(self._pasta() + self._sufixo())
+            self._sessao = Sessao(self._pasta(), DADOS, self._na_aba(self._ctx().id, self._evento), sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
             self._sessao.conta = _ler_estado().get("conta") or None
             self._sessao.modo = getattr(self, "_modo", "auto")
@@ -887,13 +1260,16 @@ class App:
                 self._para_janela({"t": "saiu", "erro": str(e)})
         return self._comandos
 
-    def parar(self):
+    def parar(self, preservar_fila=False):
+        if not preservar_fila:
+            with self._ctx().mensagens.trava:
+                self._ctx().mensagens.pausada = True
         self._prontidao_cancelar()
         parar = self._codex_parar
         if parar:
             parar.set()
-            if self._fala:
-                self._fala.parar()
+        if self._fala:
+            self._fala.parar()
         if getattr(self, "_kani_parar", None):
             self._kani_parar.set()
         if self._sessao:
@@ -988,30 +1364,30 @@ class App:
         """conversa nova nesta pasta (a anterior continua guardada)"""
         if self._ocupada():
             raise RuntimeError("Espere a resposta terminar ou use Parar antes de abrir outra conversa.")
-        if _ler_estado().get("quem") == "pickle":
+        if self._ctx().quem == "pickle":
             self._pickle_arquivo(self._pasta(), nova=True)
             return True
-        if _ler_estado().get("quem") == "codex":
+        if self._ctx().quem == "codex":
             with _ESTADO_TRAVA:
                 sessoes = _ler_estado().get("codex_sessoes") or {}
-                sessoes.pop(os.path.normcase(os.path.realpath(self._pasta())), None)
+                sessoes.pop(os.path.normcase(os.path.realpath(self._pasta())) + self._sufixo(), None)
                 _gravar_estado(codex_sessoes=sessoes)
             return True
         self._encerrar()
         e = _ler_estado()
         ss = e.get("sessoes") or {}
-        ss.pop(self._pasta(), None)
+        ss.pop(self._pasta() + self._sufixo(), None)
         nv = e.get("kani_nao_visto") or {}
-        nv.pop(self._pasta(), None)
+        nv.pop(self._pasta() + self._sufixo(), None)
         _gravar_estado(sessoes=ss, kani_nao_visto=nv)
         self._kani_previa(self._pasta(), tirar=True)
         self._kani_hist = []
         return True
 
     def historico(self):
-        if _ler_estado().get("quem") == "pickle":
+        if self._ctx().quem == "pickle":
             return self._pickle_historico(self._pasta())
-        if _ler_estado().get("quem") == "codex":
+        if self._ctx().quem == "codex":
             sid = self._codex_id(self._pasta())
             if not sid or not re.fullmatch(r"[a-fA-F0-9-]{36}", sid):
                 return []
@@ -1027,32 +1403,34 @@ class App:
             except OSError:
                 return []
         previa = self._kani_previa(self._pasta())   # conversa com a Kani antes de haver uma do Claude
-        sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
+        sid = (_ler_estado().get("sessoes") or {}).get(self._pasta() + self._sufixo())
         if not sid:
             return previa
         from sessao import Sessao
         return previa + Sessao(self._pasta(), DADOS, None, sessao_id=sid).historico()
 
     def escolher_pasta(self):
-        if self._ocupada():
+        if self._alguma_ocupada():
             return None
         r = self._janela.create_file_dialog(webview.FOLDER_DIALOG, directory=self._pasta())
         if not r:
             return None
         nova = r[0] if isinstance(r, (list, tuple)) else r
         if os.path.normcase(nova) != os.path.normcase(self._pasta()):
-            self._encerrar()
+            self._encerrar_todas()
             _gravar_estado(projeto=nova)
         return nova
 
     def sair(self):
         self._saindo = True
+        if self._bola and self._bola.na_doca:   # dentro do chat: sai dele e a despedida parte dali
+            self._desencaixar(False)
         try:   # o chat some na hora; só a KaniBall faz a despedida (2026-10-21, pedido do Pailer)
             self._janela.hide()
             self._aberta = False
         except Exception:
             pass
-        self._encerrar()
+        self._encerrar_todas()
         try:   # a Kani direta roda neste processo: sai da placa de vídeo junto
             import ajudantes
             ajudantes.kani_parar()
@@ -1073,6 +1451,7 @@ class App:
         return p if p and os.path.isdir(p) else PROJETO_PADRAO
 
     def _encerrar(self):
+        self._prontidao_cancelar()
         parar = self._codex_parar
         if parar:
             parar.set()
@@ -1080,6 +1459,10 @@ class App:
             s, self._sessao = self._sessao, None
             threading.Thread(target=s.fechar, daemon=True).start()
         self._bola_estado("")
+
+    def _encerrar_todas(self):
+        for a in list(self._abas):
+            self._na_aba(a, self._encerrar)()
 
     def _prontidao_cancelar(self):
         pendente, self._prontidao_pendente = self._prontidao_pendente, None
@@ -1092,15 +1475,17 @@ class App:
         if self._aberta and not self._por_voz:
             return
         cancelado = threading.Event()
+        aba = self._ctx()
         def valido():
-            return not cancelado.is_set() and self._ajudante_ativo == "codex" and (not self._aberta or self._por_voz)
+            trabalhando = aba.ajudante_ativo or aba.respondendo or (aba.sessao and aba.sessao.ocupada)
+            return not cancelado.is_set() and self._abas.get(aba.id) is aba and bool(trabalhando) and (not self._aberta or self._por_voz)
         def confirmar():
             if valido():
                 try:
                     self._fala_obj().prontidao(valido)
                 except Exception:
-                    pass  # mensagem opcional; o Codex continua normalmente
-        temporizador = threading.Timer(1.0, confirmar)
+                    pass  # mensagem opcional; a tarefa continua normalmente
+        temporizador = threading.Timer(1.0, self._na_aba(self._ctx().id, confirmar))
         temporizador.daemon = True
         self._prontidao_pendente = (cancelado, temporizador)
         temporizador.start()
@@ -1123,7 +1508,7 @@ class App:
 
     def _codex_voz(self, ev):
         t = ev.get("t")
-        if (t == "codex_progresso" and ev.get("texto")) or (t == "ajudante_resposta" and ev.get("quem") == "codex"):
+        if (t in ("codex_progresso", "pickle_progresso") and ev.get("texto")) or (t == "texto" and ev.get("d")) or t in ("ajudante_resposta", "fim", "saiu", "permissao", "pergunta"):
             self._prontidao_cancelar()
         if t == "ajudante" and ev.get("quem") == "codex" and ev.get("fase") == "inicio":
             self._codex_comentario = ""
@@ -1148,6 +1533,12 @@ class App:
     def _evento(self, ev):
         self._codex_voz(ev)
         t = ev.get("t")
+        if t not in ("texto", "pensando", "kani_pensando"):   # passos ao vivo para o Claude acompanhar (2026-10-21)
+            try:
+                with open(os.path.join(DADOS, "ao_vivo.jsonl"), "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"h": time.strftime("%H:%M:%S"), **ev}, ensure_ascii=False, default=str)[:1500] + "\n")
+            except OSError:
+                pass
         if t == "inicio":
             self._respondendo, self._resposta = True, ""
         elif t == "texto_novo":
@@ -1174,8 +1565,8 @@ class App:
                 self._por_voz = False
         if t == "inicio" and ev.get("sessao"):
             ss = _ler_estado().get("sessoes") or {}
-            if ss.get(self._pasta()) != ev["sessao"]:
-                ss[self._pasta()] = ev["sessao"]
+            if ss.get(self._pasta() + self._sufixo()) != ev["sessao"]:
+                ss[self._pasta() + self._sufixo()] = ev["sessao"]
                 _gravar_estado(sessoes=ss)
         elif t == "limite":
             self._limite = {k: ev.get(k) for k in ("h5", "h5_zera", "sem", "sem_zera")}
@@ -1203,15 +1594,23 @@ class App:
             if t == "saiu":
                 self._sessao = None
         self._para_janela(ev)
+        if t in ("fim", "saiu"):
+            self._fila_tentar()
         if t in ("fim", "saiu") and self._pendente:
+            threading.Timer(1.5, self._pendente_rodar).start()   # a última bolha chega à tela antes
+
+    def _pendente_rodar(self):
+        """recarregar/reiniciar pedido no meio de uma tarefa: só quando nenhuma aba estiver trabalhando"""
+        if self._pendente and not self._alguma_ocupada():
             acao, self._pendente = self._pendente, None
-            threading.Timer(1.5, self._atualizar, args=(acao,)).start()   # a última bolha chega à tela antes
+            self._atualizar(acao)
 
     def pendentes(self):
         """cartões de permissão/pergunta ainda sem resposta (o celular que abre agora mostra eles vivos)"""
         return list(self._pend.values())
 
     def _para_janela(self, ev):
+        ev = dict(ev, aba=self._ctx().id)
         if ev.get("t") in ("permissao", "pergunta") and ev.get("id"):
             self._pend[ev["id"]] = ev
         elif ev.get("t") == "eco_resp":
@@ -1220,7 +1619,8 @@ class App:
             self._pend.clear()
         try:
             import movel
-            movel.publicar(ev)
+            if ev["aba"] == self._aba_ativa:
+                movel.publicar(ev)
         except Exception:
             pass
         try:
@@ -1242,7 +1642,7 @@ class App:
              "kani_abrir_no_kanibrowser": "digitando", "kani_fechar_aba": "digitando", "kani_salvar_texto": "digitando",
              "kani_salvar_conversa": "digitando", "kani_lembrar": "digitando", "kani_responder_janela": "digitando",
              "kani_ver_kanibrowser": "procurando", "kani_fechar_aba_kanibrowser": "digitando", "kani_ler_site": "lendo",
-             "kani_clicar_no_site": "digitando",
+             "kani_clicar_no_site": "digitando", "kani_photo_novo_documento": "digitando", "kani_photo_escrever": "digitando",
              "kani_navegar_kani": "procurando", "kani_ler_kani": "lendo", "kani_clicar_kani": "digitando"}
 
     def _bola_atividade(self, a):
@@ -1289,7 +1689,14 @@ class App:
         x, y = e.get("bola_px") or (None, None)
 
         def criar():
-            b = Bolinha(-10000, -10000, BOLA, self._clique, self._movida, ao_direito=self._clique, ao_som=self._som_bolinha)
+            b = Bolinha(-10000, -10000, BOLA, self._clique, self._movida, ao_direito=self._clique, ao_som=self._som_bolinha,
+                        ao_sair=lambda: threading.Thread(target=self.sair, daemon=True).start())
+            definir = b.definir
+
+            def definir_e_copiar(*a, **k):   # a cópia dentro do chat acompanha a cara da bolinha
+                definir(*a, **k)
+                self._doca_sync()
+            b.definir = definir_e_copiar
             ax, ay, aw, ah = b.area_util()
             if x is None:
                 px, py_ = ax + aw - b.total - round(24 * b.escala), ay + ah - b.total - round(24 * b.escala)
@@ -1342,7 +1749,7 @@ class App:
             acao = self._o_que_mudou()
             if not acao:
                 return "nada"
-        if self._ocupada():
+        if self._alguma_ocupada():
             if self._pendente != "reiniciar":
                 self._pendente = acao
             return "depois:" + acao

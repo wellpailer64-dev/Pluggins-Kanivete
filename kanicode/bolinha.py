@@ -5,7 +5,7 @@ escuro em volta), e cada janela com navegador é um processo a mais. Aqui a imag
 alfa e entregue ao Windows (UpdateLayeredWindow): borda lisa, sem quadrado, quase nada de memória.
 Posições e tamanhos em pixels reais (o processo é "DPI aware"). Criar SEMPRE na thread da interface (Invoke).
 """
-import ctypes, math, time
+import ctypes, math, threading, time
 from ctypes import wintypes
 
 import clr  # noqa: F401  (pythonnet, que o pywebview já carrega)
@@ -14,7 +14,7 @@ from System.Drawing import Bitmap, Color, Font, FontStyle, Graphics, Pen, Point,
 from System.Drawing.Drawing2D import GraphicsPath, LineCap, PathGradientBrush, SmoothingMode
 from System.Drawing.Imaging import PixelFormat
 from System.Drawing.Text import TextRenderingHint
-from System.Windows.Forms import Form, FormBorderStyle, FormStartPosition, MouseButtons, Screen, Timer
+from System.Windows.Forms import Form, FormBorderStyle, FormStartPosition, Keys, MouseButtons, Screen, Timer
 
 import rosto
 
@@ -55,8 +55,12 @@ class Bolinha:
 
     duracao_saida = 2.8
 
-    def __init__(self, x, y, lado_ui, ao_clicar, ao_mover, ao_direito=None, ao_som=None):
+    def __init__(self, x, y, lado_ui, ao_clicar, ao_mover, ao_direito=None, ao_som=None, ao_sair=None):
         self.ao_clicar, self.ao_mover, self.ao_direito = ao_clicar, ao_mover, ao_direito
+        self.ao_sair = ao_sair    # Ctrl+Q com a bolinha em foco (o chat já recolhido): fecha o KaniCode
+        self.na_doca = False      # dentro do chat (a cópia em HTML espia por cima da faixa de status)
+        self._caminho = None
+        self._curto = False
         self.ao_som = ao_som
         self.estado = ""          # "" | "trabalhando" | "pergunta"
         self.aberta = False
@@ -88,10 +92,34 @@ class Bolinha:
         f.Size = Size(self.total, self.total)
         u32.SetWindowLongW(h, GWL_EXSTYLE, (u32.GetWindowLongW(h, GWL_EXSTYLE) | WS_EX_LAYERED | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW)
         f.MouseDown += self._apertou
+        f.KeyDown += self._tecla
         self._t = Timer()
         self._t.Interval = 120
         self._t.Tick += self._tique
         # Só aparece depois de preparar o primeiro quadro do voo, ainda na origem.
+        self._atalho_parar = threading.Event()
+        threading.Thread(target=self._atalho_chat, daemon=True).start()
+
+    def _atalho_chat(self):
+        # A fila pertence a esta thread; o atalho só ocupa Ctrl+Espaço com o chat recolhido.
+        registrado = False
+        mensagem = wintypes.MSG()
+        try:
+            while not self._atalho_parar.is_set():
+                if self.aberta and registrado:
+                    u32.UnregisterHotKey(None, 1)
+                    registrado = False
+                elif not self.aberta and not registrado:
+                    registrado = bool(u32.RegisterHotKey(None, 1, 0x4002, 0x20))  # Ctrl, sem repetição
+                while u32.PeekMessageW(ctypes.byref(mensagem), None, 0x0312, 0x0312, 1):
+                    if mensagem.wParam == 1 and not self.aberta:
+                        u32.UnregisterHotKey(None, 1)
+                        registrado = False
+                        self.ao_clicar()
+                self._atalho_parar.wait(0.1)
+        finally:
+            if registrado:
+                u32.UnregisterHotKey(None, 1)
 
     # ── posição ──
     @property
@@ -113,9 +141,11 @@ class Bolinha:
         origem = (a.Left - self.total, a.Top + self.total)
         self._animar(origem, (int(x), int(y)), False)
 
-    def _animar(self, origem, destino, saindo, ao_terminar=None):
-        self._som_voo_tocado = False
-        self._duracao_voo = self.duracao_saida if saindo else 3.4
+    def _animar(self, origem, destino, saindo, ao_terminar=None, curto=0.0):
+        self._som_voo_tocado = bool(curto)   # o pulo até o chat (e a volta) não toca a vinheta
+        self._curto = bool(curto)
+        self._duracao_voo = curto or (self.duracao_saida if saindo else 3.4)
+        self._caminho = self._ponto_curto if curto else (self._ponto_saida if saindo else self._ponto_entrada)
         self._voo = (time.perf_counter(), origem, destino, saindo, ao_terminar)
         self._abrir_rastro()
         self._t.Interval = 16
@@ -161,6 +191,43 @@ class Bolinha:
             ponto.append(origem[eixo] + u * (v0 + u * (a0 / 2 + u * (c3 + u * (c4 + u * c5)))))
         return tuple(ponto)
 
+    def _ponto_curto(self, p, origem, destino):
+        """pulo curto (entrar no chat / voltar ao lugar): sai devagar, sobe num arco e pousa"""
+        p = max(0.0, min(1.0, p))
+        u = p * p * p * (10 + p * (-15 + 6 * p))
+        arco = min(self.lado * 1.6, 40 + abs(destino[0] - origem[0]) * 0.18) * 4 * u * (1 - u)
+        return origem[0] + (destino[0] - origem[0]) * u, origem[1] + (destino[1] - origem[1]) * u - arco
+
+    def voar(self, destino, ao_terminar=None, duracao=0.65):
+        """pulo curto até destino (pixels reais), sem a volta luminosa; aparece se estava escondida"""
+        if self._voo:
+            self._t.Stop()
+            self._fechar_rastro()
+            self._voo = None
+        self._animar((self.x, self.y), (int(destino[0]), int(destino[1])), False, ao_terminar, curto=duracao)
+
+    def esconder(self):
+        self.na_doca = True
+        self._t.Stop()
+        self.form.Hide()
+
+    def mostrar_em(self, x, y):
+        self.na_doca = False
+        self.form.Location = Point(int(x), int(y))
+        self._opacidade = 255
+        self.desenhar()
+        if not self.form.Visible:
+            self.form.Show()
+        self._t.Start()
+
+    def focar(self):
+        """pega o teclado (Ctrl+Q aqui fecha o KaniCode); clicar em outro programa devolve"""
+        try:
+            self.form.Activate()
+            u32.SetForegroundWindow(self.hwnd)
+        except Exception:
+            pass
+
     def _ponto_saida(self, p, origem, destino):
         # A despedida passa pela mesma volta luminosa antes de escapar pelo canto.
         return self._ponto_entrada(p, origem, destino)
@@ -171,7 +238,7 @@ class Bolinha:
         if p >= 0.12 and not self._som_voo_tocado:
             self._som_voo_tocado = True
             self._som("saida" if saindo else "entrada")
-        caminho = self._ponto_saida if saindo else self._ponto_entrada
+        caminho = self._caminho
         x, y = caminho(p, origem, destino)
         antes = caminho(max(0.0, p - 0.002), origem, destino)
         depois = caminho(min(1.0, p + 0.002), origem, destino)
@@ -184,7 +251,7 @@ class Bolinha:
                                 1 - 0.34 * forca * (dx / velocidade) ** 2)
         else:
             self._deformacao = (1.0, 1.0)
-        if not saindo and p > 0.86:
+        if not saindo and p > 0.86 and not self._curto:
             q = (p - 0.86) / 0.14
             mola = 0.07 * math.sin(q * math.pi * 4) * math.sin(q * math.pi) * (1 - q)
             self._deformacao = (self._deformacao[0] + mola, self._deformacao[1] - mola)
@@ -193,7 +260,7 @@ class Bolinha:
             sumir = max(0.0, min(1.0, (p - 0.8) / 0.2))
             self._opacidade = round(255 * (1 - sumir * sumir * (3 - 2 * sumir)))
         else:
-            self._opacidade = round(255 * min(1, p * 5))
+            self._opacidade = 255 if self._curto else round(255 * min(1, p * 5))
         if p >= 1:
             self._fechar_rastro()
             self._voo = None
@@ -205,6 +272,8 @@ class Bolinha:
                 if terminou:
                     terminou()
                 return
+            if terminou:
+                terminou()
         if self._voo:
             self._desenhar_rastro(p)
         self.desenhar()
@@ -212,6 +281,12 @@ class Bolinha:
     def sair(self, ao_terminar):
         if self._voo and self._voo[3]:
             return
+        if self._voo:
+            self._voo = None
+            self._fechar_rastro()
+        if not self.form.Visible:
+            self.na_doca = False
+            self.form.Show()
         a = Screen.FromHandle(self.form.Handle).WorkingArea
         self._area_voo = (a.Left, a.Top, a.Width, a.Height)
         self._animar((self.x, self.y), (a.Right + self.total, a.Top - self.total), True, ao_terminar)
@@ -241,7 +316,14 @@ class Bolinha:
         else:
             self.ao_mover(self.x, self.y)
 
+    def _tecla(self, _s, e):
+        if e.Control and e.KeyCode == Keys.Q and self.ao_sair:
+            e.Handled = True
+            self.ao_sair()
+
     def _tique(self, _s, _e):
+        if self.na_doca and not self._voo:
+            return
         if self._voo:
             self._avancar_voo()
             return
@@ -295,6 +377,8 @@ class Bolinha:
 
     # ── desenho ──
     def desenhar(self):
+        if self.na_doca and not self._voo:
+            return   # escondida dentro do chat: quem desenha é a cópia em HTML
         T, L, m = self.total, self.lado, self.margem
         bmp = Bitmap(T, T, PixelFormat.Format32bppArgb)
         g = Graphics.FromImage(bmp)
@@ -457,7 +541,7 @@ class Bolinha:
     def _desenhar_rastro(self, p):
         _, origem, destino, saindo, _ = self._voo
         duracao = self._duracao_voo
-        caminho = self._ponto_saida if saindo else self._ponto_entrada
+        caminho = self._caminho
         pontos = []
         for i in range(32):
             passado = max(0.0, p - (1 - i / 31) * 0.48 / duracao)
@@ -526,6 +610,7 @@ class Bolinha:
         u32.ReleaseDC(None, tela)
 
     def fechar(self):
+        self._atalho_parar.set()
         try:
             self._t.Stop()
             self._fechar_rastro()

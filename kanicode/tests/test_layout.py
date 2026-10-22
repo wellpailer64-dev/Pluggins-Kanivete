@@ -70,7 +70,8 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(p.get_by_role('button', name='OpenCode · teste Big Pickle', exact=True, include_hidden=True).count(), 1)
         self.assertEqual(p.locator('#lado-contas img').count(), 2)
         self.assertEqual(p.locator('#lado-contas .cnt').count(), 3)
-        self.assertTrue(p.locator('#pastas-nav #pasta').is_visible())
+        self.assertTrue(p.locator('#status #pastas-nav #pasta').is_visible())
+        self.assertEqual(p.locator('#status #c5, #status #csem').count(), 2)
         self.assertEqual(p.locator('.rodape #pasta, .rodape #modo-bt, .rodape #quem-bt').count(), 0)
         for a,b in [('#quem-bt','#modo-bt'),('#modo-bt','#texto')]:
             self.assertLess(p.locator(a).bounding_box()['x'],p.locator(b).bounding_box()['x'])
@@ -94,7 +95,7 @@ class LayoutTest(unittest.TestCase):
         p.wait_for_function("document.querySelector('#grande').getAttribute('aria-pressed') === 'false'")
         self.assertEqual(p.locator('#lado-aj svg path').get_attribute('d'),'m14 7-5 5 5 5')
         p.click('#lado-aj')
-        self.assertTrue(p.locator('#contas').is_visible())
+        p.wait_for_selector('#contas', state='visible')
         p.click('#quem-bt')
         self.assertEqual(p.locator('[data-q="claude"] img').get_attribute('src'),'claude.svg')
         p.wait_for_function("document.querySelector('[data-q=claude] img').naturalWidth > 0")
@@ -191,6 +192,78 @@ class LayoutTest(unittest.TestCase):
         self.evento({"t":"fim"})
         self.assertEqual(self.page.locator('.pasta-ativa').count(),0)
 
+    def test_pastas_internas_ocultas_e_projeto_adicional_na_barra(self):
+        p = self.page
+        p.evaluate("""async () => {
+          const anterior = pywebview.api;
+          window.pastaBarraTeste = 'D:/Projetos/Kanivete';
+          pywebview.api = new Proxy(anterior, {get(alvo, nome) {
+            if (nome === 'info') return async () => ({pasta:pastaBarraTeste,
+              pastas_internas:['D:/Projetos/Kanivete','D:/Plugins/kanicode'],quem:'claude',limite:{h5:.32,sem:.25}});
+            return alvo[nome];
+          }});
+          await carregar();
+        }""")
+        self.assertEqual(p.locator('[data-pasta-nome]').inner_text(), '')
+        self.assertTrue(p.locator('#status #pasta').is_visible())
+        self.assertTrue(p.locator('#status #c5').is_visible())
+        p.evaluate("async () => {pastaBarraTeste='D:/Plugins/kanicode';await carregar();}")
+        self.assertEqual(p.locator('[data-pasta-nome]').inner_text(), '')
+        p.evaluate("async () => {pastaBarraTeste='D:/Clientes/Loja';await carregar();}")
+        self.assertEqual(p.locator('[data-pasta-nome]').inner_text(), 'Loja')
+        self.assertIn('D:/Clientes/Loja', p.locator('#pasta').get_attribute('title'))
+        for largura in (340, 420, 600):
+            p.set_viewport_size({'width':largura,'height':740})
+            p.evaluate("K.ocupada=true;K.faz='Processando os arquivos do projeto';K.t0=Date.now()-2000;K.tokMsg=10000;status();")
+            self.assertLessEqual(p.evaluate('document.body.scrollWidth'), largura)
+            self.assertTrue(p.locator('#c5').is_visible())
+        p.screenshot(path=r'D:\kanivete_testes\kanicode_barra_status.png')
+        self.assertEqual(self.erros, [])
+
+    def test_enter_enfileira_e_duplo_clique_prioriza_nos_quatro_motores(self):
+        p = self.page
+        p.evaluate("""() => {
+          window.filaTeste=[];
+          const anterior=pywebview.api;
+          pywebview.api=new Proxy(anterior,{get(alvo,nome){
+            if(nome==='mensagens_fila') return async()=>filaTeste;
+            if(nome==='mensagem_enviar') return async(id,texto,imagens,quem)=>{
+              chamadas.push({nome,args:[id,texto,imagens,quem]});
+              const item={id,texto,minis:imagens.map(i=>i.mini),quem,estado:'pendente'};
+              filaTeste.push(item);kcEv({t:'fila_mensagem',...item});return item;
+            };
+            if(nome==='mensagem_urgente') return async(id)=>{
+              chamadas.push({nome,args:[id]});
+              const item=filaTeste.find(i=>i.id===id);item.estado='urgente';kcEv({t:'fila_mensagem',...item});return true;
+            };
+            return alvo[nome];
+          }});
+        }""")
+        for quem in ('claude','codex','kani','pickle'):
+            p.evaluate("q=>{quemDefinir(q,false);ocupada(true);window.bolhaAndamento=bolha('kc','Resposta em andamento');K.bolha=bolhaAndamento;}", quem)
+            p.fill('#texto','Pedido seguinte '+quem)
+            self.assertEqual(p.locator('#enviar').inner_text(), 'Enfileirar')
+            p.press('#texto','Enter')
+            p.wait_for_function('q=>chamadas.some(c=>c.nome===\"mensagem_enviar\"&&c.args[3]===q)',arg=quem)
+            self.assertTrue(p.evaluate('K.bolha===bolhaAndamento && K.ocupada'))
+            self.assertEqual(p.input_value('#texto'), '')
+            b=p.locator('.mensagem-pendente').last
+            self.assertIn('Na fila',b.inner_text())
+            b.dblclick()
+            p.wait_for_function('q=>filaTeste.some(i=>i.quem===q&&i.estado===\"urgente\")',arg=quem)
+            self.assertIn('Urgente',b.inner_text())
+        self.assertFalse(p.evaluate("chamadas.some(c=>['parar','enviar','ajudante'].includes(c.nome))"))
+        p.evaluate('ocupada(false)')
+        p.evaluate('async()=>await carregar()')
+        self.assertEqual(p.locator('[data-mensagem-id]').count(),4)
+        item=p.evaluate('filaTeste[0]')
+        self.evento({'t':'fila_mensagem',**item,'estado':'enviando'})
+        self.evento({'t':'fila_mensagem',**item,'estado':'enviada'})
+        self.evento({'t':'eco_eu','de':'fila','texto':item['texto'],'minis':[]})
+        self.assertEqual(p.locator('[data-mensagem-id]').count(),4)
+        self.assertFalse(p.locator('[data-mensagem-id="'+item['id']+'"]').locator('.mensagem-fila-nota').count())
+        self.assertEqual(self.erros, [])
+
     def test_larguras_pequenas_sem_corte_do_campo(self):
         for largura in (340,420,550):
             self.page.set_viewport_size({"width":largura,"height":740})
@@ -247,6 +320,7 @@ class LayoutTest(unittest.TestCase):
           }});
           quemDefinir('codex', false);
         }""")
+        self.page.click('#codex-conta-lateral')
         self.page.wait_for_selector('.codex-redefinir', state='visible')
         self.assertIn('limite de uso atingido', self.page.locator('.codex-conta-estado').inner_text())
         self.page.set_viewport_size({'width':390,'height':844})
@@ -258,6 +332,48 @@ class LayoutTest(unittest.TestCase):
         self.evento({'t':'codex_uso','uso':{},'cota':{'h5':1,'sem':.2}})
         self.assertIn('0% usado', self.page.locator('.codex-janelas').inner_text())
         self.assertEqual(len(self.page.evaluate('resetsTeste[0][0]')), 36)
+        self.assertEqual(self.erros, [])
+
+    def test_codex_na_lateral_com_foto_e_limites(self):
+        self.page.evaluate("""() => {
+          const anterior = pywebview.api;
+          pywebview.api = new Proxy(anterior, {get(alvo, nome) {
+            if (nome === 'codex_identidade') return async () => ({ok:true, email:'codex@exemplo.com', plano:'pro', logado:true,
+              foto:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFooAAAAASUVORK5CYII='});
+            if (nome === 'codex_limites') return async () => ({ok:true,cota:{h5:.25,sem:.6,h5_zera:1800000000}});
+            return alvo[nome];
+          }});
+          quemDefinir('codex', false);
+        }""")
+        p = self.page
+        p.click('#codex-conta-lateral')
+        p.wait_for_function("document.querySelector('#codex-conta-lateral').title.includes('25%')")
+        p.click('#codex-conta-lateral')
+        self.assertTrue(p.locator('#codex-conta-lateral .foto-ct img').is_visible())
+        self.assertTrue(p.locator('.codex-conta').is_hidden())
+        self.assertEqual(p.locator('.rodape .codex-conta').count(), 0)
+        p.click('#codex-conta-lateral')
+        self.assertIn('codex@exemplo.com', p.locator('.codex-identificacao').inner_text())
+        self.assertIn('60% usado', p.locator('.codex-janelas').inner_text())
+        p.click('#conversa', position={'x':200, 'y':20})
+        self.assertTrue(p.locator('.codex-conta').is_hidden())
+        p.click('#lado-aj')
+        p.wait_for_selector('.lado.aberto')
+        p.wait_for_selector('#codex-conta-lateral .codex-email', state='visible')
+        self.assertIn('codex@exemplo.com', p.locator('#codex-conta-lateral .codex-email').inner_text())
+        p.screenshot(path=r'D:\kanivete_testes\codex_lateral.png')
+        self.assertEqual(self.erros, [])
+
+    def test_erros_claude_mostram_motivo_e_diagnostico(self):
+        self.evento({'t':'fim','erro':True,'mensagem':'Exportação interrompida por falta de espaço',
+                     'diagnostico':'D:/kanivete_testes/continuidade/eventos.jsonl'})
+        self.assertIn('falta de espaço', self.page.locator('#conversa').inner_text())
+        self.assertIn('eventos.jsonl', self.page.locator('#conversa').inner_text())
+        self.evento({'t':'saiu','erro':'processo terminou com código 9',
+                     'diagnostico':'D:/kanivete_testes/continuidade/eventos.jsonl'})
+        self.assertIn('receberá o registro de retomada', self.page.locator('#conversa').inner_text())
+        self.evento({'t':'aviso','texto':'Não foi possível guardar a continuidade: disco indisponível'})
+        self.assertIn('disco indisponível', self.page.locator('#conversa').inner_text())
         self.assertEqual(self.erros, [])
 
     def test_progresso_pickle_aparece_sem_interpretar_html(self):

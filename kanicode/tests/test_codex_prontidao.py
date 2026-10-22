@@ -85,6 +85,97 @@ class ProntidaoAppTest(unittest.TestCase):
         self.app._fala.prontidao.assert_not_called()
 
 
+class ProntidaoModelosTest(unittest.TestCase):
+    def setUp(self):
+        with patch.object(kanicode, '_ler_estado', return_value={}):
+            self.app = kanicode.App()
+        self.app._fala = Mock()
+        self.app._para_janela = Mock()
+        self.app._bola_estado = Mock()
+        self.app._bola_atividade = Mock()
+        self.app._na_ui = Mock()
+        self.timer = patch.object(kanicode.threading, 'Timer').start()
+        self.addCleanup(patch.stopall)
+
+    def agendar(self, quem):
+        self.app._ajudante_ativo = quem if quem != 'claude' else None
+        self.app._respondendo = quem == 'claude'
+        self.app._prontidao_agendar()
+        return self.timer.call_args.args[1]
+
+    def test_os_quatro_motores_confirmam_demora(self):
+        for quem in ('claude', 'codex', 'kani', 'pickle'):
+            with self.subTest(quem=quem):
+                self.app._fala.reset_mock()
+                self.agendar(quem)()
+                self.app._fala.prontidao.assert_called_once()
+                self.assertTrue(self.app._fala.prontidao.call_args.args[0]())
+
+    def test_primeira_resposta_cancela_em_todos_os_motores(self):
+        for quem, evento in [('claude', {'t':'texto','d':'Conferindo'}),
+                             ('codex', {'t':'codex_progresso','texto':'Conferindo'}),
+                             ('kani', {'t':'ajudante_resposta','quem':'kani','texto':'Pronto'}),
+                             ('pickle', {'t':'pickle_progresso','texto':'Conferindo'})]:
+            with self.subTest(quem=quem):
+                self.app._fala.reset_mock()
+                tocar = self.agendar(quem)
+                self.app._codex_voz(evento)
+                tocar()
+                self.app._fala.prontidao.assert_not_called()
+
+    def test_fim_erro_parar_e_permissao_invalidam_aviso_enfileirado(self):
+        for quem in ('claude', 'codex', 'kani', 'pickle'):
+            for fim in ('fim', 'saiu', 'permissao', 'pergunta', 'parar'):
+                with self.subTest(quem=quem, fim=fim):
+                    self.agendar(quem)()
+                    valido = self.app._fala.prontidao.call_args.args[0]
+                    self.assertTrue(valido())
+                    if fim == 'parar':
+                        self.app.parar()
+                    else:
+                        self.app._codex_voz({'t':fim})
+                    self.assertFalse(valido())
+
+    def test_aba_de_tras_nao_perde_aviso_por_troca_ou_cancelamento_de_outra(self):
+        tocar1 = self.agendar('claude')
+        self.app._abas['2'] = kanicode._Aba('2', 'kani')
+        self.app._aba_ativa = '2'
+        tocar2 = self.agendar('kani')
+        self.app._prontidao_cancelar()
+        tocar2()
+        self.app._fala.prontidao.assert_not_called()
+        tocar1()
+        self.app._fala.prontidao.assert_called_once()
+        # O callback é usado depois pela thread de áudio, fora do contexto da aba 1.
+        self.assertTrue(self.app._fala.prontidao.call_args.args[0]())
+        self.app._na_aba('1', self.app._prontidao_cancelar)()
+        self.assertFalse(self.app._fala.prontidao.call_args.args[0]())
+
+    def test_envio_claude_agenda_e_falha_de_envio_cancela(self):
+        self.app._sessao = Mock(sessao_id='existente', ocupada=False)
+        self.app._kani_para_claude = Mock(return_value='')
+        self.assertTrue(self.app.enviar('Analise este vídeo'))
+        tocar = self.timer.call_args.args[1]
+        tocar()
+        self.app._fala.prontidao.assert_called_once()
+        self.app._fala.reset_mock()
+        self.app._sessao.enviar.side_effect = OSError('falha de envio')
+        self.assertFalse(self.app.enviar('Continue'))
+        self.timer.call_args.args[1]()
+        self.app._fala.prontidao.assert_not_called()
+
+    def test_envio_dos_tres_ajudantes_agenda(self):
+        for quem in ('codex', 'kani', 'pickle'):
+            with self.subTest(quem=quem):
+                self.app._ajudante_ativo = None
+                self.app._respondendo = False
+                with patch.object(kanicode.threading, 'Thread'):
+                    self.app.ajudante(quem, 'Analise este vídeo')
+                self.assertIsNotNone(self.app._prontidao_pendente)
+                self.app._prontidao_cancelar()
+                self.app._ajudante_trava.release()
+
+
 class ProntidaoAudioTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=r"D:\kanivete_testes")
@@ -134,6 +225,24 @@ class ProntidaoAudioTest(unittest.TestCase):
                 self.f._tocar()
         dispositivo.play.assert_called_once()
         self.assertEqual(self.f._pend, 0)
+
+    def test_primeiro_uso_confirma_apos_preparar_se_pedido_ainda_vale(self):
+        valido = threading.Event()
+        valido.set()
+        self.assertFalse(self.f.prontidao(valido.is_set))
+        preparar = fala.threading.Thread.call_args.kwargs['target']
+        preparar()
+        self.assertEqual(self.f._audios.qsize(), 1)
+        self.assertTrue(self.cache.is_file())
+
+    def test_primeiro_uso_cancelado_nao_fala_apos_preparar(self):
+        valido = threading.Event()
+        valido.set()
+        self.f.prontidao(valido.is_set)
+        preparar = fala.threading.Thread.call_args.kwargs['target']
+        valido.clear()
+        preparar()
+        self.assertTrue(self.f._audios.empty())
 
     def test_cache_corrompido_nao_impede_a_resposta(self):
         self.cache.write_bytes(b"nao e um arquivo npz")

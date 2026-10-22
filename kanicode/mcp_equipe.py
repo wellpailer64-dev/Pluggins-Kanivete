@@ -18,9 +18,21 @@ import licoes      # noqa: E402
 
 PORTA = 47613
 PASTA = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+CONTINUIDADE = sys.argv[2] if len(sys.argv) > 2 else None
+_missao_trava = threading.Lock()
 _ULTIMA = {"codex": None}   # última sessão do Codex nesta conversa ("continuar")
 
 FERRAMENTAS = [
+    {"name": "missao",
+     "description": ("Ler ou atualizar o ponto de retomada desta sessão, guardado em disco. Sem campos, consulta. "
+                     "Em missão longa: guarde no início, após cada etapa relevante e antes de encerrar. Após compactação "
+                     "ou interrupção, leia e confira o projeto real antes de repetir ações. Concluído deve conter "
+                     "somente o que você verificou; referências devem usar IDs, caminhos, faixas e tempos, evitando pixels. "
+                     "As listas enviadas substituem as anteriores. Não marque a missão concluída só porque uma ferramenta terminou."),
+     "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
+         "objetivo": {"type": "string"}, "concluido": {"type": "array", "items": {"type": "string"}},
+         "proximo": {"type": "string"}, "referencias": {"type": "array", "items": {"type": "object"}},
+         "observacoes": {"type": "string"}}}},
     {"name": "codex",
      "description": ("Delegar uma tarefa ao Codex (OpenAI, na conta ChatGPT Plus do Pailer: NÃO gasta a cota do Claude). "
                      "Use para trabalho médio e bem definido: escrever um teste, uma função, um script, refatorar um trecho, "
@@ -187,6 +199,13 @@ def _chamar(id_, nome, args):
                 texto += "\n\n" + _revisar(antes, teste, r.get("arquivos") or ())
             if extra:
                 texto += f"\n\n[foram junto: regras do projeto + {len(licoes.relevantes(PASTA, args.get('contrato', '')))} lição(ões)]"
+        elif nome == "missao":
+            if not CONTINUIDADE:
+                raise ValueError("esta sessão não informou o registro de continuidade; reabra o KaniCode")
+            from continuidade import missao
+            with _missao_trava:
+                registro = missao(CONTINUIDADE, args)
+            r, texto = {"ok": True}, json.dumps(registro, ensure_ascii=False)
         elif nome == "licao":
             ok = licoes.gravar(PASTA, args.get("texto", ""), args.get("tags"))
             _avisar({"t": "licao", "texto": args.get("texto", ""), "nova": ok})

@@ -16,7 +16,8 @@ UI = os.path.join(PASTA, "ui")
 PORTA = 47614
 
 # o que o celular pode chamar (o resto da js_api mexe na janela do PC: no celular não faz nada)
-LIBERADOS = {"info", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
+LIBERADOS = {"info", "abas", "aba_ajudante", "aba_parar", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
+             "mensagem_enviar", "mensagem_urgente", "mensagens_fila",
              "nova", "quem", "ajudante", "habilidades", "miniatura", "tarefas_ler", "contas_listar", "conta_atualizar",
              "conta_usar", "pendentes", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
 NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "tam_fim", "tam_padrao", "abrir_imagem",

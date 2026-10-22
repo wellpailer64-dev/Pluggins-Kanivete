@@ -61,7 +61,7 @@ def gerar(destino):
 
 # sons da KaniBall gravados pelo Pailer (2026-10-21): ação → arquivos tocados juntos (o swoosh acompanha o voo)
 SONS = {"entrada": ("Swoosh intro e outro.mp3", "Hello.mp3"), "saida": ("Swoosh intro e outro.mp3", "Bye.mp3"),
-        "erro": ("Ops.mp3",)}
+        "erro": ("Ops.mp3",), "entrada_chat": ("inter chat.wav",), "saida_chat": ("out chat.wav",)}
 _abertos = []   # apelidos do MCI tocando agora
 
 
@@ -86,7 +86,7 @@ def tocar(acao):
         return False
     with _trava:
         agora = time.monotonic()
-        if agora - _ultimo < 0.8:
+        if agora - _ultimo < 0.8 and acao not in ("entrada_chat", "saida_chat"):
             return False
         _soltar()
         tocou = False

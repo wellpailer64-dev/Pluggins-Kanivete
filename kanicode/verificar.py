@@ -10,6 +10,9 @@ import tempfile
 
 RAIZ = Path(__file__).resolve().parent
 AREAS = {
+    "mensagens": ("mensagens.py", "kanicode.py", "sessao.py", "ui/mensagens.js", "ui/janela.html", "tests/test_mensagens.py"),
+    "voz": ("fala.py", "radio.py", "kanicode.py", "tests/test_fala_tom.py", "tests/test_codex_prontidao.py", "tests/test_codex_voz.py"),
+    "claude": ("sessao.py", "continuidade.py", "mcp_equipe.py", "ui/janela.html", "tests/test_continuidade.py"),
     "kani": ("kani_modo.py", "ajudantes.py", "tests/test_kani_*.py", "tests/test_modelo_ferramenta.py"),
     "pickle": ("bigpickle_modo.py", "pickle_agente.py", "codigo_agente.py", "ui/codigo_agente.js", "pickle_controle.py", "opencode_mvp.py", "kani_modo.py", "kanicode.py", "bolinha.py", "ui/janela.html", "ui/movel.js", "tests/test_bigpickle_*.py", "tests/test_pickle_agente.py", "tests/test_opencode_mvp.py", "tests/test_kani_historico.py"),
     "codex": ("ajudantes.py", "codex_contexto.py", "codex_processo.py", "codex_conta.py", "codex_alteracoes.py", "ui/alteracoes.js", "ui/codex_uso.js", "ui/janela.html", "tests/test_codex_*.py"),

@@ -28,6 +28,17 @@ class ContaCodexTest(unittest.TestCase):
         con.return_value.__enter__.return_value = self.cliente
         self.addCleanup(self.conexao.stop)
 
+    def test_identidade_devolve_apenas_dados_publicos(self):
+        self.cliente.pedir.return_value = {"account": {"type": "chatgpt", "email": "pessoa@exemplo.com", "planType": "pro", "token": "segredo"}}
+        self.assertEqual(conta.identidade(), {"ok": True, "email": "pessoa@exemplo.com", "plano": "pro", "tipo": "chatgpt", "logado": True})
+        self.cliente.pedir.assert_called_once_with("account/read", {"refreshToken": False})
+
+    def test_identidade_sem_login_e_falha(self):
+        self.cliente.pedir.return_value = {"account": None}
+        self.assertFalse(conta.identidade()["logado"])
+        self.cliente.pedir.side_effect = RuntimeError("credencial privada")
+        self.assertEqual(conta.identidade(), {"ok": False, "mensagem": "Não foi possível identificar a conta do Codex agora."})
+
     def test_consulta_cache_e_forcar_nao_consumem(self):
         self.assertTrue(conta.consultar()["cota"]["atingido"])
         conta.consultar()

@@ -7,7 +7,7 @@ import uuid
 
 import opencode_mvp
 
-PADRAO = {"etapas": 10, "segundos": 180, "tokens": 60000}
+PADRAO = {"etapas": 25, "segundos": 600, "tokens": 300000}   # 2026-10-21: tarefas em sequência (antes 10 etapas / 3 min)
 
 
 def selecionar(pedido, historico, leitura, navegacao, codigo, editar):
@@ -25,6 +25,25 @@ def selecionar(pedido, historico, leitura, navegacao, codigo, editar):
     if re.search(r"disco|espaco|livres|listar|consulte|consultar|programas abertos", texto):
         return leitura
     return leitura + navegacao + tuple(codigo)
+
+
+def _json_no_meio(texto):
+    """o modelo pôs frase antes/depois do JSON: pega o 1º objeto {acao, args} que decodifica (teste do flyer, 2026-10-22)"""
+    dec = json.JSONDecoder()
+    i = texto.find("{")
+    while i != -1:
+        try:
+            r, _ = dec.raw_decode(texto, i)
+            if isinstance(r, dict) and "acao" in r:
+                return r
+        except ValueError:
+            pass
+        i = texto.find("{", i + 1)
+    # caminho do Windows sem escapar (\D, \k...) quebra o JSON: dobra a barra que não é escape válido
+    consertado = re.sub(r'\\(?![\\"/bfnrtu])', r'\\\\', texto)
+    if consertado != texto:
+        return _json_no_meio(consertado)
+    return None
 
 
 def compactar(mensagens):
@@ -108,7 +127,7 @@ class Controle:
         contexto = compactar(mensagens)
         self.etapas += 1
         caracteres = len(json.dumps(contexto, ensure_ascii=False))
-        prazo = min(60, self.limites["segundos"] - (time.monotonic() - self.inicio))
+        prazo = min(180, self.limites["segundos"] - (time.monotonic() - self.inicio))
         consumidos = 0
         tipo = "ok"
         try:
@@ -137,11 +156,11 @@ class Controle:
                 try:
                     r = json.loads(texto)
                 except ValueError:
+                    r = _json_no_meio(texto)
+                if r is None:
                     raise opencode_mvp.FalhaOpenCode("json_invalido", "O modelo não devolveu JSON válido; nenhuma ação da ponte foi executada nesta etapa.") from None
                 if not isinstance(r, dict) or r.get("acao") not in permitidas or not isinstance(r.get("args"), dict):
                     raise opencode_mvp.FalhaOpenCode("decisao_invalida", "Decisão inválida ou ferramenta não liberada; nenhuma ação desta etapa foi executada.")
-                if any(not isinstance(v, str) for v in r["args"].values()):
-                    raise opencode_mvp.FalhaOpenCode("decisao_invalida", "Os argumentos das ferramentas devem ser texto.")
                 if self.tokens >= self.limites["tokens"] or time.monotonic() - self.inicio >= self.limites["segundos"]:
                     self.conferir()
                 self.falha = ""
@@ -150,11 +169,11 @@ class Controle:
                 self.falha = e.tipo
                 self.registrar(e.tipo, 0, 0)
                 # Só repetir uma decisão ainda não entregue ao executor. Nunca repetir ação já executada.
-                if self.recuperacoes or e.tipo not in ("resposta_vazia", "json_invalido", "decisao_invalida", "nativa_recusada"):
+                if self.recuperacoes >= 3 or e.tipo not in ("resposta_vazia", "json_invalido", "decisao_invalida", "nativa_recusada", "prazo"):
                     raise
                 self.conferir()
                 self.recuperacoes += 1
-                self.progresso("A etapa não trouxe uma decisão utilizável (" + e.tipo + "). Vou tentar corrigir a resposta uma única vez; as ações concluídas ficam preservadas.")
+                self.progresso("A etapa não trouxe uma decisão utilizável (" + e.tipo + "). Vou pedir a correção (até 3 vezes); as ações concluídas ficam preservadas.")
                 mensagens = [*mensagens, {"role":"user", "content":"CORREÇÃO DE FORMATO: a última consulta não entregou decisão válida à ponte. Devolva somente JSON {acao,args}, usando a lista liberada. Não use ferramentas nativas; não repita ações já concluídas nos Resultados. Se faltar capacidade, responda explicando."}]
 
     def resumo(self):

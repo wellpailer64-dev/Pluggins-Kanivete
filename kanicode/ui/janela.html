@@ -355,6 +355,19 @@
   .dif .dsep { height: 6px; border-top: 1px solid var(--borda); margin-top: 3px; }
   .pl { font: 600 11px var(--mono); margin-left: 6px; } .pl .add { color: #6FCF5A; } .pl .del { color: #E06464; }
   .perm .dif { max-height: 220px; margin: 6px 0 8px; }
+  /* plano em etapas da Kani: lista que vai riscando */
+  .msg.plano { align-self: stretch; background: var(--caixa, rgba(127,127,127,.08)); border: 1px solid rgba(127,127,127,.25); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+  .msg.plano b.pt { display: block; font-size: 12px; color: var(--fraco); margin-bottom: 4px; font-weight: 600; }
+  .msg.plano .pi { display: flex; gap: 6px; padding: 2px 0; line-height: 1.35; }
+  .msg.plano .pi i { font-style: normal; width: 16px; flex: none; text-align: center; }
+  .msg.plano .pi.ok span { text-decoration: line-through; opacity: .55; }
+  .msg.plano .pi.agora span { font-weight: 600; }
+  /* fixa embaixo, acima do status: a conversa rola e a lista fica à vista */
+  .msg.plano.fixo { margin: 0 10px 6px; max-height: 38vh; overflow: auto; box-shadow: 0 -4px 14px rgba(0,0,0,.18); }
+  .msg.plano .pi.risca span { animation: kpRisca .45s ease-out; }
+  .msg.plano .pi.risca i { animation: kpPulo .45s ease-out; }
+  @keyframes kpRisca { from { opacity: 1; text-decoration-color: transparent; } to { opacity: .55; } }
+  @keyframes kpPulo { 0% { transform: scale(1); } 40% { transform: scale(1.5); color: #3fbf7f; } 100% { transform: scale(1); } }
 </style>
 <link rel="stylesheet" href="organizacao.css">
 <link rel="stylesheet" href="respostas.css">
@@ -373,7 +386,7 @@
     </div>
   </div>
   <nav class="pastas-nav" id="pastas-nav" aria-label="Pastas em uso">
-    <button class="pasta" id="pasta" title="Pasta principal · clique para trocar"><span class="pasta-icone" aria-hidden="true"></span><span data-pasta-nome>…</span></button>
+    <button class="pasta" id="pasta" aria-label="Abrir pasta de projeto" title="Abrir pasta de projeto"><span class="pasta-adicionar" aria-hidden="true">＋</span><span data-pasta-nome></span></button>
     <div id="pastas-ativas" class="pastas-ativas" aria-live="polite"></div>
   </nav>
   <div class="corpo">
@@ -382,6 +395,7 @@
       <button class="mais ajustes" id="lado-aj" aria-label="Gerenciar contas" title="Contas: renomear, remover, atualizar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg></button></div>
     <div class="meio"><div class="saudacao" id="saudacao" hidden>Olá, Pailer.</div><div class="conversa" id="conversa"></div><div class="equipe" id="equipe"></div></div>
   </div>
+  <div class="msg plano fixo" id="planoFixo" hidden></div>
   <div class="status" id="status"><span class="ponto"></span><span class="faz" id="faz">Pronto</span><span class="num" id="num"></span></div>
   <div class="anexos" id="anexos" hidden></div>
   <div class="entrada">
@@ -487,6 +501,7 @@
         pronto: () => { nota(1046.5, 0, 0.35, 0.04); nota(1568, 0.09, 0.45, 0.035); },   // dó → sol, curtinho
         pergunta: () => { nota(880, 0, 0.16, 0.045); nota(880, 0.16, 0.22, 0.045); },     // dois toques: "ei"
         permitido: () => nota(1174.7, 0, 0.12, 0.03),
+        etapa: () => { nota(1318.5, 0, 0.12, 0.03); nota(1760, 0.07, 0.2, 0.028); },      // etapa riscada: plim curtinho
         erro: () => { nota(392, 0, 0.25, 0.04, 'triangle'); nota(311, 0.12, 0.35, 0.035, 'triangle'); },
       })[qual]?.();
     } catch (e) { /* sem áudio: segue em silêncio */ }
@@ -519,6 +534,25 @@
     if (tipo === 'kc') d.innerHTML = html; else d.textContent = html;
     conversa.appendChild(d);
     return d;
+  }
+  // plano da Kani: uma lista por pedido, atualizada no lugar (☐ → ☑ riscado; ▸ = a etapa de agora)
+  // fica FIXA embaixo enquanto ela trabalha; cada etapa riscada toca um plim; no fim a lista vai para a conversa (histórico)
+  function plano(ev) {
+    const el = $('planoFixo'), it = ev.itens || [], f = Math.min(ev.feitas || 0, it.length);
+    if (ev.novo) { clearTimeout(K.planoT); K.planoFeitas = 0; }
+    const antes = K.planoFeitas || 0;
+    const html = `<b class="pt">📋 Etapas — ${f} de ${it.length}${ev.fim && f === it.length ? ' ✔' : ''}</b>` +
+      it.map((t, i) => `<div class="pi${i < f ? ' ok' : ''}${i >= antes && i < f ? ' risca' : ''}${i === f && !ev.fim ? ' agora' : ''}"><i>${i < f ? '☑' : i === f && !ev.fim ? '▸' : '☐'}</i><span>${esc(t)}</span></div>`).join('');
+    el.innerHTML = html; el.hidden = false;
+    if (f > antes) som('etapa');
+    K.planoFeitas = f;
+    if (ev.fim) {
+      clearTimeout(K.planoT);
+      K.planoT = setTimeout(() => {   // deixa um instante à vista e guarda na conversa
+        const d = document.createElement('div'); d.className = 'msg plano'; d.innerHTML = html.replace(/ risca/g, '');
+        conversa.appendChild(d); el.hidden = true; el.innerHTML = '';
+      }, 2500);
+    }
   }
   const base = p => String(p || '').split(/[\\/]/).pop();
   const ACOES = {   // [ícone, no passado (passo), agora (status)]
@@ -1276,6 +1310,7 @@
         break;
       case 'pickle_progresso': bolha('sis', esc(ev.texto || '')); break;
       case 'kani_pensando': atividade((K.quem === 'pickle' ? 'Big Pickle' : 'Kani') + ' pensando no próximo passo'); break;
+      case 'kani_plano': plano(ev); break;
       case 'kani_estado': atividade((K.quem === 'pickle' ? 'Big Pickle' : 'Kani') + ' ' + (ev.texto || 'trabalhando')); break;
       case 'licao': if (ev.nova) bolha('sis', '📌 Lição guardada para as próximas tarefas: ' + ev.texto); break;
       case 'ajudante_resposta':
@@ -1294,15 +1329,15 @@
       case 'fim': {
         const longa = (Date.now() - K.t0) > 4000;   // resposta rápida não toca nada (só as tarefas que você esperou)
         K.bolha = null; ocupada(false); resumoMudancas();
-        if (ev.erro) { bolha('erro', 'A resposta parou no meio.'); som('erro'); } else if (longa) som('pronto');
+        if (ev.erro) { bolha('erro', (ev.mensagem || 'A resposta parou no meio.') + (ev.diagnostico ? '\nDiagnóstico: ' + ev.diagnostico : '')); som('erro'); } else if (longa) som('pronto');
         avisoLonga();
         break;
       }
       case 'saiu':
         K.bolha = null; ocupada(false);
-        if (ev.erro) { bolha('erro', 'O Claude Code fechou:\n' + ev.erro); som('erro'); }
+        if (ev.erro) { bolha('erro', 'O Claude Code fechou:\n' + ev.erro + (ev.diagnostico ? '\nDiagnóstico: ' + ev.diagnostico : '') + '\nAo continuar, o Claude receberá o registro de retomada para conferir o projeto.'); som('erro'); }
         break;
-      case 'aviso': console.warn(ev.texto); break;
+      case 'aviso': console.warn(ev.texto); bolha('sis', ev.texto); break;
       case 'voz': vozEv(ev); break;
     }
     if (colar) fim();
@@ -1325,33 +1360,26 @@
     texto.style.height = Math.min(texto.scrollHeight, 160) + 'px';
     const tem = !!texto.value.trim() || (typeof ANX !== 'undefined' && ANX.length > 0);
     enviar.disabled = !K.ocupada && !tem;
-    // no meio da tarefa: com texto escrito o botão manda agora (o Claude lê no próximo passo); vazio, para
-    const agora = K.ocupada && tem && K.quem === 'claude';
-    enviar.textContent = !K.ocupada ? 'Enviar' : agora ? 'Mandar agora' : 'Parar';
-    enviar.classList.toggle('parar', K.ocupada && !agora);
-    enviar.title = agora ? 'O Claude lê no próximo passo e muda o rumo, sem parar o que já fez (apague o texto para ver o Parar)' : '';
+    // Com texto, Enter e o botão enfileiram; vazio, o botão continua sendo Parar.
+    const enfileirar = K.ocupada && tem;
+    enviar.textContent = !K.ocupada ? 'Enviar' : enfileirar ? 'Enfileirar' : 'Parar';
+    enviar.classList.toggle('parar', K.ocupada && !enfileirar);
+    enviar.title = enfileirar ? 'Aguardar a tarefa atual. Duplo clique na mensagem pendente para enviá-la com urgência.' : '';
   }
   async function mandar() {
     const t = texto.value.trim();
-    if (K.ocupada && !((t || ANX.length) && K.quem === 'claude')) { api().parar(); atividade('Parando…'); return; }
+    if (K.ocupada && !t && !ANX.length) { api().parar(); atividade('Parando…'); return; }
     if (!t && !ANX.length) return;
     const comandoNova = ['/clear', '/nova', '/new'].includes(t.split(' ')[0]);
     if (K.quem === 'pickle' && (ANX.length || (t.startsWith('/') && !comandoNova))) {
       bolha('sis', 'O Big Pickle recebe pedidos em texto e aceita /clear, /nova e /new para começar outra conversa. Anexos e outros comandos de terminal ainda não estão disponíveis neste agente.');
       return;
     }
-    if (K.ocupada) {   // corrigir o rumo: entra na mesma tarefa, sem parar
+    if (K.ocupada) {
       $('cmds').hidden = true;
       const imgs = ANX.splice(0);
       anexosDesenhar();
-      const b = bolha('eu', t);
-      const m = minis(imgs.map(i => i.mini)); if (m) b.prepend(m);
-      b.title = 'mandada no meio da tarefa';
-      b.classList.add('meio-tarefa');
-      fim(); som('enviar');
-      texto.value = ''; K.bolha = null; ajustar();
-      atividade('Recado entregue: o Claude lê no próximo passo');
-      await api().enviar(t, imgs);
+      await mensagemEnfileirar(t, imgs);
       return;
     }
     $('cmds').hidden = true;
@@ -1381,14 +1409,16 @@
     const i = await api().info();
     if (api().sons_acoes) api().sons_acoes(SOM.on).catch(() => {});
     $('fixar').classList.toggle('on', i.fixa);
-    K.pasta = i.pasta; K.modelo = i.modelo || K.modelo; K.comandos = i.comandos || K.comandos;
+    K.pasta = i.pasta; K.pastasInternas = i.pastas_internas || []; K.modelo = i.modelo || K.modelo; K.comandos = i.comandos || K.comandos;
     K.cotaCodex = i.cota_codex || K.cotaCodex;
     api().contas_listar().then(d => { CT.dados = d; contaBotao(); })
       .then(() => api().conta_atualizar()).then(d => { CT.dados = d; contaBotao(); cotasDaConta(); });
     quemDefinir(i.quem || 'claude', false);
     modoMostrar(i.modo || 'auto');
-    $('pasta').querySelector('[data-pasta-nome]').textContent = base(i.pasta);
-    $('pasta').title = i.pasta + ' · clique para trocar a pasta do projeto';
+    const normalPasta = p => String(p || '').replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+    const interna = K.pastasInternas.some(p => normalPasta(p) === normalPasta(i.pasta));
+    $('pasta').querySelector('[data-pasta-nome]').textContent = interna ? '' : base(i.pasta);
+    $('pasta').title = interna ? 'Abrir pasta de outro projeto' : i.pasta + ' · clique para trocar a pasta do projeto';
     cotas(i.limite);
     conversa.innerHTML = '';
     K.ferr = {}; K.mud = {}; K.avisouEm = 0; K.contexto = 0;
@@ -1570,5 +1600,8 @@
 <script src="codex_uso.js"></script>
 <link rel="stylesheet" href="alteracoes.css">
 <script src="alteracoes.js"></script>
+<script src="kaniball.js"></script>
+<script src="mensagens.js"></script>
+<script src="abas.js"></script>
 </body>
 </html>
