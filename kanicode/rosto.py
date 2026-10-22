@@ -57,7 +57,7 @@ BOCAS = {
 }
 
 EXPRESSOES = ("neutro", "trabalhando", "pensando", "ouvindo", "falando", "pergunta", "feliz", "erro", "dormindo",
-              "lendo", "digitando", "procurando")
+              "lendo", "digitando", "procurando", "concluido")
 
 
 def _desloca(linha, d):
@@ -110,6 +110,14 @@ def quadro(expressao, t=0.0):
         por(OLHOS["felizes"], 5)
         por(BOCAS["riso"], 9)
         g[8][3] = g[8][12] = "p"
+    elif e == "concluido":   # piscadinha ao confirmar a conclusão; t é o tempo da comemoração
+        por(OLHOS["abertos"], 5)
+        if 0.55 <= t < 0.85 or 1.55 <= t < 1.85:
+            for y in (5, 6):
+                g[y][10] = g[y][11] = "."
+            g[7][10] = g[7][11] = "#"
+        por(BOCAS["sorriso"], 10)
+        g[9][3] = g[9][12] = "p"
     elif e == "erro":
         por(OLHOS["x"], 5)
         por(BOCAS["triste"], 10)

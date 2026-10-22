@@ -357,6 +357,10 @@
   .perm .dif { max-height: 220px; margin: 6px 0 8px; }
 </style>
 <link rel="stylesheet" href="organizacao.css">
+<link rel="stylesheet" href="respostas.css">
+<link rel="stylesheet" href="opencode_mvp.css">
+<link rel="stylesheet" href="codigo_agente.css">
+<link rel="stylesheet" href="codex_uso.css">
 </head>
 <body>
   <div class="topo pywebview-drag-region">
@@ -412,6 +416,7 @@
     <button class="bt" id="som" title="Sons suaves das ações"><span class="icone">◖</span><span>Sons das ações</span></button>
     <div class="menu-divisor"></div>
     <button class="bt" id="fixar" title="Sempre por cima"><span class="icone">⌖</span><span>Sempre por cima</span></button>
+    <label class="navegador-links">Abrir links com<select id="navegador-links" title="Navegador externo; a última escolha fica salva"><option value="chrome">Chrome (ou padrão)</option><option value="padrao">Padrão do Windows</option></select></label>
   </div>
   <div class="uso" id="uso" hidden></div>
   <div class="contas" id="contas" hidden></div>
@@ -423,6 +428,7 @@
     </div>
     <div class="lista" id="hab-lista"></div>
   </div>
+<script src="respostas_render.js"></script>
 <script>
   const $ = id => document.getElementById(id);
   const api = () => window.pywebview && pywebview.api;
@@ -439,6 +445,7 @@
     claude: { nome: 'Claude', cor: '#B6F23A', av: '<img src="claude.svg" alt="">', desc: 'Eu, com a equipe: delego ao Codex e à Kani quando couber' },
     codex: { nome: 'Codex', cor: '#E8ECEA', av: '<img src="codex.svg" alt="">', desc: 'Direto, na sua conta ChatGPT Plus (não gasta a cota do Claude)' },
     kani: { nome: 'Kani', cor: '#F27FB2', av: '<img src="kani.webp" alt="">', desc: 'Modo Kani: local e grátis, em etapas (disco, pastas, arquivos, demandas); passa ao Claude o que for difícil' },
+    pickle: { nome: 'Big Pickle', cor: '#B8D98A', av: '<img src="pickle.webp" alt="">', desc: 'Online pelo OpenCode · consultas, navegação e código em cópia isolada. Você revisa antes de aplicar. Envia pedidos, histórico e resultados ao provedor; evite dados confidenciais. Gratuidade sujeita à disponibilidade.' },
   };
   const AJ = {};   // ajudantes em ação: quem → {el, t0, tokens, timer}
   K.quem = 'claude';
@@ -453,38 +460,10 @@
   // ── Markdown simples (o que o Claude usa: parágrafos, listas, títulos, código, negrito, links, tabelas) ──
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function linha(t) {
-    return esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-      .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>').replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2">$1</a>');
+    return KCResposta.linha(t);
   }
   function md(src) {
-    const out = [], L = src.replace(/\r/g, '').split('\n');
-    let i = 0;
-    while (i < L.length) {
-      const l = L[i];
-      if (/^```/.test(l)) {
-        const cod = []; i++;
-        while (i < L.length && !/^```/.test(L[i])) cod.push(L[i++]);
-        i++; out.push('<pre><code>' + esc(cod.join('\n')) + '</code></pre>'); continue;
-      }
-      if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < L.length && /^\s*\|[\s:|-]+\|\s*$/.test(L[i + 1])) {
-        const cel = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => linha(c.trim()));
-        let h = '<table><tr>' + cel(l).map(c => '<th>' + c + '</th>').join('') + '</tr>'; i += 2;
-        while (i < L.length && /^\s*\|.*\|\s*$/.test(L[i])) h += '<tr>' + cel(L[i++]).map(c => '<td>' + c + '</td>').join('') + '</tr>';
-        out.push(h + '</table>'); continue;
-      }
-      const tit = l.match(/^(#{1,3})\s+(.*)/);
-      if (tit) { out.push(`<h${tit[1].length}>${linha(tit[2])}</h${tit[1].length}>`); i++; continue; }
-      if (/^\s*([-*]|\d+[.)])\s+/.test(l)) {
-        const num = /^\s*\d/.test(l), it = [];
-        while (i < L.length && /^\s*([-*]|\d+[.)])\s+/.test(L[i])) it.push('<li>' + linha(L[i++].replace(/^\s*([-*]|\d+[.)])\s+/, '')) + '</li>');
-        out.push((num ? '<ol>' : '<ul>') + it.join('') + (num ? '</ol>' : '</ul>')); continue;
-      }
-      if (!l.trim()) { i++; continue; }
-      const p = [];
-      while (i < L.length && L[i].trim() && !/^(```|#{1,3}\s|\s*([-*]|\d+[.)])\s+)/.test(L[i])) p.push(linha(L[i++]));
-      out.push('<p>' + p.join('<br>') + '</p>');
-    }
-    return out.join('');
+    return KCResposta.md(src);
   }
 
   // ── sons suaves (sintetizados aqui: sem arquivo, sem licença). Baixos e curtos; 🔈 no topo liga/desliga ──
@@ -558,6 +537,15 @@
     kani_buscar_no_mapa: ['🗺', 'buscou no mapa', 'Buscando no mapa'], kani_demandas_panda: ['🐼', 'viu as demandas', 'Vendo as demandas'],
     kani_git_resumo: ['🌿', 'viu o git', 'Vendo o git'], kani_abrir: ['↗', 'abriu', 'Abrindo'],
     kani_ver_kanivete: ['👁', 'olhou o KANIVETE', 'Olhando o KANIVETE'], kani_abrir_ferramenta: ['🧭', 'abriu no KANIVETE', 'Abrindo no KANIVETE'],
+    kani_abrir_kanivete: ['↗', 'verificou a abertura do KANIVETE', 'Abrindo o KANIVETE'],
+    kani_codigo_preparar: ['▣', 'preparou cópia de código', 'Preparando cópia isolada'],
+    kani_codigo_incluir: ['▣', 'incluiu arquivo na cópia', 'Copiando dependência local'],
+    kani_codigo_ler: ['⌕', 'leu código da cópia', 'Lendo a cópia'],
+    kani_codigo_substituir: ['✎', 'alterou código na cópia', 'Editando a cópia'],
+    kani_codigo_criar: ['＋', 'criou arquivo na cópia', 'Criando na cópia'],
+    kani_codigo_verificar: ['✓', 'conferiu sintaxe', 'Conferindo sintaxe da cópia'],
+    kani_codigo_testar: ['✓', 'testou a cópia', 'Executando testes na cópia'],
+    kani_codigo_revisar: ['≠', 'preparou diff', 'Preparando revisão do código'],
     kani_pedir_ao_kanivete: ['🪄', 'pediu ao KANIVETE', 'KANIVETE criando:'],
     kani_abrir_no_kanibrowser: ['🌐', 'abriu no KaniBrowser', 'Abrindo no KaniBrowser'], kani_fechar_aba: ['✕', 'fechou a aba', 'Fechando a aba'],
     kani_salvar_texto: ['📝', 'salvou o arquivo', 'Salvando o arquivo'], kani_salvar_conversa: ['💾', 'salvou a conversa', 'Salvando a conversa'],
@@ -647,11 +635,11 @@
     return d;
   }
   // prints: imagem que o Claude abriu (Read) ou que um comando gerou (caminho na saída) aparece na conversa
-  const IMG_RE = /[A-Za-z]:[\/][^\s"'<>|*?`]+?\.(?:png|jpe?g|webp)\b/gi;
+  const IMG_RE = /[A-Za-z]:[\\/][^\r\n"'<>|*?`]+?\.(?:png|jpe?g|webp|gif|bmp)\b/gi;
   function prints(d, saida) {
     const cs = [];
     const f = d._ent.file_path || '';
-    if (d._nome === 'Read' && /\.(png|jpe?g|webp)$/i.test(f)) cs.push(f);
+    if (d._nome === 'Read' && /\.(png|jpe?g|webp|gif|bmp)$/i.test(f)) cs.push(f);
     else if (/^(Bash|PowerShell)$/.test(d._nome)) (saida || '').match(IMG_RE)?.forEach(c => cs.includes(c) || cs.push(c));
     let depois = d;
     cs.slice(0, 4).forEach(async c => {
@@ -660,7 +648,7 @@
       const fg = document.createElement('figure');
       fg.className = 'print'; fg.title = c + ' · clique para abrir';
       fg.innerHTML = `<img src="${url}"><figcaption>${esc(base(c))}</figcaption>`;
-      fg.onclick = () => api().abrir_imagem(c);
+      fg.dataset.imagem = c; fg.tabIndex = 0; fg.setAttribute('role', 'button'); fg.setAttribute('aria-label', 'Ampliar imagem: ' + base(c));
       depois.after(fg); depois = fg;
       if (typeof perto !== "function" || perto()) fim();
     });
@@ -778,8 +766,10 @@
     $('faz').textContent = K.faz;
     const tok = K.tokFeitos + K.tokMsg;
     if (K.ocupada) {
-      $('num').innerHTML = `<b>${relogio((Date.now() - K.t0) / 1000)}</b> · ↓ ${mil(tok)} tokens` + (K.contexto ? ` · lendo ${mil(K.contexto)}` : '');
-      $('num').title = 'tempo da tarefa · tokens que o Claude escreveu · tamanho da conversa que ele lê a cada passo';
+      const codex = K.quem === 'codex';
+      const medicao = codex && !K.codexMedido ? 'aguardando medição de tokens' : (['kani','pickle'].includes(K.quem) ? `${mil(tok)} tokens por etapa` : `↓ ${mil(tok)} tokens`);
+      $('num').innerHTML = `<b>${relogio((Date.now() - K.t0) / 1000)}</b> · ${medicao}` + (K.contexto ? ` · lendo ${mil(K.contexto)}` : '');
+      $('num').title = codex ? 'Tokens informados pelo Codex, atualizados quando o cliente registra uma medição; não é estimativa por caractere.' : 'tempo da tarefa · tokens que o Claude escreveu · tamanho da conversa que ele lê a cada passo';
     }
   }
   function ocupada(on) {
@@ -803,6 +793,10 @@
   function cotas(l) {
     if (l) K.limite = l;
     $('kani-recursos').hidden = K.quem !== 'kani';
+    if (K.quem === 'pickle') {
+      $('c5').hidden = true; $('csem').hidden = true; $('uso').hidden = true;
+      return;
+    }
     if (K.quem === 'kani') {
       $('c5').hidden = true; $('csem').hidden = true; $('uso').hidden = true;
       return;
@@ -1003,7 +997,7 @@
     $('lado-contas').innerHTML = ctVisiveis(d).map(c => {
       const ct = c.cotas || {}, uso = ct.h5 != null ? ct.h5 : 0;
       const cor = uso >= .85 ? 'var(--erro)' : uso >= .65 ? 'var(--aviso)' : 'var(--lima)';
-      return `<div class="cnt${c.id === d.ativa ? ' ativa' : ''}${c.logado === false ? ' sai' : ''}${c.igual ? ' igual' : ''}" data-id="${c.id}" style="--uso:${uso};--cor-uso:${cor}">
+      return `<div class="cnt${c.id === d.ativa ? ' ativa' : ''}${c.logado === false ? ' sai' : ''}${c.igual ? ' igual' : ''}" data-id="${c.id}" aria-label="${esc(nomeCt(c))}${c.id === d.ativa ? ' · conta em uso' : ''}" style="--uso:${uso};--cor-uso:${cor}">
         ${fotoCt(c)}<small>${ct.h5 != null ? Math.round(uso * 100) + '%' : '·'}</small></div>`;
     }).join('');
   }
@@ -1280,8 +1274,9 @@
         ajudante(ev);
         if (ev.quem === K.quem && K.quem !== 'claude' && ev.fase !== 'fim') atividade(ev.texto || 'Trabalhando');
         break;
-      case 'kani_pensando': atividade('Kani pensando no próximo passo'); break;
-      case 'kani_estado': atividade('Kani ' + (ev.texto || 'trabalhando')); break;
+      case 'pickle_progresso': bolha('sis', esc(ev.texto || '')); break;
+      case 'kani_pensando': atividade((K.quem === 'pickle' ? 'Big Pickle' : 'Kani') + ' pensando no próximo passo'); break;
+      case 'kani_estado': atividade((K.quem === 'pickle' ? 'Big Pickle' : 'Kani') + ' ' + (ev.texto || 'trabalhando')); break;
       case 'licao': if (ev.nova) bolha('sis', '📌 Lição guardada para as próximas tarefas: ' + ev.texto); break;
       case 'ajudante_resposta':
         bolhaAjudante(ev.quem, ev.texto, ev.ok);
@@ -1340,6 +1335,11 @@
     const t = texto.value.trim();
     if (K.ocupada && !((t || ANX.length) && K.quem === 'claude')) { api().parar(); atividade('Parando…'); return; }
     if (!t && !ANX.length) return;
+    const comandoNova = ['/clear', '/nova', '/new'].includes(t.split(' ')[0]);
+    if (K.quem === 'pickle' && (ANX.length || (t.startsWith('/') && !comandoNova))) {
+      bolha('sis', 'O Big Pickle recebe pedidos em texto e aceita /clear, /nova e /new para começar outra conversa. Anexos e outros comandos de terminal ainda não estão disponíveis neste agente.');
+      return;
+    }
     if (K.ocupada) {   // corrigir o rumo: entra na mesma tarefa, sem parar
       $('cmds').hidden = true;
       const imgs = ANX.splice(0);
@@ -1379,6 +1379,7 @@
   async function trocarPasta() { if (K.ocupada) return; const p = await api().escolher_pasta(); if (p) carregar(); }
   async function carregar() {
     const i = await api().info();
+    if (api().sons_acoes) api().sons_acoes(SOM.on).catch(() => {});
     $('fixar').classList.toggle('on', i.fixa);
     K.pasta = i.pasta; K.modelo = i.modelo || K.modelo; K.comandos = i.comandos || K.comandos;
     K.cotaCodex = i.cota_codex || K.cotaCodex;
@@ -1397,7 +1398,8 @@
     h.forEach(ev => { if (ev.t === 'permissao_fim') respostas[ev.id] = ev.ok; if (ev.t === 'pergunta_fim') escolhas[ev.id] = ev.respostas; });
     for (const ev of h) {
       if (ev.t === 'eu') { const b = bolha('eu', ev.texto); const m = minis(ev.minis); if (m) b.prepend(m); }
-      else if (ev.t === 'ajudante_resposta') bolhaAjudante(ev.quem, ev.texto, ev.ok);
+      else if (ev.t === 'ajudante_resposta') { bolhaAjudante(ev.quem, ev.texto, ev.ok); window.kcEv({t:'historico_turno'}); }
+      else if (['codex_progresso', 'codex_alteracao', 'codigo_alteracao', 'pickle_progresso'].includes(ev.t)) window.kcEv(ev);
       else if (ev.t === 'pergunta') cartaoPergunta(ev, escolhas[ev.id] || { '': '(sem resposta)' });
       else if (ev.t === 'kc') bolha('kc', md(ev.texto));
       else if (ev.t === 'ferr') passo(ev.id, ev.nome, ev.entrada);
@@ -1456,6 +1458,7 @@
     SOM.on = !SOM.on;
     try { localStorage.setItem('kc-som', SOM.on ? '1' : '0'); } catch (e) { /* ok */ }
     somBotao();
+    if (api().sons_acoes) api().sons_acoes(SOM.on).catch(() => {});
     if (SOM.on) som('permitido');
   });
   somBotao();
@@ -1561,5 +1564,11 @@
 <script src="paineis.js"></script>
 <script src="organizacao.js"></script>
 <script src="kani_gpu.js"></script>
+<script src="respostas.js"></script>
+<script src="opencode_mvp.js"></script>
+<script src="codigo_agente.js"></script>
+<script src="codex_uso.js"></script>
+<link rel="stylesheet" href="alteracoes.css">
+<script src="alteracoes.js"></script>
 </body>
 </html>

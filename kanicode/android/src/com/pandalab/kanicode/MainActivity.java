@@ -101,5 +101,20 @@ public class MainActivity extends Activity {
         public void nivel(float n) {
             if (BolinhaService.eu != null) BolinhaService.eu.nivel(n);
         }
+
+        @JavascriptInterface
+        public void quem(String q) {
+            if (BolinhaService.eu != null) BolinhaService.eu.quem(q);
+        }
+
+        @JavascriptInterface
+        public void atividade(String a) {
+            if (BolinhaService.eu != null) BolinhaService.eu.atividade(a);
+        }
+
+        @JavascriptInterface
+        public void humor(String hm) {
+            if (BolinhaService.eu != null) BolinhaService.eu.humor(hm);
+        }
     }
 }

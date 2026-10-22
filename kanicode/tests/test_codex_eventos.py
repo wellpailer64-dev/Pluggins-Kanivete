@@ -35,6 +35,46 @@ class EventosCodexTest(unittest.TestCase):
         self.assertEqual(r["uso"]["entrada"], 300)
         self.assertEqual(r["uso"]["cache"], 200)
 
+    def test_pulso_publica_medicao_antes_do_fim(self):
+        eventos = []
+        def executar(cmd, pasta, entrada, receber, espera, **kw):
+            receber(json.dumps({"type":"thread.started","thread_id":"medicao-teste"}))
+            kw["ao_pulso"]()
+            self.assertTrue(any(e["t"] == "codex_uso" for e in eventos))
+            receber(json.dumps({"type":"turn.completed","usage":{}}))
+            return {"codigo":0,"erro":"","cancelado":False,"estourou":False,"primeiro_evento_ms":1,"ms":10}
+        with patch.object(ajudantes.shutil, "which", return_value="codex"), \
+                patch.object(ajudantes.codex_processo, "executar", side_effect=executar), \
+                patch.object(ajudantes, "_codex_uso", return_value={"input_tokens":100,"cached_input_tokens":50,"output_tokens":7}), \
+                patch.object(ajudantes, "_codex_cota", return_value=None), \
+                patch.object(codex_contexto.licoes, "anexo", return_value=""):
+            ajudantes.codex("Oi", str(Path.cwd()), ao_evento=eventos.append)
+        uso = next(e for e in eventos if e["t"] == "codex_uso")
+        self.assertEqual(uso["tokens"], 57)
+        self.assertEqual(uso["uso"]["saida"], 7)
+
+    def test_esgotamento_emite_aviso_especifico_com_mensagem(self):
+        mensagem = "You've hit your usage limit. Try again at 23:00."
+        r, eventos = self.rodar([{"type":"turn.failed","error":{"message":mensagem}}])
+        self.assertFalse(r["ok"])
+        self.assertEqual(next(e for e in eventos if e["t"] == "codex_limite")["mensagem"], mensagem)
+
+    def test_comentarios_chegam_inteiros_e_entram_no_historico(self):
+        texto = "Conferi soma.py. " + "Detalhes úteis. " * 20
+        r, eventos = self.rodar([
+            {"type":"item.updated","item":{"id":"a","type":"agent_message","text":"Conferindo"}},
+            {"type":"item.completed","item":{"id":"a","type":"agent_message","text":texto}},
+            {"type":"item.completed","item":{"id":"b","type":"agent_message","text":"Pronto"}},
+            {"type":"turn.completed","usage":{}}
+        ])
+        self.assertEqual(r["progresso"], [texto])
+        self.assertEqual(r["texto"], "Pronto")
+        comentarios = [e for e in eventos if e["t"] == "codex_progresso"]
+        self.assertEqual(comentarios[0]["texto"], "Conferindo")
+        self.assertEqual(comentarios[1]["texto"], texto)
+        self.assertFalse(comentarios[0].get("concluido", False))
+        self.assertTrue(comentarios[1]["concluido"])
+
     def test_turno_falhou_nao_vira_sucesso_com_exit_zero(self):
         r, _ = self.rodar([{"type": "turn.failed", "error": {"message": "sem conexão"}}])
         self.assertFalse(r["ok"])

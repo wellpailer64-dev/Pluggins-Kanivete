@@ -14,6 +14,8 @@ MODELOS = os.path.join(os.path.splitdrive(PASTA)[0] + os.sep, "Kanivete", "KaniC
 BASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 ARQUIVOS = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 VOZ, VELOCIDADE = "pf_dora", 1.08
+PRONTIDAO = ("Recebi. Já vou analisar.", "Certo, estou verificando.", "Recebi seu pedido. Só um instante.")
+CACHE_PRONTIDAO = os.path.join(MODELOS, f"prontidao-v1-{VOZ}-{VELOCIDADE}.npz")
 FIM_FRASE = re.compile(r"(.+?[.!?…:;])(\s+|$)|(.+?)\n", re.S)
 
 
@@ -42,6 +44,10 @@ class Fala:
     def __init__(self, ao_estado=None):
         self.ao_estado = ao_estado
         self._k = None
+        self._modelo_lock = threading.RLock()
+        self._preparo_lock = threading.Lock()
+        self._prontidas = None
+        self._prontidao_indice = 0
         self._frases = queue.Queue()
         self._audios = queue.Queue(maxsize=3)
         self._buf = ""
@@ -58,12 +64,62 @@ class Fala:
         return not (self._frases.empty() and self._audios.empty()) or getattr(self, "_tocando", False)
 
     def carregar(self):
-        if self._k is None:
-            baixar()
-            from kokoro_onnx import Kokoro
-            self._k = Kokoro(os.path.join(MODELOS, ARQUIVOS[0]), os.path.join(MODELOS, ARQUIVOS[1]))
-            self._k.create("Oi.", voice=VOZ, speed=VELOCIDADE, lang="pt-br")   # aquece (a 1ª chamada é lenta)
-        return self._k
+        with self._modelo_lock:
+            if self._k is None:
+                baixar()
+                from kokoro_onnx import Kokoro
+                self._k = Kokoro(os.path.join(MODELOS, ARQUIVOS[0]), os.path.join(MODELOS, ARQUIVOS[1]))
+                self._k.create("Oi.", voice=VOZ, speed=VELOCIDADE, lang="pt-br")   # aquece (a 1ª chamada é lenta)
+            return self._k
+
+    def _carregar_prontidao(self):
+        try:
+            with np.load(CACHE_PRONTIDAO, allow_pickle=False) as dados:
+                taxa = int(dados["taxa"])
+                audios = [np.asarray(dados[f"audio_{i}"], dtype=np.float32) for i in range(len(PRONTIDAO))]
+                if not 8000 <= taxa <= 96000 or any(a.ndim != 1 or not 0 < a.size <= taxa * 10 for a in audios):
+                    return False
+                self._prontidas = [(a, taxa) for a in audios]
+                return True
+        except (OSError, ValueError, KeyError):
+            return False
+
+    def preparar_prontidao(self):
+        if not self._preparo_lock.acquire(blocking=False):
+            return
+        try:
+            if self._carregar_prontidao():
+                return
+            audios = []
+            for texto in PRONTIDAO:
+                with self._modelo_lock:
+                    a, taxa = self.carregar().create(texto, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
+                audios.append(np.asarray(a, dtype=np.float32))
+            os.makedirs(MODELOS, exist_ok=True)
+            temporario = CACHE_PRONTIDAO + ".parte.npz"
+            np.savez(temporario, taxa=taxa, **{f"audio_{i}": a for i, a in enumerate(audios)})
+            os.replace(temporario, CACHE_PRONTIDAO)
+            self._prontidas = [(a, taxa) for a in audios]
+        except Exception:
+            pass  # a falta da mensagem pronta nunca impede a resposta real
+        finally:
+            self._preparo_lock.release()
+
+    def prontidao(self, ainda_valido):
+        if self._prontidas is None and not self._carregar_prontidao():
+            threading.Thread(target=self.preparar_prontidao, daemon=True).start()
+            return False
+        if not ainda_valido():
+            return False
+        a, taxa = self._prontidas[self._prontidao_indice % len(self._prontidas)]
+        self._prontidao_indice += 1
+        self._pend += 1
+        try:
+            self._audios.put_nowait((self._ger, a, taxa, ainda_valido))
+            return True
+        except queue.Full:
+            self._pend = max(0, self._pend - 1)
+            return False
 
     def soltar(self):
         self.parar()
@@ -132,19 +188,23 @@ class Fala:
             if ger != self._ger:
                 continue
             try:
-                a, sr = self.carregar().create(f, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
+                with self._modelo_lock:
+                    a, sr = self.carregar().create(f, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
             except Exception:
                 self._tocou(ger)
                 continue
             if ger == self._ger:
-                self._audios.put((ger, a, sr))
+                self._audios.put((ger, a, sr, None))
 
     def _tocar(self):
         import sounddevice as sd
         self._tocando = False
         while True:
-            ger, a, sr = self._audios.get()
+            ger, a, sr, ainda_valido = self._audios.get()
             if ger != self._ger:
+                continue
+            if ainda_valido is not None and not ainda_valido():
+                self._tocou(ger)
                 continue
             self._tocando = True
             self._estado("falando")

@@ -81,6 +81,12 @@ class App:
         self._voz = None           # voz.py: "Ei Kani" + fala para texto
         self._fala = None          # fala.py: resposta lida em voz alta (pedido por voz com a janela fechada)
         self._por_voz = False
+        self._estado_voz = ""
+        self._sons_ativos = bool(_ler_estado().get("sons_bolinha", True))
+        self._codex_comentario = ""
+        self._codex_lidos = set()
+        self._codex_falando = False
+        self._prontidao_pendente = None
         self._respondendo = False  # resposta do Claude chegando (para falar o resto se a janela for minimizada)
         self._resposta = ""        # o texto da mensagem atual da resposta, desde o último "texto_novo"
         self._pend = {}            # permissões/perguntas abertas, por id (para o celular, movel.py)
@@ -246,6 +252,10 @@ class App:
             self._fala.parar()   # "Ei Kani" no meio da fala = interromper
 
     def _voz_estado(self, e):
+        self._estado_voz = e
+        if e in ("ouvindo", "transcrevendo"):
+            from sons_bolinha import parar
+            parar()
         b = {"escutando": "escutando", "ouvindo": "ouvindo", "transcrevendo": "pensando"}.get(e, "")
         self._na_ui(lambda: self._bola and self._bola.definir(voz=b))
         self._para_janela({"t": "voz", "fase": e})
@@ -262,8 +272,11 @@ class App:
         return self._fala
 
     def _fala_estado(self, e):
+        if e == "falando":
+            from sons_bolinha import parar
+            parar()
         if e == "fim":   # terminou de falar a resposta: ouve o próximo pedido sem "Ei Kani" (janela fechada)
-            if not self._aberta:   # chat minimizado = conversa por voz, mesmo com o Ei Kani desligado
+            if not self._aberta and not self._ocupada():   # chat minimizado = conversa por voz, mesmo com o Ei Kani desligado
                 try:
                     if not self._voz:
                         from voz import Voz
@@ -281,6 +294,8 @@ class App:
             self._janela.hide()
         self._aberta = False
         self._na_ui(lambda: self._bola and self._bola.definir(aberta=False))
+        if self._ajudante_ativo == "codex":
+            self._codex_ler(self._codex_comentario)
         # minimizou com a resposta ainda chegando (pedido escrito): o resto vira voz, a partir da mensagem atual
         if self._respondendo and not self._por_voz:
             try:
@@ -291,6 +306,23 @@ class App:
                     f.pedaco(self._resposta)
             except Exception:
                 self._por_voz = False
+
+    def sons_acoes(self, on=None):
+        if on is not None:
+            self._sons_ativos = bool(on)
+            _gravar_estado(sons_bolinha=self._sons_ativos)
+            if not self._sons_ativos:
+                from sons_bolinha import parar
+                parar()
+        return self._sons_ativos
+
+    def _som_bolinha(self, acao):
+        if not self._sons_ativos or self._estado_voz in ("ouvindo", "transcrevendo"):
+            return False
+        if self._fala and self._fala.falando:
+            return False
+        from sons_bolinha import tocar
+        return tocar(acao)
 
     def fixar(self, on):
         """janela sempre por cima (alfinete)"""
@@ -305,6 +337,58 @@ class App:
                 "ocupada": self._ocupada(), "comandos": self._comandos,
                 "modelo": e.get("modelo") or "", "cota_codex": e.get("cota_codex"), "quem": e.get("quem") or "claude",
                 "modo": getattr(self, "_modo", "auto")}
+
+    def codex_limites(self, forcar=False):
+        import codex_conta
+        r = codex_conta.consultar(bool(forcar))
+        if r.get("ok"):
+            _gravar_estado(cota_codex=r["cota"])
+        return r
+
+    def codex_redefinir(self, tentativa, credito=""):
+        import codex_conta
+        r = codex_conta.redefinir(tentativa, credito)
+        if r.get("cota"):
+            _gravar_estado(cota_codex=r["cota"])
+        return r
+
+    def codigo_revisar(self):
+        import codigo_agente
+        if self._ocupada():
+            return {"ok": False, "mensagem": "Acompanhe os passos na conversa; espere a tarefa terminar para revisar o diff."}
+        agente = _ler_estado().get("quem")
+        try:
+            with codigo_agente.TRAVA:
+                ctx = codigo_agente.Contexto(self._pasta(), agente).carregar()
+                r = ctx.revisar()
+                r["verificacao"] = ctx.verificar()
+                r["ok"] = True
+                r["pode_aplicar"] = bool(r["arquivos"]) and not r["aplicada"] and r["verificacao"]["ok"] and getattr(self, "_modo", "auto") != "plan"
+                if r.get("testes") and not r["testes"]["ok"]:
+                    r["pode_aplicar"] = False
+                return r
+        except (ValueError, OSError) as e:
+            return {"ok": False, "mensagem": str(e)}
+
+    def codigo_aplicar(self, agente, revisao):
+        import codigo_agente
+        if self._ocupada() or getattr(self, "_modo", "auto") == "plan":
+            return {"ok": False, "mensagem": "Termine a tarefa e saia de Planejar antes de aplicar."}
+        if agente != _ler_estado().get("quem"):
+            return {"ok": False, "mensagem": "O agente selecionado mudou; abra a revisão novamente."}
+        try:
+            with codigo_agente.TRAVA:
+                return codigo_agente.Contexto(self._pasta(), agente).carregar().aplicar(str(revisao))
+        except (ValueError, OSError) as e:
+            return {"ok": False, "mensagem": str(e)}
+
+    def opencode_info(self):
+        import opencode_mvp
+        return opencode_mvp.info()
+
+    def opencode_testar(self, texto):
+        import opencode_mvp
+        return opencode_mvp.testar(texto)
 
     def gpu_info(self):
         """Telemetria do PC, solicitada pela interface apenas no modo Kani visível."""
@@ -414,28 +498,97 @@ class App:
 
     # ── falar direto com um ajudante ("Quem responde": Codex ou Kani) ──
     def quem(self, nome):
-        _gravar_estado(quem=nome if nome in ("claude", "codex", "kani") else "claude")
+        _gravar_estado(quem=nome if nome in ("claude", "codex", "kani", "pickle") else "claude")
         self.bola_quem(nome)
         return True
 
     def bola_quem(self, nome):
         """selo do agente selecionado, junto do rosto animado"""
-        self._na_ui(lambda: self._bola and self._bola.definir(quem=nome if nome in ("claude", "codex", "kani") else "claude"))
+        self._na_ui(lambda: self._bola and self._bola.definir(quem=nome if nome in ("claude", "codex", "kani", "pickle") else "claude"))
         return True
 
-    def ajudante(self, quem, texto):
+    # ── conversa da Kani: vai para a mesma conversa da janela (trocar Kani ⇄ Claude não apaga) e o Claude lê depois ──
+    def _kani_arquivo(self, pasta, so_previa=False):
+        """antes de existir conversa do Claude nesta pasta, a da Kani fica à parte (entra na dele na 1ª mensagem)"""
+        sid = None if so_previa else (_ler_estado().get("sessoes") or {}).get(pasta)
+        if sid:
+            return os.path.join(DADOS, "conversas", sid + ".jsonl")
+        import hashlib
+        return os.path.join(DADOS, "conversas_kani", hashlib.md5(os.path.normcase(pasta).encode()).hexdigest()[:12] + ".jsonl")
+
+    def _kani_guardar(self, pasta, eventos, pedido, resposta):
+        try:
+            with _ESTADO_TRAVA:
+                a = self._kani_arquivo(pasta)
+                os.makedirs(os.path.dirname(a), exist_ok=True)
+                with open(a, "a", encoding="utf-8") as f:
+                    for ev in eventos:
+                        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+                nv = _ler_estado().get("kani_nao_visto") or {}
+                nv[pasta] = ((nv.get(pasta) or []) + [{"pedido": pedido, "resposta": resposta}])[-8:]
+                _gravar_estado(kani_nao_visto=nv)
+        except OSError:
+            pass
+
+    def _kani_previa(self, pasta, tirar=False):
+        a = self._kani_arquivo(pasta, so_previa=True)
+        try:
+            with open(a, encoding="utf-8") as f:
+                evs = [json.loads(l) for l in f if l.strip()]
+        except (OSError, ValueError):
+            return []
+        if tirar:
+            try:
+                os.remove(a)
+            except OSError:
+                pass
+        return evs
+
+    def _kani_para_claude(self, pasta):
+        """trocas com a Kani que o Claude ainda não viu: vão junto da próxima mensagem (o Pailer não vê o bloco)"""
+        with _ESTADO_TRAVA:
+            nv = _ler_estado().get("kani_nao_visto") or {}
+            trocas = nv.pop(pasta, None)
+            if not trocas:
+                return ""
+            _gravar_estado(kani_nao_visto=nv)
+        linhas = "\n".join(f"Pailer: {t['pedido']}\nKani: {t['resposta']}" for t in trocas)
+        return ("[Contexto do KaniCode, o Pailer não vê este bloco: antes desta mensagem ele conversou com a Kani (modo Kani, "
+                "modelo local). Últimas trocas:\n" + linhas + "\nPassos/ferramentas de cada pedido: "
+                + os.path.join(DADOS, "kani_modo.jsonl") + "]\n\n")
+
+    def _comando_conclusao(self, texto, de="pc"):
+        import unicodedata
+        t = re.sub(r"\s*\(por voz\)\s*$", "", texto or "", flags=re.I)
+        t = "".join(c for c in unicodedata.normalize("NFD", t.lower()) if not unicodedata.combining(c))
+        t = re.sub(r"[.!?,;:]", "", t)
+        t = " ".join(t.split())
+        if t not in ("/concluir", "tarefa concluida", "concluir tarefa", "concluir a tarefa",
+                     "pode concluir a tarefa", "finalizamos a tarefa", "tarefa finalizada") or self._ocupada():
+            return False
+        self._para_janela({"t": "eco_eu", "texto": texto, "de": de, "minis": []})
+        self._na_ui(lambda: self._bola and self._bola.definir(humor="concluido", segundos=2.8))
+        self._para_janela({"t": "local", "acao": "aviso", "texto": "Tarefa concluída! 👍"})
+        return True
+
+    def ajudante(self, quem, texto, _de="pc"):
         import ajudantes
-        if quem not in ("codex", "kani"):
+        if quem not in ("codex", "kani", "pickle"):
             raise ValueError("ajudante desconhecido")
         if not texto or not texto.strip():
             return False
+        if self._comando_conclusao(texto, _de):
+            return True
         if self._ocupada() or not self._ajudante_trava.acquire(blocking=False):
             raise RuntimeError("Espere a resposta terminar ou use Parar antes de enviar outra demanda.")
+        # a mensagem aparece também nos outros aparelhos (pedido por voz no celular aparecia só a resposta)
+        self._para_janela({"t": "eco_eu", "texto": texto, "de": _de, "minis": []})
         self._ajudante_ativo = quem
         pasta = self._pasta()   # não deixar uma troca de pasta mudar o destino no meio da tarefa
         editar = getattr(self, "_modo", "auto") != "plan"
         if quem == "codex":
             self._codex_parar = threading.Event()
+            self._prontidao_agendar()
 
         def evento_codex(ev):
             if ev.get("sessao"):
@@ -453,16 +606,19 @@ class App:
                     if r.get("sessao"):
                         self._codex_guardar(pasta, r["sessao"])
                     self._codex_registrar(pasta, texto, r)
+                elif quem == "pickle":
+                    r = self._pickle_rodar(texto, pasta, por_voz, editar)
                 else:   # modo Kani: em etapas (kani_modo.py), com a conversa recente como contexto
                     import kani_modo
                     self._kani_parar = threading.Event()
-                    passos = []
+                    passos, vistos = [], []
 
                     def ev(e):   # guarda os passos para o registro (D:/Kanivete/KaniCode/kani_modo.jsonl)
                         if e.get("t") in ("ferr", "ferr_fim"):
                             passos.append({k: e.get(k) for k in ("t", "nome", "entrada", "ok", "saida") if e.get(k) is not None})
+                            vistos.append(dict(e))
                         self._evento(e)
-                    r = kani_modo.rodar(texto, self._pasta(), ev, getattr(self, "_kani_hist", []), por_voz, self._kani_parar)
+                    r = kani_modo.rodar(texto, pasta, ev, getattr(self, "_kani_hist", []), por_voz, self._kani_parar, editar=editar)
                     try:   # registro de cada pedido do modo Kani: o Claude lê depois para achar limitações
                         with open(os.path.join(DADOS, "kani_modo.jsonl"), "a", encoding="utf-8") as f:
                             f.write(json.dumps({"quando": time.strftime("%Y-%m-%d %H:%M:%S"), "pedido": texto, "voz": por_voz,
@@ -480,6 +636,9 @@ class App:
                         return
                     self._kani_hist = (getattr(self, "_kani_hist", []) + [{"role": "user", "content": texto},
                                                                           {"role": "assistant", "content": r["texto"]}])[-20:]
+                    self._kani_guardar(pasta, [{"t": "eu", "texto": texto}] + vistos +
+                                       [{"t": "ajudante_resposta", "quem": "kani", "texto": r["texto"], "ok": r["ok"]}],
+                                       texto, r["texto"])
                     self._bola_atividade("")
                     if por_voz:   # pedido por voz: a resposta volta falada
                         f = self._fala_obj()
@@ -493,8 +652,12 @@ class App:
             except Exception as e:
                 resposta = {"t": "ajudante_resposta", "quem": quem, "texto": str(e), "ok": False, "tokens": 0}
             finally:
+                if quem == "codex" and resposta is not None:
+                    resposta["cancelado"] = bool(self._codex_parar and self._codex_parar.is_set())
                 self._ajudante_ativo = None
                 self._codex_parar = None
+                if resposta:
+                    self._codex_voz(resposta)
                 self._ajudante_trava.release()
                 if resposta:
                     self._para_janela(resposta)   # só liberar a caixa da janela depois de liberar o motor
@@ -506,6 +669,7 @@ class App:
         try:
             threading.Thread(target=rodar, daemon=True).start()
         except Exception:
+            self._prontidao_cancelar()
             self._ajudante_ativo = None
             self._codex_parar = None
             self._ajudante_trava.release()
@@ -514,6 +678,72 @@ class App:
 
     def _ocupada(self):
         return bool(self._ajudante_ativo or (self._sessao and self._sessao.ocupada))
+
+    def _pickle_arquivo(self, pasta, nova=False):
+        import uuid
+        chave = os.path.normcase(os.path.realpath(pasta))
+        with _ESTADO_TRAVA:
+            sessoes = _ler_estado().get("pickle_sessoes") or {}
+            sid = sessoes.get(chave, "")
+            if nova or not re.fullmatch(r"[a-f0-9]{32}", sid):
+                sid = uuid.uuid4().hex
+                sessoes[chave] = sid
+                _gravar_estado(pickle_sessoes=sessoes)
+        return os.path.join(DADOS, "conversas_pickle", sid + ".jsonl")
+
+    def _pickle_historico(self, pasta):
+        try:
+            with open(self._pickle_arquivo(pasta), encoding="utf-8") as f:
+                eventos = []
+                for linha in deque(f, maxlen=400):
+                    try:
+                        ev = json.loads(linha)
+                        if isinstance(ev, dict):
+                            eventos.append(ev)
+                    except ValueError:
+                        continue
+                return eventos
+        except OSError:
+            return []
+
+    def _pickle_rodar(self, texto, pasta, por_voz, editar):
+        import bigpickle_modo
+        self._kani_parar = threading.Event()
+        vistos = []
+        historico = []
+        for ev in self._pickle_historico(pasta):
+            if ev.get("t") == "eu":
+                historico.append({"role": "user", "content": ev.get("texto", "")})
+            elif ev.get("t") == "ajudante_resposta":
+                historico.append({"role": "assistant", "content": ev.get("texto", "")})
+
+        def evento(ev):
+            if ev.get("t") in ("ferr", "ferr_fim", "pickle_progresso", "codigo_alteracao", "codigo_pronto"):
+                vistos.append(dict(ev))
+            self._evento(ev)
+
+        import pickle_agente
+        if pickle_agente.para_ponte(texto):   # mexer no KANIVETE, sites, disco: a ponte em etapas
+            r = bigpickle_modo.rodar(texto, pasta, evento, historico[-16:], por_voz, self._kani_parar, editar)
+        else:   # código e conversa: o OpenCode nativo, numa cópia isolada (pickle_agente.py)
+            r = pickle_agente.rodar(texto, pasta, evento, historico[-16:], por_voz, self._kani_parar,
+                                    editar and getattr(self, "_modo", "auto") != "plan")
+        eventos = [{"t": "eu", "texto": texto}] + vistos + [
+            {"t": "ajudante_resposta", "quem": "pickle", "texto": r["texto"], "ok": r["ok"], "tokens": r["tokens"],
+             "orcamento":r.get("orcamento"), "etapas_concluidas":r.get("etapas_concluidas")}]
+        with _ESTADO_TRAVA:
+            arquivo = self._pickle_arquivo(pasta)
+            os.makedirs(os.path.dirname(arquivo), exist_ok=True)
+            with open(arquivo, "a", encoding="utf-8") as f:
+                for ev in eventos:
+                    f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        if por_voz:
+            fala = self._fala_obj()
+            fala.novo()
+            fala.pedaco(r["texto"])
+            fala.terminar()
+            self._por_voz = False
+        return r
 
     def _codex_id(self, pasta):
         chave = os.path.normcase(os.path.realpath(pasta))
@@ -544,8 +774,10 @@ class App:
                 diretorio = os.path.join(DADOS, "conversas_codex")
                 os.makedirs(diretorio, exist_ok=True)
                 with open(os.path.join(diretorio, sid + ".jsonl"), "a", encoding="utf-8") as f:
-                    for ev in ({"t": "eu", "texto": texto},
-                               {"t": "ajudante_resposta", "quem": "codex", "texto": r["texto"], "ok": r["ok"]}):
+                    progresso = [{"t": "codex_progresso", "texto": t, "reiniciar": i == 0}
+                                 for i, t in enumerate(r.get("progresso") or [])]
+                    for ev in [{"t": "eu", "texto": texto}, *progresso, *(r.get("alteracoes") or []),
+                               {"t": "ajudante_resposta", "quem": "codex", "texto": r["texto"], "ok": r["ok"]}]:
                         f.write(json.dumps(ev, ensure_ascii=False) + "\n")
         except OSError:
             pass   # falha de registro não deve esconder uma resposta que já terminou
@@ -582,6 +814,8 @@ class App:
         texto = (texto or "").strip()
         if not texto and not imagens:
             return False
+        if not imagens and self._comando_conclusao(texto, _de):
+            return True
         # a mensagem aparece também nos outros aparelhos abertos (janela do PC × celular, movel.py)
         self._para_janela({"t": "eco_eu", "texto": texto, "de": _de, "minis": [i.get("mini") for i in imagens or [] if i.get("mini")]})
         # comandos que o próprio KaniCode resolve (os outros "/" vão para o Claude Code como no terminal)
@@ -608,8 +842,12 @@ class App:
         self._bola_estado("trabalhando")
         if not self._respondendo:
             self._respondendo, self._resposta = True, ""
+        pasta = self._pasta()
+        if not self._sessao.sessao_id:   # conversa nova: o que a Kani falou antes entra no começo dela
+            self._sessao._pendentes = self._kani_previa(pasta, tirar=True) + (getattr(self._sessao, "_pendentes", None) or [])
+        contexto = "" if texto.startswith("/") else self._kani_para_claude(pasta)
         try:
-            self._sessao.enviar(texto, imagens)
+            self._sessao.enviar(texto, imagens, contexto=contexto)
         except Exception as e:
             self._bola_estado("")
             self._para_janela({"t": "saiu", "erro": str(e)})
@@ -650,20 +888,26 @@ class App:
         return self._comandos
 
     def parar(self):
+        self._prontidao_cancelar()
         parar = self._codex_parar
         if parar:
             parar.set()
+            if self._fala:
+                self._fala.parar()
         if getattr(self, "_kani_parar", None):
             self._kani_parar.set()
         if self._sessao:
             self._sessao.parar()
         return True
 
-    _IMG = (".png", ".jpg", ".jpeg", ".webp")
+    _IMG = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 
     def miniatura(self, caminho, lado=900):
         """print na conversa: a imagem reduzida como dataURL (None se não for imagem ou não existir)"""
         try:
+            from recursos_resposta import caminho as resolver
+            caminho = resolver(caminho, self._pasta())
+            lado = max(64, min(1200, int(lado)))
             if not caminho.lower().endswith(self._IMG) or not os.path.isfile(caminho):
                 return None
             import base64, io
@@ -686,6 +930,52 @@ class App:
             os.startfile(caminho)
         return True
 
+    def resposta_abrir_caminho(self, caminho):
+        import recursos_resposta as recursos
+        return recursos.abrir_caminho(caminho, self._pasta())
+
+    def resposta_navegador(self, navegador=None):
+        if navegador is not None:
+            if navegador not in ('chrome', 'padrao'):
+                raise ValueError('Navegador inválido.')
+            _gravar_estado(navegador_links=navegador)
+        return {'navegador': _ler_estado().get('navegador_links') or 'chrome'}
+
+    def resposta_abrir_link(self, url):
+        import recursos_resposta as recursos
+        return recursos.abrir_link(url, self.resposta_navegador()['navegador'])
+
+    def resposta_copiar_texto(self, texto):
+        import recursos_resposta as recursos
+        return recursos.copiar_texto(texto)
+
+    def resposta_imagem(self, origem):
+        import recursos_resposta as recursos
+        return recursos.imagem_dados(origem, self._pasta())
+
+    def resposta_tela_cheia(self, on):
+        on = bool(on)
+        if self._janela and on != getattr(self, '_imagem_tela_cheia', False):
+            self._janela.toggle_fullscreen()
+            self._imagem_tela_cheia = on
+        return bool(getattr(self, '_imagem_tela_cheia', False))
+
+    def resposta_copiar_imagem(self, origem):
+        import recursos_resposta as recursos
+        return recursos.copiar_imagem(origem, self._pasta())
+
+    def resposta_salvar_imagem(self, origem):
+        import recursos_resposta as recursos
+        dados, info = recursos.imagem(origem, self._pasta())
+        ext = os.path.splitext(info['nome'])[1]
+        destino = self._janela.create_file_dialog(webview.FileDialog.SAVE, save_filename=info['nome'],
+                                                 file_types=(f'Imagem (*{ext})', 'Todas as imagens (*.png;*.jpg;*.jpeg;*.webp;*.gif;*.bmp)'))
+        if not destino:
+            return False
+        if not isinstance(destino, str):
+            destino = destino[0]
+        return recursos.salvar_imagem(dados, info, destino)
+
     def modo(self, modo):
         """botão Planejar: 'plan' = o Claude só planeja e pede aprovação; 'auto' = trabalha normal"""
         modo = "plan" if modo == "plan" else "auto"
@@ -698,6 +988,9 @@ class App:
         """conversa nova nesta pasta (a anterior continua guardada)"""
         if self._ocupada():
             raise RuntimeError("Espere a resposta terminar ou use Parar antes de abrir outra conversa.")
+        if _ler_estado().get("quem") == "pickle":
+            self._pickle_arquivo(self._pasta(), nova=True)
+            return True
         if _ler_estado().get("quem") == "codex":
             with _ESTADO_TRAVA:
                 sessoes = _ler_estado().get("codex_sessoes") or {}
@@ -708,10 +1001,16 @@ class App:
         e = _ler_estado()
         ss = e.get("sessoes") or {}
         ss.pop(self._pasta(), None)
-        _gravar_estado(sessoes=ss)
+        nv = e.get("kani_nao_visto") or {}
+        nv.pop(self._pasta(), None)
+        _gravar_estado(sessoes=ss, kani_nao_visto=nv)
+        self._kani_previa(self._pasta(), tirar=True)
+        self._kani_hist = []
         return True
 
     def historico(self):
+        if _ler_estado().get("quem") == "pickle":
+            return self._pickle_historico(self._pasta())
         if _ler_estado().get("quem") == "codex":
             sid = self._codex_id(self._pasta())
             if not sid or not re.fullmatch(r"[a-fA-F0-9-]{36}", sid):
@@ -727,11 +1026,12 @@ class App:
                     return eventos
             except OSError:
                 return []
+        previa = self._kani_previa(self._pasta())   # conversa com a Kani antes de haver uma do Claude
         sid = (_ler_estado().get("sessoes") or {}).get(self._pasta())
         if not sid:
-            return []
+            return previa
         from sessao import Sessao
-        return Sessao(self._pasta(), DADOS, None, sessao_id=sid).historico()
+        return previa + Sessao(self._pasta(), DADOS, None, sessao_id=sid).historico()
 
     def escolher_pasta(self):
         if self._ocupada():
@@ -747,12 +1047,20 @@ class App:
 
     def sair(self):
         self._saindo = True
+        try:   # o chat some na hora; só a KaniBall faz a despedida (2026-10-21, pedido do Pailer)
+            self._janela.hide()
+            self._aberta = False
+        except Exception:
+            pass
         self._encerrar()
         try:   # a Kani direta roda neste processo: sai da placa de vídeo junto
             import ajudantes
             ajudantes.kani_parar()
         except Exception:
             pass
+        terminou = threading.Event()
+        self._na_ui(lambda: self._bola.sair(terminou.set) if self._bola else terminou.set())
+        terminou.wait(self._bola.duracao_saida + 0.7 if self._bola else 0)
         self._na_ui(lambda: self._bola and self._bola.fechar())
         try:
             self._janela.destroy()
@@ -773,7 +1081,72 @@ class App:
             threading.Thread(target=s.fechar, daemon=True).start()
         self._bola_estado("")
 
+    def _prontidao_cancelar(self):
+        pendente, self._prontidao_pendente = self._prontidao_pendente, None
+        if pendente:
+            pendente[0].set()
+            pendente[1].cancel()
+
+    def _prontidao_agendar(self):
+        self._prontidao_cancelar()
+        if self._aberta and not self._por_voz:
+            return
+        cancelado = threading.Event()
+        def valido():
+            return not cancelado.is_set() and self._ajudante_ativo == "codex" and (not self._aberta or self._por_voz)
+        def confirmar():
+            if valido():
+                try:
+                    self._fala_obj().prontidao(valido)
+                except Exception:
+                    pass  # mensagem opcional; o Codex continua normalmente
+        temporizador = threading.Timer(1.0, confirmar)
+        temporizador.daemon = True
+        self._prontidao_pendente = (cancelado, temporizador)
+        temporizador.start()
+
+    def _codex_ler(self, texto):
+        texto = (texto or "").strip()
+        if (self._aberta and not self._por_voz) or not texto or texto in self._codex_lidos:
+            return
+        if self._codex_parar and self._codex_parar.is_set():
+            return
+        try:
+            fala = self._fala_obj()
+            if not self._codex_falando:
+                fala.novo()
+                self._codex_falando = True
+            fala.dizer(texto)
+            self._codex_lidos.add(texto)
+        except Exception as erro:
+            self._para_janela({"t": "voz", "fase": "erro:" + str(erro)})
+
+    def _codex_voz(self, ev):
+        t = ev.get("t")
+        if (t == "codex_progresso" and ev.get("texto")) or (t == "ajudante_resposta" and ev.get("quem") == "codex"):
+            self._prontidao_cancelar()
+        if t == "ajudante" and ev.get("quem") == "codex" and ev.get("fase") == "inicio":
+            self._codex_comentario = ""
+            self._codex_lidos = set()
+            self._codex_falando = False
+        elif t == "codex_progresso" and ev.get("concluido"):
+            self._codex_comentario = ev.get("texto") or ""
+            self._codex_ler(self._codex_comentario)
+        elif t == "ajudante_resposta" and ev.get("quem") == "codex":
+            try:
+                if not ev.get("cancelado"):
+                    self._codex_ler(ev.get("texto"))
+                if self._codex_falando and self._fala and not ev.get("cancelado"):
+                    self._fala.terminar()
+            except Exception as erro:
+                self._para_janela({"t": "voz", "fase": "erro:" + str(erro)})
+            finally:
+                self._codex_falando = False
+                self._codex_comentario = ""
+                self._por_voz = False
+
     def _evento(self, ev):
+        self._codex_voz(ev)
         t = ev.get("t")
         if t == "inicio":
             self._respondendo, self._resposta = True, ""
@@ -916,7 +1289,7 @@ class App:
         x, y = e.get("bola_px") or (None, None)
 
         def criar():
-            b = Bolinha(-10000, -10000, BOLA, self._clique, self._movida, ao_direito=self._clique)
+            b = Bolinha(-10000, -10000, BOLA, self._clique, self._movida, ao_direito=self._clique, ao_som=self._som_bolinha)
             ax, ay, aw, ah = b.area_util()
             if x is None:
                 px, py_ = ax + aw - b.total - round(24 * b.escala), ay + ah - b.total - round(24 * b.escala)
@@ -927,9 +1300,8 @@ class App:
             dentro = any(s.WorkingArea.Contains(Point(int(px + b.total / 2), int(py_ + b.total / 2))) for s in Screen.AllScreens)
             if not dentro:
                 px, py_ = ax + aw - b.total - 24, ay + ah - b.total - 24
-            b.form.Location = Point(int(px), int(py_))
-            b.quem = "kani" if e.get("quem") == "kani" else "claude"
-            b.desenhar()
+            b.quem = e.get("quem") if e.get("quem") in ("kani", "pickle") else "claude"
+            b.entrar(px, py_)
             self._bola = b
         for _ in range(100):   # a janela da conversa (escondida) precisa existir para dar a thread da interface
             try:
@@ -1099,8 +1471,7 @@ def main():
             app._na_ui(encaixar)
         if e.get("voz"):   # o Ei Kani estava ligado: volta ligado
             threading.Timer(1.5, app.voz, args=(True,)).start()
-        if "--abrir" in sys.argv:   # reiniciado com a janela aberta: volta aberta
-            threading.Timer(0.8, app.mostrar).start()
+        # ao iniciar vem só a KaniBall, sempre (2026-10-21, pedido do Pailer): o chat abre no clique
     webview.start(comecar, debug="--console" in sys.argv, storage_path=os.path.join(DADOS, "webview"))
 
 

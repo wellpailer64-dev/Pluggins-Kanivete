@@ -15,6 +15,9 @@ final class Rosto {
     static final String[] OP = {V, ".......##.......", V};
     static final String[] TIL = {V, "......#.#.#.....", ".......#.#......"};
     static final String[] RISO = {"....#......#....", ".....#....#.....", "......####......"};
+    static final String[] X = {"....#.#..#.#....", ".....#....#.....", "....#.#..#.#...."};
+    static final String[] TRISTE = {V, "......####......", ".....#....#....."};
+    static final String[] OLHOS_BAIXOS = {"....##....##....", "....##....##...."};
 
     static boolean pisca(double t, double cada) { return (t % cada) < 0.16; }
 
@@ -60,6 +63,42 @@ final class Rosto {
                 por(g, RISO, 9, 0);
                 g[8][3] = g[8][12] = 'p';
                 break;
+            case "erro":
+                por(g, X, 5, 0);
+                por(g, TRISTE, 10, 0);
+                break;
+            case "lendo": {   // olhos baixos que correm a linha, livro aberto, página que vira
+                por(g, OLHOS_BAIXOS, 6, new int[]{-1, 0, 1, 1}[(int) (t * 2.2) % 4]);
+                por(g, new String[]{"..############..", "..#wwwwwwwwww#..", "..#wwwwwwwwww#..", "..############.."}, 11, 0);
+                por(g, new String[]{(int) (t * 2.2) % 4 < 2 ? "...#.##.##.#...." : "....##.#.##.#..."}, 12, 0);
+                if ((int) (t * 0.7) % 3 == 0) por(g, new String[]{"........#......."}, 10, 0);
+                g[11][7] = g[11][8] = '#';
+                break;
+            }
+            case "digitando": {   // olhos no teclado, mãozinhas batendo alternadas
+                por(g, OLHOS_BAIXOS, 6, 0);
+                por(g, OP, 9, 0);
+                boolean sobe = (int) (t * 7) % 2 == 1;
+                por(g, new String[]{"..##............"}, sobe ? 12 : 13, 0);
+                por(g, new String[]{"...........##..."}, sobe ? 13 : 12, 0);
+                por(g, new String[]{"..############.."}, 14, 0);
+                if ((int) (t * 7) % 4 == 0) por(g, new String[]{".....w..w..w...."}, 14, 0);
+                break;
+            }
+            case "procurando": {   // lupa (com o olho grande dentro) que passa de um lado ao outro
+                int d = new int[]{-4, -2, 0, 0, -2, -4}[(int) (t * 1.8) % 6];
+                por(g, new String[]{"....w#..........", "....##..........", "....##.........."}, 5, 0);
+                por(g, OP, 10, 0);
+                por(g, new String[]{"........####....", ".......#wwww#...", ".......#w##w#...", ".......#w##w#...",
+                        ".......#wwww#...", "........####....", "............#...", ".............#.."}, 3, d);
+                break;
+            }
+            case "dormindo":
+                por(g, FE, 5, 0);
+                por(g, OP, 10, 0);
+                if ((int) (t * 0.8) % 3 < 2)
+                    por(g, new String[]{"..........####..", "............#...", "...........#....", "..........####.."}, 2 - (int) (t * 0.8) % 3, 0);
+                break;
             default:
                 por(g, pisca(t, 4.2) ? FE : AB, 5, 0);
                 por(g, SORRISO, 10, 0);
@@ -71,6 +110,7 @@ final class Rosto {
     static void por(char[][] g, String[] linhas, int y0, int d) {
         for (int i = 0; i < linhas.length; i++) {
             String l = desloca(linhas[i], d);
+            if (y0 + i < 0 || y0 + i > 15) continue;
             for (int x = 0; x < 16; x++) if (l.charAt(x) != '.') g[y0 + i][x] = l.charAt(x);
         }
     }

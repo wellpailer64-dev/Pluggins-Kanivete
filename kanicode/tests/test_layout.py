@@ -66,7 +66,8 @@ class LayoutTest(unittest.TestCase):
     def test_controles_nas_posicoes_pedidas_e_fotos(self):
         p = self.page
         self.assertEqual(p.locator('.topo button').count(), 3)
-        self.assertEqual(p.locator('#ferramentas-menu button').count(), 6)
+        self.assertEqual(p.locator('#ferramentas-menu button').count(), 8)
+        self.assertEqual(p.get_by_role('button', name='OpenCode · teste Big Pickle', exact=True, include_hidden=True).count(), 1)
         self.assertEqual(p.locator('#lado-contas img').count(), 2)
         self.assertEqual(p.locator('#lado-contas .cnt').count(), 3)
         self.assertTrue(p.locator('#pastas-nav #pasta').is_visible())
@@ -207,6 +208,101 @@ class LayoutTest(unittest.TestCase):
         self.assertTrue(self.page.locator('#ferramentas-bt').is_hidden())
         self.assertGreater(self.page.locator('#texto').bounding_box()['width'],60)
         self.assertLessEqual(self.page.evaluate('document.body.scrollWidth'),390)
+
+
+    def test_progresso_codex_preserva_mensagens_e_conclui_etapa(self):
+        self.page.evaluate("quemDefinir('codex', false)")
+        self.page.evaluate('ocupada(true)')
+        self.evento({'t':'ajudante','quem':'codex','fase':'inicio','texto':'Corrigir'})
+        self.evento({'t':'codex_progresso','id':'m1','texto':'Encontrei a causa. Vou corrigir soma.py.'})
+        self.evento({'t':'codex_progresso','id':'m1','texto':'Encontrei a causa. Vou corrigir soma.py.'})
+        self.evento({'t':'ajudante','quem':'codex','fase':'passo','id':'c1','operacao':'inicio','texto':'executando testes'})
+        self.evento({'t':'ajudante','quem':'codex','fase':'passo','id':'c1','operacao':'fim','texto':'pensando','ok':True})
+        self.evento({'t':'codex_progresso','id':'m2','texto':'<img src=x onerror=alert(1)> verificado'})
+        self.assertEqual(self.page.locator('.codex-andamento p').count(), 1)
+        self.assertEqual(self.page.locator('.codex-comentario').count(), 2)
+        self.assertEqual(self.page.locator('.codex-comentario img[src="x"]').count(), 0)
+        self.assertIn('✓ Concluído: executando testes', self.page.locator('.codex-andamento').inner_text())
+        self.assertEqual(self.page.locator('.codex-andamento img').count(), 0)
+        self.evento({'t':'codex_uso','uso':{'entrada':1000,'saida':33},'tokens':133})
+        self.assertIn('33 tokens', self.page.locator('#num').inner_text())
+        self.evento({'t':'ajudante_resposta','quem':'codex','texto':'<img src=x onerror=alert(1)> verificado','ok':True})
+        self.assertEqual(self.page.locator('.codex-comentario').count(), 1)
+        self.assertEqual(self.page.locator('.msg.aju').count(), 2)
+        self.assertEqual(self.erros, [])
+
+    def test_limite_redefinicao_e_saldo_atualizado(self):
+        self.page.evaluate("""() => {
+          window.resetsTeste = [];
+          window.cotaTeste = {h5:1,sem:.2,atingido:true,redefinicoes:1,medido_em:123,
+            h5_zera:1800000000, creditos_redefinicao:[{id:'credito1',status:'available'}]};
+          const anterior = pywebview.api;
+          pywebview.api = new Proxy(anterior, {get(alvo,nome) {
+            if (nome === 'codex_limites') return async () => ({ok:true,cota:cotaTeste});
+            if (nome === 'codex_redefinir') return async (...args) => {
+              resetsTeste.push(args); cotaTeste = {...cotaTeste,h5:0,atingido:false,redefinicoes:0,medido_em:124};
+              return {ok:true,cota:cotaTeste,mensagem:'Redefinição confirmada.'};
+            };
+            return alvo[nome];
+          }});
+          quemDefinir('codex', false);
+        }""")
+        self.page.wait_for_selector('.codex-redefinir', state='visible')
+        self.assertIn('limite de uso atingido', self.page.locator('.codex-conta-estado').inner_text())
+        self.page.set_viewport_size({'width':390,'height':844})
+        self.page.screenshot(path=r'D:\kanivete_testes\kanicode_limites.png')
+        self.page.click('.codex-redefinir')
+        self.page.wait_for_function("resetsTeste.length === 1 && document.querySelector('.codex-reset-info').textContent.includes(': 0')")
+        self.assertTrue(self.page.locator('.codex-redefinir').is_hidden())
+        self.assertIn('0% usado', self.page.locator('.codex-janelas').inner_text())
+        self.evento({'t':'codex_uso','uso':{},'cota':{'h5':1,'sem':.2}})
+        self.assertIn('0% usado', self.page.locator('.codex-janelas').inner_text())
+        self.assertEqual(len(self.page.evaluate('resetsTeste[0][0]')), 36)
+        self.assertEqual(self.erros, [])
+
+    def test_progresso_pickle_aparece_sem_interpretar_html(self):
+        self.page.evaluate("quemDefinir('pickle', false)")
+        self.evento({'t':'pickle_progresso','texto':'Concluído: codigo_testar. Próximo: revisão. <img src=x>'})
+        self.assertIn('Concluído: codigo_testar', self.page.locator('#conversa').inner_text())
+        self.assertEqual(self.page.locator('#conversa img[src="x"]').count(), 0)
+        self.assertEqual(self.erros, [])
+
+    def test_barra_de_codigo_expande_recolhe_e_preserva_texto(self):
+        self.page.set_viewport_size({'width':390,'height':844})
+        self.evento({'t':'codex_alteracao','arquivo':'soma.py','diff':'-return a-b\n+return a+b\n<img src=x>','rotulo':'Alterações desta tarefa.'})
+        card = self.page.locator('.codigo-alteracao')
+        self.assertFalse(card.evaluate('el => el.open'))
+        card.locator('summary').click()
+        self.assertTrue(card.evaluate('el => el.open'))
+        self.assertIn('+return a+b', card.locator('pre').inner_text())
+        self.assertEqual(card.locator('img').count(), 0)
+        self.page.screenshot(path=r'D:\kanivete_testes\kanicode_diff.png')
+        card.locator('summary').click()
+        self.assertFalse(card.evaluate('el => el.open'))
+        self.assertLessEqual(self.page.evaluate('document.body.scrollWidth'),390)
+        self.assertEqual(self.erros, [])
+
+    def test_revisao_mostra_diff_e_aplica_so_por_clique(self):
+        self.page.evaluate("""() => {
+          window.aplicacoesTeste = [];
+          const anterior = pywebview.api;
+          pywebview.api = new Proxy(anterior, {get(alvo,nome) {
+            if (nome === 'codigo_revisar') return async () => ({ok:true,agente:'pickle',revisao:'revisao1',
+              copia:'D:/kanivete_testes/copia',arquivos:['soma.py'],diff:'-return a-b\\n+return a+b',
+              aplicada:false,verificacao:{ok:true},testes:{ok:true,arquivo:'test_soma.py',saida:'OK'},pode_aplicar:true});
+            if (nome === 'codigo_aplicar') return async (...args) => {aplicacoesTeste.push(args);return {ok:true,arquivos:['soma.py'],backup:'D:/kanivete_testes/base'};};
+            return alvo[nome];
+          }});
+        }""")
+        self.page.click('#ferramentas-bt')
+        self.page.get_by_role('button', name='Revisar código isolado', exact=True).click()
+        self.page.wait_for_function("!document.querySelector('.codigo-aplicar').disabled")
+        self.assertIn('+return a+b', self.page.locator('.codigo-diff').inner_text())
+        self.assertEqual(self.page.evaluate('aplicacoesTeste.length'), 0)
+        self.page.click('.codigo-aplicar')
+        self.page.wait_for_function('aplicacoesTeste.length === 1')
+        self.assertEqual(self.page.evaluate('aplicacoesTeste[0]'), ['pickle','revisao1'])
+        self.assertEqual(self.erros, [])
 
 
 if __name__ == '__main__':

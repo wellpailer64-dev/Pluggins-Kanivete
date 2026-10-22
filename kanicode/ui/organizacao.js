@@ -13,6 +13,7 @@
   });
   menu.addEventListener('click', e => { if (e.target.closest('button')) ferramentas(false); });
   menu.addEventListener('keydown', e => {
+    if (e.target.matches('select')) return;
     const bts = [...menu.querySelectorAll('button')].filter(b => b.getClientRects().length);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault(); bts[(bts.indexOf(document.activeElement) + (e.key === 'ArrowDown' ? 1 : bts.length - 1)) % bts.length]?.focus();

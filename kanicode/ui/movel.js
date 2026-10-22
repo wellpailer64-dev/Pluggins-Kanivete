@@ -44,6 +44,16 @@
               fila: [], tocando: false, fimResposta: false, audio: new Audio() };
   V.audio.setAttribute('playsinline', '');
   function micVisual(on) { document.getElementById('mic').classList.toggle('on', on); if (window.KCApp) KCApp.estado(on ? 'ouvindo' : 'parado'); }
+  // app do celular: selo de quem responde, rosto da atividade e carinha do fim (APK antigo não tem: ignora)
+  function appBola(f, v) { try { if (window.KCApp && typeof KCApp[f] === 'function') KCApp[f](v); } catch (e) {} }
+  const ATIV = n => /^(Read|WebFetch|kani_(ler|demandas|git))/.test(n) ? 'lendo'
+    : /^(Grep|Glob|WebSearch|ToolSearch|kani_(listar|procurar|buscar|espaco|ver|navegar))/.test(n) ? 'procurando'
+    : n ? 'digitando' : '';
+  function quemVigiar() {   // o seletor de modelo da janela (quemDefinir) troca o nome no botão
+    const s = document.querySelector('#quem-bt span'); if (!s) return;
+    const mandar = () => appBola('quem', ({ Kani: 'kani', Codex: 'codex', 'Big Pickle': 'pickle' })[s.textContent.trim()] || 'claude');
+    new MutationObserver(mandar).observe(s, { childList: true, characterData: true, subtree: true }); mandar();
+  }
   // app do celular (APK com a bolinha): mede o volume da voz que está tocando para a bolinha pulsar junto
   function bolinhaMedir() {
     if (!window.KCApp || V.medidor) return;
@@ -251,9 +261,21 @@
     const ev0 = window.kcEv;
     window.kcEv = ev => {
       if (window.KCApp) {   // a cara da bolinha do app acompanha a conversa (trabalhando / pergunta / parada)
-        if (ev.t === 'inicio' || ev.t === 'texto' || ev.t === 'passo') KCApp.tarefa('trabalhando');
+        if (ev.t === 'inicio' || ev.t === 'texto' || ev.t === 'passo' || ev.t === 'ferr' || ev.t === 'kani_pensando') KCApp.tarefa('trabalhando');
         else if (ev.t === 'permissao' || ev.t === 'pergunta') KCApp.tarefa('pergunta');
-        else if (ev.t === 'fim' || ev.t === 'saiu') KCApp.tarefa('parado');
+        else if (ev.t === 'fim' || ev.t === 'saiu' || ev.t === 'ajudante_resposta') KCApp.tarefa('parado');
+        // o rosto enquanto trabalha (lendo / procurando / digitando / pensando) e a carinha do fim, como no PC
+        if (ev.t === 'ferr') appBola('atividade', ATIV(ev.nome || ''));
+        else if (ev.t === 'pensando' || ev.t === 'kani_pensando') appBola('atividade', 'pensando');
+        else if (ev.t === 'texto_novo' || ev.t === 'fim' || ev.t === 'saiu' || ev.t === 'ajudante_resposta') appBola('atividade', '');
+        if (ev.t === 'fim' || (ev.t === 'saiu' && ev.erro)) appBola('humor', ev.t === 'fim' && !ev.erro ? 'feliz' : 'erro');
+        else if (ev.t === 'ajudante_resposta') appBola('humor', ev.ok ? 'feliz' : 'erro');
+      }
+      // resposta da Kani/Codex (vem inteira, sem 'texto'/'fim'): também é lida em voz alta
+      if (ev.t === 'ajudante_resposta' && (V.ler || V.conversa) && ev.texto) {
+        fundoDesligar(); V.buf = ''; V.codigo = false;
+        falarPedaco(ev.texto + '\n'); if (!V.codigo) falarFrase(V.buf); V.buf = '';
+        V.fimResposta = true; V.ler = false; if (!V.tocando) tocar();
       }
       if (ev.t === 'inicio' || ev.t === 'texto_novo') { V.buf = ''; V.codigo = false; }
       else if (ev.t === 'texto' && (V.ler || V.conversa)) falarPedaco(ev.d || '');
@@ -270,6 +292,7 @@
     t.placeholder = 'Fale com o Claude…';
     menuMontar();
     telaMontar();
+    quemVigiar();
     setTimeout(() => window.dispatchEvent(new Event('pywebviewready')), 0);
   });
 

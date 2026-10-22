@@ -139,7 +139,7 @@ class Sessao:
     def vivo(self):
         return self.proc is not None and self.proc.poll() is None
 
-    def enviar(self, texto, imagens=None):
+    def enviar(self, texto, imagens=None, contexto=""):
         """imagens = [{tipo: "image/png"|"image/jpeg"..., dados: base64, mini: dataURL pequena (só para a conversa guardada)}]"""
         with self._trava:
             if not self.vivo():
@@ -152,7 +152,7 @@ class Sessao:
             self._guardar({"t": "eu", "texto": texto, "minis": [i.get("mini") for i in imagens if i.get("mini")]})
             blocos = [{"type": "image", "source": {"type": "base64", "media_type": i.get("tipo") or "image/png", "data": i["dados"]}}
                       for i in imagens if i.get("dados")]
-            blocos.append({"type": "text", "text": texto or "(veja a imagem)"})
+            blocos.append({"type": "text", "text": contexto + (texto or "(veja a imagem)")})   # contexto: não vai para a conversa guardada
             self._escrever({"type": "user", "message": {"role": "user", "content": blocos}})
 
     def definir_modo(self, modo):

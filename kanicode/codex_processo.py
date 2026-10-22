@@ -54,7 +54,7 @@ def _encerrar(processo, job):
         processo.kill()
 
 
-def executar(cmd, pasta, entrada, ao_linha, ao_espera, parar=None, prazo=600):
+def executar(cmd, pasta, entrada, ao_linha, ao_espera, parar=None, prazo=600, ao_pulso=None):
     """Entrega stdout linha a linha, stderr limitado e motivo distinto de interrupção."""
     inicio = time.monotonic()
     ambiente = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
@@ -111,8 +111,15 @@ def executar(cmd, pasta, entrada, ao_linha, ao_espera, parar=None, prazo=600):
     try:
         for leitor in leitores:
             leitor.start()
+        ultimo_pulso = inicio
         while not saida_fim or processo.poll() is None:
             agora = time.monotonic()
+            if ao_pulso and agora - ultimo_pulso >= 1:
+                ultimo_pulso = agora
+                try:
+                    ao_pulso()
+                except Exception:
+                    pass  # telemetria não pode interromper a tarefa
             cancelado = bool(parar and parar.is_set())
             estourou = not cancelado and agora - inicio >= prazo
             if cancelado or estourou:

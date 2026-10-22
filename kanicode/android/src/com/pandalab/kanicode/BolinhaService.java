@@ -66,6 +66,7 @@ public class BolinhaService extends Service {
         lp.x = p.getInt("x", 20);
         lp.y = p.getInt("y", 400);
         wm.addView(bola, lp);
+        som(R.raw.swoosh); som(R.raw.hello);   // sons da KaniBall (ui/sons_bolinha, como no PC)
 
         // o ✕ de fechar (só aparece arrastando)
         xis = new TextView(this);
@@ -147,24 +148,45 @@ public class BolinhaService extends Service {
         MainActivity.eu.ouvir();
     }
 
-    void fechar() {
-        stopSelf();
+    void fechar() {   // a despedida toca inteira antes de sumir
+        som(R.raw.swoosh); som(R.raw.bye);
+        bola.animate().alpha(0f).scaleX(0.3f).scaleY(0.3f).setDuration(600).start();
+        h.postDelayed(this::stopSelf, 1300);
+    }
+
+    /** toca um som curto da KaniBall; o MediaPlayer se solta sozinho no fim */
+    void som(int id) {
+        try {
+            android.media.MediaPlayer mp = android.media.MediaPlayer.create(this, id);
+            if (mp == null) return;
+            mp.setOnCompletionListener(android.media.MediaPlayer::release);
+            mp.start();
+        } catch (Exception ignored) { }
     }
 
     /** chamado pela página (KCApp.estado): ouvindo | pensando | falando | parado */
-    void estado(String e) { rosto.voz = e == null || e.equals("parado") ? "" : e; }
+    void estado(String e) { rosto.voz = e == null || e.equals("parado") ? "" : e; rosto.mexeu = System.currentTimeMillis(); }
 
     /** chamado pela página (KCApp.tarefa): trabalhando | pergunta | parado */
-    void tarefa(String e) { rosto.tarefa = e == null || e.equals("parado") ? "" : e; }
+    void tarefa(String e) { rosto.tarefa = e == null || e.equals("parado") ? "" : e; rosto.mexeu = System.currentTimeMillis(); }
 
     void nivel(float n) { rosto.nivel = Math.max(0, Math.min(1, n)); }
+
+    /** chamado pela página (KCApp.quem): claude | codex | kani | pickle (o selo no canto) */
+    void quem(String q) { rosto.quem = q == null ? "claude" : q; rosto.mexeu = System.currentTimeMillis(); }
+
+    /** chamado pela página (KCApp.atividade): lendo | digitando | procurando | pensando | "" (rosto enquanto trabalha) */
+    void atividade(String a) { rosto.atividade = a == null ? "" : a; rosto.mexeu = System.currentTimeMillis(); }
+
+    /** chamado pela página (KCApp.humor): feliz | erro por alguns segundos (fim da tarefa) */
+    void humor(String hm) { if ("erro".equals(hm)) som(R.raw.ops); rosto.humor = hm == null ? "" : hm; rosto.humorAte = System.currentTimeMillis() + 3000; rosto.mexeu = rosto.humorAte; }
 
     final Runnable animar = new Runnable() {
         @Override
         public void run() {
             rosto.nivel *= 0.85f;
             rosto.invalidate();
-            boolean rapido = !rosto.voz.isEmpty() || "trabalhando".equals(rosto.tarefa);
+            boolean rapido = !rosto.voz.isEmpty() || !"neutro".equals(rosto.expressao());
             h.postDelayed(this, rapido ? 40 : 120);
         }
     };

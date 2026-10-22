@@ -18,7 +18,7 @@ PORTA = 47614
 # o que o celular pode chamar (o resto da js_api mexe na janela do PC: no celular não faz nada)
 LIBERADOS = {"info", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
              "nova", "quem", "ajudante", "habilidades", "miniatura", "tarefas_ler", "contas_listar", "conta_atualizar",
-             "conta_usar", "pendentes", "gpu_info"}
+             "conta_usar", "pendentes", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
 NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "tam_fim", "tam_padrao", "abrir_imagem",
         "escolher_pasta", "sair", "voz", "ouvir", "conta_adicionar", "conta_entrar_de_novo", "conta_renomear", "conta_remover"}
 _TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -221,6 +221,8 @@ class _H(BaseHTTPRequestHandler):
                 import radio
                 radio.marcar(de)
                 r = _app.enviar(*args[:2], _de=de)
+            elif nome == "ajudante":
+                r = _app.ajudante(*args[:2], _de=de)
             elif nome in ("responder", "responder_pergunta"):
                 r = getattr(_app, nome)(*args)
                 ok = args[1] if nome == "responder" else True

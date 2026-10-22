@@ -1,0 +1,11 @@
+.codex-conta { margin: 6px 12px; padding: 8px 10px; border: 1px solid #53614a; border-radius: 8px; background: #192118; color: #e4ecdf; font-size: 12px; max-height: 240px; overflow: auto; }
+.codex-conta[hidden] { display: none; }
+.codex-conta summary { cursor: pointer; font-weight: 600; }
+.codex-conta p { margin: 7px 0; }
+.codex-conta button { color: inherit; background: #2d3b27; border: 1px solid #74836a; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.codex-conta button:disabled { opacity: .5; cursor: default; }
+.codex-conta .codex-nota { color: #acb6a7; font-size: 11px; }
+
+.codex-andamento { margin: 8px 10px; padding: 10px; border-left: 2px solid var(--lima); color: var(--fraco); font-size: 12px; overflow-wrap: anywhere; }
+.codex-andamento summary { cursor: pointer; color: var(--texto); }
+.codex-andamento p { white-space: pre-wrap; margin: 10px 0 0; }

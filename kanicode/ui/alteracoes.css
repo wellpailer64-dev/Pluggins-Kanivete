@@ -1,0 +1,4 @@
+.codigo-alteracao { margin: 8px 12px; border: 1px solid var(--borda); border-radius: 8px; background: #121a15; font-size: 12px; min-width: 0; }
+.codigo-alteracao summary { cursor: pointer; padding: 10px 12px; overflow-wrap: anywhere; color: var(--texto); }
+.codigo-alteracao p { padding: 0 12px; color: var(--fraco); }
+.codigo-alteracao pre { max-height: 360px; overflow: auto; margin: 0; padding: 12px; font: 12px/1.5 Consolas, monospace; white-space: pre; border-top: 1px solid var(--borda); }

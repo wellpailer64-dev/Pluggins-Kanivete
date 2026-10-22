@@ -35,6 +35,10 @@ def preparar(tarefa, pasta, editar, retomar):
     """Orienta uma vez, inclusive se a primeira mensagem for só 'oi'."""
     modo = ("\n\nMODO ATUAL: execução; escrita disponível, o pedido define o que fazer." if editar else
             "\n\nSOMENTE LEITURA: analise/planeje; não altere arquivos nem o app.")
+    modo += ("\nDurante tarefas, envie mensagens curtas de andamento ao usuário: antes de começar, "
+             "ao concluir etapas relevantes e ao mudar de abordagem. Diga o que foi constatado e o próximo passo. "
+             "Se a investigação demorar, atualize em cerca de 30–60 segundos quando houver informação útil. "
+             "Não exponha raciocínio privado, não invente progresso e não espere o fim para informar bloqueios.")
     if retomar:
         return tarefa + modo
     partes = [tarefa + modo,

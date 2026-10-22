@@ -10,6 +10,7 @@ Eventos: ajudante{quem, fase: "inicio"|"passo"|"fim", texto, tokens, cota, ms, o
 """
 import glob, json, os, re, shutil, socket, subprocess, threading, time, urllib.request
 
+import codex_alteracoes
 import codex_contexto
 import codex_processo
 
@@ -111,6 +112,23 @@ def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None
                   "saida": "output_tokens", "raciocinio": "reasoning_output_tokens"}
     uso = {"entrada": 0, "cache": 0, "saida": 0, "raciocinio": 0}
     thread, completo, falhou = retomar, False, False
+    ultima_medicao = None
+    captura = codex_alteracoes.Captura(pasta) if editar else None
+
+    def medir():
+        nonlocal ultima_medicao
+        acumulado = _codex_uso(thread) if thread else None
+        if acumulado is None or anterior is None:
+            return
+        parcial = {chave: max(0, (acumulado.get(campo) or 0) - ((anterior or {}).get(campo) or 0))
+                   for chave, campo in campos_uso.items()}
+        if parcial == ultima_medicao:
+            return
+        ultima_medicao = dict(parcial)
+        parcial["novos"] = max(0, parcial["entrada"] - parcial["cache"])
+        parcial["total"] = parcial["entrada"] + parcial["saida"]
+        ao_evento({"t": "codex_uso", "quem": "codex", "uso": parcial,
+                   "tokens": parcial["novos"] + parcial["saida"], "cota": _codex_cota(thread)})
 
     def receber(linha):
         nonlocal thread, completo, falhou
@@ -127,11 +145,16 @@ def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None
             avisar("passo", "pensando")
         elif d.get("type") in ("error", "turn.failed"):
             erro = d.get("error") or d.get("message") or "o turno do Codex falhou"
-            erros.append(str(erro.get("message", erro) if isinstance(erro, dict) else erro))
+            mensagem = str(erro.get("message", erro) if isinstance(erro, dict) else erro)
+            erros.append(mensagem)
+            if re.search(r"usage.?limit|hit your.*limit|rate.?limit.*(?:reach|exceed)|insufficient_quota|cota.*esgot", json.dumps(d), re.I):
+                ao_evento({"t": "codex_limite", "mensagem": mensagem, "cota": _codex_cota(thread)})
             falhou = falhou or d.get("type") == "turn.failed"
         it = d.get("item") or {}
         tipo = it.get("type")
         if d.get("type") in ("item.started", "item.updated"):
+            if tipo == "agent_message" and it.get("text"):
+                ao_evento({"t": "codex_progresso", "id": it.get("id"), "texto": it["text"]})
             atividade = {"command_execution": "executando " + str(it.get("command", ""))[:120],
                          "mcp_tool_call": "usando " + str(it.get("tool", "ferramenta")),
                          "web_search": "pesquisando", "file_change": "editando arquivos", "reasoning": "pensando"}
@@ -143,11 +166,16 @@ def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None
             if tipo == "agent_message" and it.get("text"):
                 textos.append(it["text"])
                 avisar("passo", it["text"][:160])
+                ao_evento({"t": "codex_progresso", "id": it.get("id"), "texto": it["text"], "concluido": True})
             elif tipo == "command_execution":
                 comandos.append(it.get("command", ""))
                 avisar("passo", "rodou " + str(it.get("command", ""))[:120])
             elif tipo == "file_change":
                 for ch in it.get("changes") or []:
+                    if captura:
+                        alteracao = captura.registrar(ch)
+                        if alteracao:
+                            ao_evento(alteracao)
                     caminho = ch.get("path")
                     if caminho and caminho not in arquivos:
                         arquivos.append(caminho)
@@ -163,7 +191,7 @@ def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None
             avisar("passo", "terminando", tokens=max(0, uso["entrada"] - uso["cache"]) + uso["saida"])
     processo = codex_processo.executar(cmd, pasta, entrada, receber,
                                       lambda: avisar("passo", "aguardando o Codex; Parar continua disponível"),
-                                      parar=parar, prazo=prazo)
+                                      parar=parar, prazo=prazo, ao_pulso=medir)
     acumulado = _codex_uso(thread)
     if acumulado is not None and anterior is not None:
         # O CLI 0.163 emite usage acumulado ao retomar; a diferença do log evita contar turnos antigos outra vez.
@@ -181,6 +209,7 @@ def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None
     uso["total"] = uso["entrada"] + uso["saida"]
     res = {"ok": ok, "texto": "\n\n".join(t for t in [textos[-1] if textos else "", erro] if t),
            "tokens": uso["novos"] + uso["saida"], "uso": uso, "arquivos": arquivos, "comandos": comandos,
+           "progresso": textos[:-1], "alteracoes": list(captura.alteracoes.values()) if captura else [],
            "cota": _codex_cota(thread), "ms": processo["ms"], "sessao": thread, "esforco": esforco,
            "primeiro_evento_ms": processo["primeiro_evento_ms"],
            "estourou": processo["estourou"], "cancelado": processo["cancelado"]}

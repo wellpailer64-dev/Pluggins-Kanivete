@@ -27,6 +27,7 @@ class AppCodexTest(unittest.TestCase):
             self.addCleanup(p.stop)
         kanicode._gravar_estado(quem="codex", projeto=self.pasta)
         self.app = kanicode.App()
+        self.app._fala = Mock()
         self.fim = threading.Event()
         self.app._bola_estado = lambda estado: self.fim.set() if estado != "trabalhando" else None
         self.app._bola_atividade = Mock()
@@ -79,7 +80,7 @@ class AppCodexTest(unittest.TestCase):
 
     def test_motor_esta_livre_quando_a_janela_recebe_resposta(self):
         estados = []
-        self.app._para_janela = lambda ev: estados.append(self.app._ocupada())
+        self.app._para_janela = lambda ev: ev.get("t") == "eco_eu" or estados.append(self.app._ocupada())
         with patch.object(ajudantes, "codex", return_value=self.resultado()):
             self.app.ajudante("codex", "Pedido")
             self.aguardar()
