@@ -71,6 +71,7 @@ class _Aba:
     def __init__(self, id, quem="claude", nome=""):
         self.id, self.quem, self.nome = str(id), quem, nome
         self.assunto, self.modelo, self.manual = "", "", False
+        self.pasta = ""                # pasta de trabalho da aba (2026-10-23: cada aba com a sua)
         self.sessao = None             # Claude Code (sessao.py)
         self.ajudante_ativo = None     # codex/kani/pickle trabalhando
         self.ajudante_trava = threading.Lock()
@@ -116,6 +117,7 @@ class App:
         for a in lista:   # assunto atual e modelo, para a faixa das abas (2026-10-22)
             ab = self._abas[str(a["id"])]
             ab.assunto, ab.modelo, ab.manual = a.get("assunto") or "", a.get("modelo") or "", bool(a.get("manual"))
+            ab.pasta = a.get("pasta") or e.get("projeto") or ""   # antes das pastas por aba: a pasta única de todas
         self._fechadas = {}   # abas fechadas com a tarefa ainda terminando (o fim dela não pode cair noutra aba)
         self._aba_ativa = str(e.get("aba_ativa")) if str(e.get("aba_ativa")) in self._abas else next(iter(self._abas))
         self._bola = None
@@ -165,7 +167,7 @@ class App:
 
     def _abas_gravar(self):
         _gravar_estado(abas=[{"id": a.id, "quem": a.quem, "nome": a.nome, "assunto": a.assunto, "modelo": a.modelo,
-                              "manual": a.manual} for a in self._abas.values()],
+                              "manual": a.manual, "pasta": a.pasta} for a in self._abas.values()],
                        aba_ativa=self._aba_ativa)
 
     def abas(self):
@@ -179,6 +181,7 @@ class App:
         n = max(usados + [int(_ler_estado().get("aba_ultima") or 0)]) + 1
         _gravar_estado(aba_ultima=n)
         self._abas[str(n)] = _Aba(n, self._ctx().quem)
+        self._abas[str(n)].pasta = self._ctx().pasta   # a aba nova começa na pasta da que estava aberta
         if ativar:
             self._aba_ativa = str(n)
         self._abas_gravar()
@@ -1853,22 +1856,53 @@ class App:
         return previa + Sessao(self._pasta(), DADOS, None, sessao_id=sid).historico()
 
     def escolher_pasta(self):
-        if self._alguma_ocupada():
+        """só a aba aberta troca de pasta (as outras seguem trabalhando). Pasta nova ainda não confiada volta como
+        {"confiar": caminho}: a janela pergunta e chama definir_pasta(caminho, True)."""
+        if self._ocupada():
             return None
-        r = self._janela.create_file_dialog(webview.FOLDER_DIALOG, directory=self._pasta())
+        r = self._janela.create_file_dialog(webview.FileDialog.FOLDER, directory=self._pasta())
         if not r:
             return None
-        nova = r[0] if isinstance(r, (list, tuple)) else r
-        if os.path.normcase(nova) != os.path.normcase(self._pasta()):
-            self._encerrar_todas()
-            _gravar_estado(projeto=nova)
-        return nova
+        nova = os.path.normpath(r[0] if isinstance(r, (list, tuple)) else r)
+        if not self._confiavel(nova):
+            return {"confiar": nova}
+        return self.definir_pasta(nova)
+
+    def definir_pasta(self, caminho, confiar=False):
+        if self._ocupada() or not caminho or not os.path.isdir(caminho):
+            return None
+        caminho = os.path.normpath(caminho)
+        if confiar:
+            with _ESTADO_TRAVA:
+                lista = [c for c in (_ler_estado().get("pastas_confiaveis") or []) if isinstance(c, str)]
+                if not self._confiavel(caminho):
+                    _gravar_estado(pastas_confiaveis=lista + [caminho])
+        elif not self._confiavel(caminho):
+            return {"confiar": caminho}
+        if os.path.normcase(caminho) != os.path.normcase(self._pasta()):
+            self._encerrar()
+            self._ctx().pasta = caminho
+            self._abas_gravar()
+        return caminho
+
+    def _confiavel(self, caminho):
+        """como o Claude Code: pasta dentro de uma já confiada (ou das do próprio app) não pergunta de novo"""
+        alvo = os.path.normcase(os.path.realpath(caminho))
+        base = [PROJETO_PADRAO, PASTA, _ler_estado().get("projeto") or ""] + list(_ler_estado().get("pastas_confiaveis") or [])
+        for b in base:
+            if not b:
+                continue
+            b = os.path.normcase(os.path.realpath(b))
+            if alvo == b or alvo.startswith(b.rstrip("\\/") + os.sep):
+                return True
+        return False
 
     def remover_pasta(self):
-        if self._alguma_ocupada():
+        if self._ocupada():
             return False
-        self._encerrar_todas()
-        _gravar_estado(projeto=PROJETO_PADRAO)
+        self._encerrar()
+        self._ctx().pasta = PROJETO_PADRAO
+        self._abas_gravar()
         return True
 
     def reiniciar(self):
@@ -1901,7 +1935,7 @@ class App:
 
     # ── internos ──
     def _pasta(self):
-        p = _ler_estado().get("projeto")
+        p = self._ctx().pasta
         return p if p and os.path.isdir(p) else PROJETO_PADRAO
 
     def _encerrar(self):

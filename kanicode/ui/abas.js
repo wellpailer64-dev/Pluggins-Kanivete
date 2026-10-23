@@ -55,7 +55,15 @@
     while (conversa.firstChild) frag.appendChild(conversa.firstChild);
     e.frag = frag; e.K = Object.assign({}, K); e.ocupada = K.ocupada;
     e.plano = { html: $('planoFixo').innerHTML, hidden: $('planoFixo').hidden };
+    rascunho(A.ativa, texto.value);
   }
+  // texto ainda não enviado: cada aba com o seu (fica guardado até reabrir a janela)
+  function rascunho(id, v) {
+    const k = 'kc-rascunho-' + id;
+    if (v === undefined) return localStorage.getItem(k) || '';
+    if (v) localStorage.setItem(k, v); else localStorage.removeItem(k);
+  }
+  texto.addEventListener('input', () => { if (A.ativa) rascunho(A.ativa, texto.value); });
 
   async function entrar(id, r) {   // r = resposta do servidor (lista e aba ativa)
     A.lista = r.lista; A.ativa = String(r.ativa);
@@ -77,6 +85,7 @@
       ocupada(K.ocupada); fim();
     }
     desenhar();
+    texto.value = rascunho(A.ativa); texto.dispatchEvent(new Event('input'));
     if (!window.KC_MOVEL) texto.focus();
   }
 
@@ -96,7 +105,7 @@
     const trab = id === A.ativa ? K.ocupada : est(id).ocupada;
     if (trab && !await perguntar(`"${nome(a)}" ainda está trabalhando. Fechar para a tarefa dela?`, null, 'Fechar e parar')) return;
     const r = await api().aba_fechar(id);
-    delete A.est[id];
+    delete A.est[id]; rascunho(id, '');
     if (String(r.ativa) !== A.ativa) {
       if (id !== A.ativa) guardar();
       await entrar(r.ativa, r);

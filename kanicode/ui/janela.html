@@ -1549,7 +1549,7 @@
     const m = minis(imgs.map(i => i.mini)); if (m) b.prepend(m);
     fim();
     som('enviar');
-    texto.value = '';
+    texto.value = ''; texto.dispatchEvent(new Event('input'));   // o rascunho da aba (abas.js) some junto
     K.bolha = null;
     ocupada(true);
     if (K.quem !== 'claude' && !t.startsWith('/') && !imgs.length) {   // direto com um ajudante (só texto)
@@ -1562,7 +1562,15 @@
     const ok = await api().enviar(t, imgs);
     if (!ok) ocupada(false);
   }
-  async function trocarPasta() { if (K.ocupada) return; const p = await api().escolher_pasta(); if (p) carregar(); }
+  async function trocarPasta() {   // só esta aba muda de pasta; pasta nova pergunta antes (como o Claude Code)
+    if (K.ocupada) return bolha('kc', 'Espere esta aba terminar para trocar a pasta.');
+    let p = await api().escolher_pasta();
+    if (p && p.confiar) {
+      if (!await perguntar(`Você confia nos arquivos de "${p.confiar}"? A Kani e o Claude vão poder ler, editar e rodar comandos nesta pasta.`, null, 'Sim, confio')) return;
+      p = await api().definir_pasta(p.confiar, true);
+    }
+    if (p) carregar();
+  }
   async function removerPasta() { if (K.ocupada) return; if (await api().remover_pasta()) await carregar(); }
   async function carregar() {
     const i = await api().info();

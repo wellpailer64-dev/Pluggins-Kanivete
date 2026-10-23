@@ -21,7 +21,7 @@ LIBERADOS = {"mapa_d_status", "mapa_d_buscar", "mapa_d_listar", "todo_listar", "
              "nova", "quem", "ajudante", "habilidades", "miniatura", "tarefas_ler", "contas_listar", "conta_atualizar",
              "conta_usar", "pendentes", "casa_estado", "casa_alternar", "casa_alimentar", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
 NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "tam_fim", "tam_padrao", "abrir_imagem",
-        "escolher_pasta", "sair", "voz", "ouvir", "conta_adicionar", "conta_entrar_de_novo", "conta_renomear", "conta_remover"}
+        "escolher_pasta", "definir_pasta", "sair", "voz", "ouvir", "conta_adicionar", "conta_entrar_de_novo", "conta_renomear", "conta_remover"}
 _TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
           ".webp": "image/webp", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json"}
 
