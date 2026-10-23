@@ -20,7 +20,8 @@ import rosto
 
 LIMA, LIMA_CLARO, LIMA_ESC, FUNDO, ALERTA = (0xB6, 0xF2, 0x3A), (0xD8, 0xFF, 0x7A), (0x7F, 0xB5, 0x1A), (0x0E, 0x11, 0x10), (0xFF, 0x5A, 0x5F)
 BOCHECHA = (0xFF, 0x8F, 0xA3)
-u32, gdi = ctypes.windll.user32, ctypes.windll.gdi32
+# cópias próprias das DLLs: argtypes em ctypes.windll vale para o processo todo e quebra o pywebview (2026-10-23)
+u32, gdi = ctypes.WinDLL("user32"), ctypes.WinDLL("gdi32")
 GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_APPWINDOW, WS_EX_TOPMOST = -20, 0x80000, 0x80, 0x40000, 0x8
 
 

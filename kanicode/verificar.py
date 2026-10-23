@@ -17,7 +17,7 @@ AREAS = {
     "pickle": ("bigpickle_modo.py", "pickle_agente.py", "codigo_agente.py", "ui/codigo_agente.js", "pickle_controle.py", "opencode_mvp.py", "kani_modo.py", "kanicode.py", "bolinha.py", "ui/janela.html", "ui/movel.js", "tests/test_bigpickle_*.py", "tests/test_pickle_agente.py", "tests/test_opencode_mvp.py", "tests/test_kani_historico.py"),
     "codex": ("ajudantes.py", "codex_contexto.py", "codex_processo.py", "codex_conta.py", "codex_alteracoes.py", "ui/alteracoes.js", "ui/codex_uso.js", "ui/janela.html", "tests/test_codex_*.py"),
     "codigo": ("codigo_agente.py", "codigo_testes.py", "kani_modo.py", "bigpickle_modo.py", "kanicode.py", "ui/codigo_agente.js", "tests/test_codigo_*.py"),
-    "interface": ("ui/janela.html", "ui/organizacao.js", "ui/kani_gpu.js", "tests/test_layout.py"),
+    "interface": ("ui/janela.html", "ui/organizacao.js", "ui/kani_gpu.js", "tests/test_layout.py", "tests/test_dll_isoladas.py"),
     "respostas": ("recursos_resposta.py", "ui/respostas.js", "ui/respostas_render.js", "tests/test_*respostas*.py", "tests/test_recursos_resposta.py"),
     "gpu": ("gpu.py", "ui/kani_gpu.js", "tests/test_gpu.py"),
     "contas": ("contas.py", "avatares.py", "tests/test_avatares.py"),

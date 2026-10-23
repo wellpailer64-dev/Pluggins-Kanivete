@@ -8,7 +8,8 @@ Chamar `ligar(hwnd)` NA thread da interface (a dona da janela).
 import ctypes
 from ctypes import wintypes
 
-u32, comctl = ctypes.windll.user32, ctypes.windll.comctl32
+# cópias próprias das DLLs: argtypes em ctypes.windll vale para o processo todo e quebra o pywebview (2026-10-23)
+u32, comctl = ctypes.WinDLL("user32"), ctypes.WinDLL("comctl32")
 GWL_STYLE = -16
 WS_CAPTION, WS_THICKFRAME, WS_SYSMENU, WS_MINIMIZEBOX, WS_MAXIMIZEBOX = 0xC00000, 0x40000, 0x80000, 0x20000, 0x10000
 WM_NCCALCSIZE = 0x0083

@@ -1004,7 +1004,7 @@ def _janelas():
     """[(programa.exe, título, hwnd)] das janelas que aparecem na barra de tarefas"""
     import ctypes
     from ctypes import wintypes
-    u, k, dwm = ctypes.windll.user32, ctypes.windll.kernel32, ctypes.windll.dwmapi
+    u, k, dwm = ctypes.WinDLL("user32"), ctypes.WinDLL("kernel32"), ctypes.WinDLL("dwmapi")   # próprias: restype abaixo
     u.GetWindowLongW.restype = ctypes.c_long
     out = []
 
