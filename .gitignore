@@ -5,6 +5,7 @@ pandalab/vinculos.json
 pandalab/mapa_clientes.json
 *.bin
 .env
+client_secret*.json
 # lixo
 __pycache__/
 *.pyc
