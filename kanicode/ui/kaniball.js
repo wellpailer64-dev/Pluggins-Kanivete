@@ -41,7 +41,7 @@
     B.proximo = t + TRUQUES[n].dur + 5 + Math.random() * 7;
   }
 
-  function grade(expr, t, olho, lingua) {
+  function grade(expr, t, olho, lingua, mira) {
     const q = quadros(expr);
     let linhas = q.quadros && q.quadros.length ? q.quadros[Math.floor(t * q.fps) % q.quadros.length] : null;
     if (!linhas) return null;
@@ -56,13 +56,18 @@
         linhas[y] = linhas[y].split('').map((c, x) => '#w'.includes(l[x]) ? l[x] : c).join('');
       });
     }
+    if (mira) {   // um olho fechado enquanto mira lá em cima
+      for (let y = 2; y < 9; y++) linhas[y] = linhas[y].split('').map((c, x) => x >= 9 && x <= 13 && '#w'.includes(c) ? '.' : c).join('');
+      linhas[4] = linhas[4].slice(0, 9) + '#..#' + linhas[4].slice(13);
+      linhas[5] = linhas[5].slice(0, 9) + '.##.' + linhas[5].slice(13);
+    }
     if (lingua) {   // boca aberta com a língua de fora
       linhas[10] = '......####......'; linhas[11] = '......#pp#......'; linhas[12] = '.......pp.......';
     }
     return linhas;
   }
 
-  function desenhar(t) {
+  function desenhar(t, mira = false) {
     const k = window.devicePixelRatio || 1, P = Math.round(L * k);
     if (cv.width !== P) { cv.width = cv.height = P; cv.style.width = cv.style.height = L + 'px'; }
     g.setTransform(1, 0, 0, 1, 0, 0);
@@ -71,14 +76,14 @@
     gr.addColorStop(0, '#D8FF7A'); gr.addColorStop(.35, '#C4F64E'); gr.addColorStop(1, '#7FB51A');
     g.fillStyle = gr; g.beginPath(); g.arc(P / 2, P / 2, P / 2 - .5, 0, Math.PI * 2); g.fill();
     let o = { y: 0, rot: 0, sx: 1, sy: 1, olho: B.olho, expr: null, lingua: false };
-    const trab = B.estado === 'trabalhando';
+    const trab = !mira && B.estado === 'trabalhando';
     if (B.truque) {
       const T = TRUQUES[B.truque.n], p = (t - B.truque.t0) / T.dur;
       if (p >= 1) B.truque = null; else Object.assign(o, T.f(p));
     }
     let expr = B.expr;
     if (o.expr && expr === 'neutro') expr = o.expr;
-    const linhas = grade(expr, t, o.olho || [0, 0], o.lingua);
+    const linhas = grade(mira ? 'neutro' : expr, t, mira ? [0, -1] : o.olho || [0, 0], mira || o.lingua, mira);
     if (linhas) {
       const cel = Math.max(2, Math.floor(P * .8 / 16)), x0 = Math.floor(P / 2 - 8 * cel), y0 = Math.floor(P / 2 - 8 * cel + cel * .5);
       linhas.forEach((l, y) => { for (let x = 0; x < 16; x++) { const c = CORES[l[x]]; if (c) { g.fillStyle = c; g.fillRect(x0 + x * cel, y0 + y * cel, cel, cel); } } });
@@ -94,7 +99,7 @@
       g.strokeStyle = `rgba(14,17,16,${(.47 + .43 * s).toFixed(2)})`; g.lineWidth = P * (.05 + .04 * s);
       g.beginPath(); g.arc(P / 2, P / 2, P * .46, 0, Math.PI * 2); g.stroke();
     }
-    if (B.estado === 'pergunta' || expr === 'pergunta') {
+    if (!mira && (B.estado === 'pergunta' || expr === 'pergunta')) {
       const r = P * .11;
       g.fillStyle = '#0E1110'; g.beginPath(); g.arc(P - r * 1.2, r * 1.2, r + 1.5 * k, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#FF5A5F'; g.beginPath(); g.arc(P - r * 1.2, r * 1.2, r - k, 0, Math.PI * 2); g.fill();
@@ -175,5 +180,124 @@
       api() && api().esconder(true);
     }
   }, true);
+
+  // A pasta só voa depois do resultado da ferramenta; mensagens da conversa não contam.
+  const gitPendentes = new Map();
+  let envio = null, quadroEnvio = 0;
+  const palco = document.createElement('canvas');
+  palco.id = 'kb-envio'; palco.setAttribute('aria-hidden', 'true');
+  palco.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:10000;display:none';
+  document.body.appendChild(palco);
+  const tinta = palco.getContext('2d');
+
+  function encerrarEnvio() {
+    cancelAnimationFrame(quadroEnvio); envio = null;
+    palco.style.display = 'none'; caixa.style.opacity = '';
+  }
+  function pasta(x, y, giro) {
+    tinta.save(); tinta.translate(x, y); tinta.rotate(giro); tinta.scale(.7, .7);
+    tinta.lineWidth = 2; tinta.strokeStyle = '#92621D';
+    tinta.fillStyle = '#E7A735'; tinta.beginPath();
+    tinta.roundRect(-22, -14, 44, 31, 3); tinta.fill(); tinta.stroke();
+    tinta.fillRect(-20, -19, 18, 9); tinta.strokeRect(-20, -19, 18, 9);
+    tinta.fillStyle = '#FFFDF2'; tinta.fillRect(-16, -12, 30, 24);
+    tinta.strokeStyle = '#BCC9D3'; tinta.lineWidth = 1;
+    for (let i = 0; i < 3; i++) { tinta.beginPath(); tinta.moveTo(-11, -6 + i * 5); tinta.lineTo(9, -6 + i * 5); tinta.stroke(); }
+    tinta.fillStyle = '#FFD267'; tinta.strokeStyle = '#92621D'; tinta.lineWidth = 2;
+    tinta.beginPath(); tinta.moveTo(-23, -3); tinta.lineTo(23, -3); tinta.lineTo(20, 20); tinta.lineTo(-20, 20); tinta.closePath(); tinta.fill(); tinta.stroke();
+    tinta.restore();
+  }
+  function luva(x, y, giro) {
+    tinta.save(); tinta.translate(x, y); tinta.rotate(giro); tinta.scale(.65, .65);
+    tinta.fillStyle = '#FFF'; tinta.strokeStyle = '#242824'; tinta.lineWidth = 2;
+    tinta.beginPath(); tinta.roundRect(-10, -10, 19, 21, 8); tinta.fill(); tinta.stroke();
+    tinta.beginPath(); tinta.ellipse(-10, 2, 5, 8, -.6, 0, Math.PI * 2); tinta.fill(); tinta.stroke();
+    tinta.beginPath(); tinta.roundRect(-8, 9, 16, 7, 2); tinta.fill(); tinta.stroke();
+    for (let i = -4; i <= 4; i += 4) { tinta.beginPath(); tinta.moveTo(i, -5); tinta.lineTo(i, 1); tinta.stroke(); }
+    tinta.restore();
+  }
+  function animarEnvio(agora) {
+    if (!envio || !B.on || document.hidden) { encerrarEnvio(); return; }
+    const t = (agora - envio.inicio) / 1000, voar = envio.tipo === 'push';
+    if (t > (voar ? 3.2 : 2)) { encerrarEnvio(); return; }
+    const k = devicePixelRatio || 1, w = innerWidth, h = innerHeight;
+    palco.width = Math.round(w * k); palco.height = Math.round(h * k); tinta.scale(k, k);
+    const alvo = window.kbDocaAlvo(), x = alvo.x + 32, y = alvo.y + 32;
+    const entra = ease(Math.min(1, t / .7)), puxa = ease(Math.max(0, Math.min(1, (t - .7) / .85)));
+    const soltou = voar && t >= 1.55, voo = Math.max(0, (t - 1.55) / 1.2);
+    const px = x - 70, py = y - 28 + (soltou ? 0 : puxa * 35);
+    tinta.save(); tinta.translate(x + puxa * 5 * (soltou ? 0 : 1), y); tinta.rotate(soltou ? -.12 : puxa * .12);
+    desenhar(agora / 1000, !soltou && t >= .45);
+    tinta.drawImage(cv, -32, -32, 64, 64); tinta.restore();
+    // Madeira em Y e elástico acompanhando a mão que puxa.
+    tinta.strokeStyle = '#352B20'; tinta.lineWidth = 11; tinta.lineCap = 'round';
+    function madeira() { tinta.beginPath(); tinta.moveTo(px, y + 26); tinta.lineTo(px, y - 4); tinta.moveTo(px, y - 4); tinta.lineTo(px - 18, y - 31); tinta.moveTo(px, y - 4); tinta.lineTo(px + 18, y - 31); tinta.stroke(); }
+    madeira(); tinta.strokeStyle = '#B98042'; tinta.lineWidth = 7; madeira();
+    tinta.strokeStyle = '#704B36'; tinta.lineWidth = 3;
+    tinta.beginPath(); tinta.moveTo(px - 18, y - 31); tinta.lineTo(px, soltou ? y - 31 : py); tinta.lineTo(px + 18, y - 31); tinta.stroke();
+    const fx = x - 25 + (px - x + 25) * entra;
+    const fy = y - 5 + (py - y + 5) * entra;
+    if (!soltou) { pasta(fx, fy - 8, -.1 * puxa); luva(fx + 12, fy + 7, -.3); }
+    else {
+      pasta(px - voo * 28, py - voo * (y + 160), voo * 3);
+      luva(x - 35, y - 24 - Math.sin(Math.min(1, voo) * Math.PI) * 8, -.7);
+    }
+    luva(px + 6, y + 15, .2);
+    quadroEnvio = requestAnimationFrame(animarEnvio);
+  }
+  window.kbGitAnimar = tipo => {
+    if (!B.on || document.hidden || !['commit', 'push'].includes(tipo)) return false;
+    if (envio && envio.tipo === 'push' && tipo === 'commit') return false;
+    encerrarEnvio(); B.truque = null;
+    envio = { tipo, inicio: performance.now() };
+    if (tipo === 'push' && api() && api().bola_som_envio) {
+      api().bola_som_envio().catch(() => {});
+    }
+    palco.style.display = 'block'; caixa.style.opacity = '0';
+    quadroEnvio = requestAnimationFrame(animarEnvio); return true;
+  };
+  function acaoGit(entrada) {
+    let cmd = String((entrada || {}).command || (entrada || {}).comando || '').trim();
+    // O Codex registra o executável do PowerShell junto do script, que vem entre aspas.
+    const shell = cmd.match(/^(?:"[^"]*[\\/](?:powershell|pwsh)(?:\.exe)?"|(?:powershell|pwsh)(?:\.exe)?)\s+(?:-(?:NoProfile|NonInteractive|NoLogo)\s+)*-Command\s+(['"])([\s\S]*)\1$/i);
+    if (shell) cmd = shell[2].replace(shell[1] === "'" ? /''/g : /`"/g, shell[1]);
+    // Tira mensagens e argumentos citados antes de procurar comandos, inclusive here-strings do PowerShell.
+    const limpo = cmd.replace(/@(['"])\r?\n[\s\S]*?\r?\n\1@/g, ' ARG ')
+      .replace(/"(?:`.|\\.|[^"\\])*"|'(?:''|[^'])*'/g, 'ARG');
+    const acoes = [];
+    for (const m of limpo.matchAll(/(?:^|[;\n&])\s*git\s+(?:-C\s+\S+\s+)?(commit|push)\b([^;\n&|]*)/g)) {
+      if (/--(?:dry-run|help)\b|(?:^|\s)-[nh](?:\s|$)/.test(m[2])) continue;
+      acoes.push(m[1]);
+    }
+    const tipo = acoes.includes('push') ? 'push' : acoes[0];
+    if (!tipo) return null;
+    return { tipo, composta: /[;\n\r|`]/.test(cmd) || /\$\(/.test(cmd) };
+  }
+  function gitConfirmado(acao, ev) {
+    if (ev.ok !== true) return false;
+    if (!acao.composta) return true;
+    // O sucesso do shell pode ser só do último comando. Confere a resposta do próprio Git.
+    const saida = String(ev.saida || '').replace(/\r/g, '');
+    if (/^\s*(?:fatal:|error:|!.*\[(?:rejected|remote rejected|remote failure)\])/mi.test(saida)) return false;
+    if (acao.tipo === 'push') return /^\s*(?:[+*=-]\s*)?(?:[a-f0-9]+\.{2,3}[a-f0-9]+|\[(?:new branch|new tag|deleted|up to date)\])\s+\S+\s+->\s+\S+[^\n]*$/mi.test(saida)
+      || /^Everything up-to-date\s*$/mi.test(saida);
+    return /^\[[^\]\n]+\s+[a-f0-9]{7,}\]\s+.+$/mi.test(saida);
+  }
+  const eventoAnterior = window.kcEv;
+  window.kcEv = ev => {
+    const chave = `${ev.aba || ''}:${ev.quem || 'claude'}:${ev.id}`;
+    const inicio = ev.t === 'ferr' && /^(Bash|PowerShell)$/.test(ev.nome) || ev.t === 'ajudante' && ev.operacao === 'inicio';
+    if (inicio && ev.id != null) {
+      const acao = acaoGit(ev.entrada);
+      if (acao) { if (gitPendentes.size > 100) gitPendentes.clear(); gitPendentes.set(chave, acao); }
+    }
+    if (ev.t === 'ferr_fim' || ev.t === 'ajudante' && ev.operacao === 'fim') {
+      const acao = gitPendentes.get(chave); gitPendentes.delete(chave);
+      if (acao && gitConfirmado(acao, ev)) window.kbGitAnimar(acao.tipo);
+    }
+    return eventoAnterior(ev);
+  };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) encerrarEnvio(); });
+
   window.KC_BOLA = B;
 })();

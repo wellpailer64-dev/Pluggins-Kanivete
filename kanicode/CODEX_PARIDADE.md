@@ -4,7 +4,7 @@
 
 - Comentários completos de andamento na conversa, separados da resposta final.
 - Com o chat recolhido, os comentários concluídos e a resposta final usam a voz local do KaniCode, sem repetir mensagens. Parar corta a leitura; o microfone só volta ao fim da tarefa.
-- Confirmação de prontidão por voz após 1 segundo sem resposta (Claude, Codex, Kani e Big Pickle): três clipes locais, com tom +2 semitons e duração preservada. Sem tokens nem alteração do histórico. Resposta, término, erro, pedido de decisão e Parar invalidam o aviso; cada aba guarda o próprio temporizador. O primeiro uso prepara o cache e só confirma se a tarefa ainda aguarda resposta. Cache em `modelos_voz/prontidao-v2-<voz>-<velocidade>-tom2.npz`.
+- Confirmação de prontidão por voz após 1 segundo sem resposta (Claude, Codex, Kani e Big Pickle): três clipes locais, com tom +3 semitons e duração preservada. Sem tokens nem alteração do histórico. Resposta, término, erro, pedido de decisão e Parar invalidam o aviso; cada aba guarda o próprio temporizador. O primeiro uso prepara o cache e só confirma se a tarefa ainda aguarda resposta. Cache em `modelos_voz/prontidao-v2-<voz>-<velocidade>-tom3.npz`.
 - Operações identificadas por início/conclusão/falha, com indicação do arquivo editado.
 - Barras **Ver alterações** recolhidas, com expansão/recolhimento por clique. Código é texto, sem executar HTML.
 - Fotografia local anterior ao turno: até 300 arquivos de texto, 512 KB por arquivo e cerca de 8 MB no total.

@@ -11,9 +11,9 @@ window.KB_API = { KB, atualizar: () => kbEstado() };
 
 function kbMontar() {
     const info = KPLUG.info(PLUGIN_ID) || {};
-    const kw = +kbGuarda('kb-kani-w') || 420;
+    const kw = +kbGuarda('kb-kani-w2') ? kbGuarda('kb-kani-w2') + 'px' : 'minmax(0, 1fr)';   // meio a meio até arrastar
     kbPg().innerHTML = `
-      <div class="kb-app${kbGuarda('kb-kani-off') === '1' ? ' sem-kani' : ''}" style="--kb-kw:${kw}px">
+      <div class="kb-app${kbGuarda('kb-kani-off') === '1' ? ' sem-kani' : ''}" style="--kb-kw:${kw}">
         <div class="kb-barra">
           ${info.logo ? `<img class="kb-logo" src="${info.logo}" alt="KaniBrowser">` : '<b>KaniBrowser</b>'}
           <span class="kb-status" id="kb-status">fechado</span>
@@ -131,12 +131,13 @@ function kbDivisoria() {
     const div = kb$('#kb-div'), app = kb$('.kb-app');
     div.onpointerdown = e => {
         div.setPointerCapture(e.pointerId);
-        const x0 = e.clientX, w0 = parseInt(getComputedStyle(app).getPropertyValue('--kb-kw')) || 420;
+        const x0 = e.clientX, w0 = kb$('.kb-kani').getBoundingClientRect().width || 420;
         div.onpointermove = ev => {
-            const w = Math.max(300, Math.min(app.clientWidth * 0.6, w0 - (ev.clientX - x0)));
+            const w = Math.max(300, Math.min(app.clientWidth * 0.7, w0 - (ev.clientX - x0)));
             app.style.setProperty('--kb-kw', w + 'px');
         };
-        div.onpointerup = () => { div.onpointermove = null; kbGuarda('kb-kani-w', parseInt(app.style.getPropertyValue('--kb-kw'))); };
+        div.onpointerup = () => { div.onpointermove = null; const w = parseInt(app.style.getPropertyValue('--kb-kw')); if (w) kbGuarda('kb-kani-w2', w); };
+        div.ondblclick = () => { app.style.setProperty('--kb-kw', 'minmax(0, 1fr)'); kbGuarda('kb-kani-w2', ''); };   // duplo clique: volta ao meio
     };
 }
 

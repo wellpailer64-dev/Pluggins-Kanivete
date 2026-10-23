@@ -16,6 +16,8 @@ class AlteracoesCodexTest(unittest.TestCase):
         captura = Captura(self.pasta)
         p.write_bytes(b"# edicao anterior do usuario\r\nx = 2\r\n")
         r = captura.registrar({"path":"codigo.py"})
+        self.assertEqual(r['conteudo'], '# edicao anterior do usuario\nx = 2\n')
+        self.assertEqual((r['adicionadas'], r['removidas']), (1, 1))
         self.assertIn('-x = 1', r['diff'])
         self.assertIn('+x = 2', r['diff'])
         self.assertNotIn('+# edicao anterior', r['diff'])

@@ -11,7 +11,8 @@ import argparse, datetime, hashlib, json, os, subprocess, sys, uuid, warnings
 
 warnings.filterwarnings("ignore")
 AQUI = os.path.dirname(os.path.realpath(__file__))
-DADOS = "D:/Kanivete/KaniCode"
+from dados_app import pasta_dados
+DADOS = str(pasta_dados())
 AGENDA_PROPRIA = os.path.join(DADOS, "compromissos.json")
 AVISOS = os.path.join(DADOS, "avisos")
 PROXIMOS = os.path.join(AVISOS, "agenda.json")
@@ -56,6 +57,7 @@ def marcar(titulo, hora, data=None, dias=None, antes=None, obs=None):
     _salvar(d)
     print("marcado:", json.dumps(item, ensure_ascii=False))
     preparar()
+    return item
 
 
 def apagar(id_):

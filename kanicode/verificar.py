@@ -12,16 +12,16 @@ RAIZ = Path(__file__).resolve().parent
 AREAS = {
     "mensagens": ("mensagens.py", "kanicode.py", "sessao.py", "ui/mensagens.js", "ui/janela.html", "tests/test_mensagens.py"),
     "voz": ("fala.py", "radio.py", "kanicode.py", "tests/test_fala_tom.py", "tests/test_codex_prontidao.py", "tests/test_codex_voz.py"),
-    "claude": ("sessao.py", "continuidade.py", "mcp_equipe.py", "ui/janela.html", "tests/test_continuidade.py"),
+    "claude": ("sessao.py", "continuidade.py", "mcp_equipe.py", "ui/janela.html", "tests/test_continuidade.py", "tests/test_equipe_revisao.py"),
     "kani": ("kani_modo.py", "ajudantes.py", "tests/test_kani_*.py", "tests/test_modelo_ferramenta.py"),
     "pickle": ("bigpickle_modo.py", "pickle_agente.py", "codigo_agente.py", "ui/codigo_agente.js", "pickle_controle.py", "opencode_mvp.py", "kani_modo.py", "kanicode.py", "bolinha.py", "ui/janela.html", "ui/movel.js", "tests/test_bigpickle_*.py", "tests/test_pickle_agente.py", "tests/test_opencode_mvp.py", "tests/test_kani_historico.py"),
     "codex": ("ajudantes.py", "codex_contexto.py", "codex_processo.py", "codex_conta.py", "codex_alteracoes.py", "ui/alteracoes.js", "ui/codex_uso.js", "ui/janela.html", "tests/test_codex_*.py"),
     "codigo": ("codigo_agente.py", "codigo_testes.py", "kani_modo.py", "bigpickle_modo.py", "kanicode.py", "ui/codigo_agente.js", "tests/test_codigo_*.py"),
-    "interface": ("ui/janela.html", "ui/organizacao.js", "ui/kani_gpu.js", "tests/test_layout.py", "tests/test_dll_isoladas.py"),
+    "interface": ("kanicode.py", "ui/janela.html", "ui/paineis.js", "ui/organizacao.js", "ui/diagnostico.js", "ui/kani_gpu.js", "tests/test_layout.py", "tests/test_janela_painel.py", "tests/test_ponte_nativa.py", "tests/apoio_ponte_nativa.py", "tests/test_dll_isoladas.py"),
     "respostas": ("recursos_resposta.py", "ui/respostas.js", "ui/respostas_render.js", "tests/test_*respostas*.py", "tests/test_recursos_resposta.py"),
     "gpu": ("gpu.py", "ui/kani_gpu.js", "tests/test_gpu.py"),
     "contas": ("contas.py", "avatares.py", "tests/test_avatares.py"),
-    "infra": ("verificar.py", "modelo_ferramenta.py", "tests/test_modelo_ferramenta.py", "tests/test_verificar.py"),
+    "infra": ("verificar.py", "dados_app.py", "teste_isolado.py", "modelo_ferramenta.py", "tests/test_modelo_ferramenta.py", "tests/test_verificar.py", "tests/test_ambiente_isolado.py"),
 }
 
 
@@ -68,13 +68,19 @@ def selecionar(area, nomes):
 
 def ambiente():
     base = Path(r"D:\kanivete_testes")
+    base.mkdir(parents=True, exist_ok=True)
+    saida = Path(tempfile.mkdtemp(prefix="verificar_", dir=base))
     os.environ["KANICODE_TESTE"] = "1"
+    os.environ["KANICODE_DADOS_TESTE"] = str(saida / "dados")
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(base / "playwright"))
+    os.environ["CODEX_HOME"] = str(saida / "codex")
+    os.environ["CLAUDE_CONFIG_DIR"] = str(saida / "claude")
     for nome, pasta in (("TEMP", "tmp"), ("TMP", "tmp"), ("APPDATA", "appdata"),
                         ("LOCALAPPDATA", "localappdata"), ("PYTHONPYCACHEPREFIX", "pycache")):
         destino = base / pasta
         destino.mkdir(parents=True, exist_ok=True)
         os.environ[nome] = str(destino)
-    return Path(tempfile.mkdtemp(prefix="verificar_", dir=base))
+    return saida
 
 
 def verificar(arquivos, saida):
@@ -83,10 +89,14 @@ def verificar(arquivos, saida):
     testes = [p for p in arquivos if p.parent == RAIZ / "tests" and p.name.startswith("test_")]
     log = saida / "resultado.txt"
     with log.open("w", encoding="utf-8") as registro:
-        def rodar(comando, nome):
+        def rodar(comando, nome, dados=None):
+            env = os.environ.copy()
+            if dados is not None:
+                dados.mkdir(parents=True, exist_ok=True)
+                env.update(KANICODE_DADOS_TESTE=str(dados), CODEX_HOME=str(dados / "codex"), CLAUDE_CONFIG_DIR=str(dados / "claude"))
             try:
                 r = subprocess.run(comando, cwd=RAIZ, capture_output=True, text=True,
-                                   encoding="utf-8", errors="replace", timeout=180)
+                                   encoding="utf-8", errors="replace", timeout=180, env=env)
                 registro.write("\n" + nome + "\n" + r.stdout + r.stderr)
                 if "skipped=" in r.stdout + r.stderr:
                     ignorados.append(nome)
@@ -114,7 +124,7 @@ def verificar(arquivos, saida):
                     rodar(["node", "--check", str(script)], nome + " script " + str(n + 1))
         if not falhas:
             for p in testes:
-                rodar([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", p.name, "-v"], p.name)
+                rodar([sys.executable, str(RAIZ / "teste_isolado.py"), p.name], p.name, saida / "dados" / p.stem)
     print(f"{'FALHOU' if falhas else 'OK'}: {len(arquivos)} arquivos; {len(testes)} módulos de teste selecionados.")
     if falhas:
         print("Falhas: " + ", ".join(falhas))

@@ -26,7 +26,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 /**
- * A bolinha por cima de qualquer app: arrasta; 1 toque abre o KaniCode; 2 toques começa a ouvir; arrastar até o ✕ fecha.
+ * A bolinha por cima de qualquer app: arrasta; 1 toque abre o KaniCode; 2 toques começa a ouvir (de novo: cancela); arrastar até o ✕ fecha.
  * Anel verde pulsando = ouvindo; laranja batendo com a voz = falando. Serviço em primeiro plano (microfone + mídia) para o
  * Android não matar a conversa com o app minimizado.
  */
@@ -144,8 +144,7 @@ public class BolinhaService extends Service {
 
     void ouvir() {
         if (MainActivity.eu == null) { abrir(); return; }
-        estado("ouvindo");
-        MainActivity.eu.ouvir();
+        MainActivity.eu.ouvir();   // o rosto (ouvindo/parado) vem da página: micVisual em movel.js
     }
 
     void fechar() {   // a despedida toca inteira antes de sumir

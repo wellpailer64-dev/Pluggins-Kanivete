@@ -20,7 +20,8 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-DADOS = Path("D:/Kanivete/KaniCode/conexoes")
+from dados_app import pasta_dados
+DADOS = pasta_dados() / "conexoes"
 SCOPES = ("https://www.googleapis.com/auth/calendar.calendarlist.readonly",
           "https://www.googleapis.com/auth/calendar.events.readonly")
 TOKEN_URL = "https://oauth2.googleapis.com/token"

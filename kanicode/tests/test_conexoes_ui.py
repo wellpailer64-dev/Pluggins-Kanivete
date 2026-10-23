@@ -35,6 +35,13 @@ class ConexoesUITest(unittest.TestCase):
               if(nome==='drive_buscar') return {arquivos:[{id:args[1]?'b':'a',nome:args[1]?'Segunda página':'<img src=x onerror=alert(1)>',pasta:false,url:'https://drive.google.com/file/d/a'}],proxima:args[1]?'':'pagina-2'};
               return {...driveTeste};
             };
+            if(nome.startsWith('gmail_')) return async (...args) => {
+              chamadas.push({nome,args});
+              if(nome==='gmail_buscar') return {mensagens:[{id:'m1',assunto:'<img src=x onerror=alert(1)>',de:'cliente',data:'hoje'}],proxima:''};
+              if(nome==='gmail_ler') return {assunto:'Cliente',de:'cliente',para:'eu',data:'hoje',texto:'<script>alert(1)</script>'};
+              if(nome==='gmail_rascunho') return {id:'r1',mensagem:'Rascunho criado. Nenhum e-mail foi enviado.'};
+              return {configurado:true,conectado:!!window.gmailConectado,conectando:false,mensagem:'',reutilizavel:true};
+            };
             if(!nome.startsWith('google_')) return anterior[nome];
             return async (...args) => {
               chamadas.push({nome,args});
@@ -88,6 +95,23 @@ class ConexoesUITest(unittest.TestCase):
         self.assertNotIn('conectado', self.page.locator('[data-conexao="calendar"]').get_attribute('class'))
         self.assertEqual(self.page.locator('#conexoes-resumo').inner_text(), 'Nenhuma conexão ativa')
 
+    def test_gmail_busca_leitura_rascunho(self):
+        self.page.evaluate("window.gmailConectado = true")
+        self.abrir(catalogo=True)
+        p = self.page
+        p.click('[data-conexao="gmail"]')
+        p.fill('#gmail-termo', 'from:cliente')
+        p.click('#gmail-busca button')
+        p.click('#gmail-lista button')
+        self.assertEqual(p.locator('#gmail-corpo').inner_text(), '<script>alert(1)</script>')
+        self.assertEqual(p.locator('#gmail-leitura script').count(), 0)
+        p.fill('#gmail-para', 'cliente@example.com')
+        p.fill('#gmail-novo-assunto', 'Teste')
+        p.fill('#gmail-texto', 'Olá')
+        p.click('#gmail-rascunho button')
+        p.wait_for_function("document.querySelector('#gmail-status').textContent.includes('Nenhum e-mail')")
+        self.assertTrue(p.evaluate("chamadas.some(c=>c.nome==='gmail_rascunho' && c.args[2]==='Olá')"))
+
     def test_cards_estado_navegacao_e_sugestoes(self):
         self.abrir(True, catalogo=True)
         p = self.page
@@ -96,7 +120,7 @@ class ConexoesUITest(unittest.TestCase):
         self.assertTrue(p.locator('#conexao-google').is_hidden())
         self.assertIn('1 conexão ativa', p.locator('#conexoes-resumo').inner_text())
         p.screenshot(path=r'D:\kanivete_testes\conexoes_cards.png')
-        for app, nome in [('gmail', 'Gmail'), ('github', 'GitHub')]:
+        for app, nome in [('github', 'GitHub')]:
             p.click(f'[data-conexao="{app}"]')
             self.assertEqual(p.locator('#sugestao-titulo').inner_text(), nome)
             self.assertTrue(p.get_by_text('Ainda não disponível', exact=True).is_visible())

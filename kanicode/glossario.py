@@ -4,7 +4,8 @@ Palavras novas do Pailer: D:/Kanivete/KaniCode/glossario.json → [["regex", "tr
 """
 import json, os, re
 
-ARQ = os.path.join(os.path.splitdrive(os.path.abspath(__file__))[0] + os.sep, "Kanivete", "KaniCode", "glossario.json")
+from dados_app import pasta_dados
+ARQ = str(pasta_dados() / "glossario.json")
 
 _KV = r"[ck]a[nm]+i?[vb]e?t[ei]?s?"   # canivete, kanivete, canivet, kanivetes...
 FABRICA = [

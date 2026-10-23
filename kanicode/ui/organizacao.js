@@ -5,16 +5,23 @@
   $('status').appendChild(document.querySelector('.rodape'));
   const saudacao = () => { $('saudacao').hidden = K.ocupada || !!conversa.children.length; };
   new MutationObserver(saudacao).observe(conversa, {childList: true});
-  const menu = $('ferramentas-menu'), botao = $('ferramentas-bt');
-  function ferramentas(on, foco = false) {
+  const menu = $('config-menu'), botao = $('ferramentas-bt');
+  function configuracoes(on, foco = false) {
     menu.hidden = !on; botao.setAttribute('aria-expanded', String(on));
-    if (on) { $('menu-quem').hidden = true; if (foco) menu.querySelector('button').focus(); }
+    if (on) {
+      const r = botao.getBoundingClientRect();
+      menu.style.right = Math.max(8, innerWidth - r.right) + 'px';
+      menu.style.top = r.bottom + 4 + 'px';
+      menu.style.maxHeight = Math.max(100, innerHeight - r.bottom - 14) + 'px';
+      $('menu-quem').hidden = true;
+      if (foco) menu.querySelector('button').focus();
+    }
   }
-  botao.addEventListener('click', () => ferramentas(menu.hidden));
+  window.kaniConfiguracoesMenu = configuracoes;
+  botao.addEventListener('click', () => configuracoes(menu.hidden));
   botao.addEventListener('keydown', e => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); ferramentas(true, true); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); configuracoes(true, true); }
   });
-  menu.addEventListener('click', e => { if (e.target.closest('button')) ferramentas(false); });
   menu.addEventListener('keydown', e => {
     if (e.target.matches('select')) return;
     const bts = [...menu.querySelectorAll('button')].filter(b => b.getClientRects().length);
@@ -23,10 +30,12 @@
     }
   });
   document.addEventListener('mousedown', e => {
-    if (!e.target.closest('#ferramentas-menu, #ferramentas-bt')) ferramentas(false);
+    if (!e.target.closest('#config-menu, #ferramentas-bt')) configuracoes(false);
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !menu.hidden) { e.preventDefault(); e.stopImmediatePropagation(); ferramentas(false); botao.focus(); }
+    if (e.key === 'Escape' && !menu.hidden && !document.querySelector('dialog[open]')) {
+      e.preventDefault(); e.stopImmediatePropagation(); configuracoes(false); botao.focus();
+    }
   }, true);
   document.addEventListener('error', e => {
     if (e.target.matches?.('.foto-ct img')) e.target.remove();
@@ -36,7 +45,7 @@
   const seletor = $('quem-bt'), modelos = $('menu-quem');
   new MutationObserver(() => seletor.setAttribute('aria-expanded', String(!modelos.hidden))).observe(modelos, {attributes: true, attributeFilter: ['hidden']});
   seletor.addEventListener('click', () => {
-    ferramentas(false);
+    configuracoes(false);
     modelos.querySelectorAll('[data-q]').forEach(el => { el.tabIndex = 0; el.setAttribute('role', 'button'); });
   });
   modelos.addEventListener('keydown', e => {

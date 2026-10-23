@@ -10,11 +10,12 @@ import os, queue, re, subprocess, threading, urllib.request
 import numpy as np
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
-MODELOS = os.path.join(os.path.splitdrive(PASTA)[0] + os.sep, "Kanivete", "KaniCode", "modelos_voz")
+from dados_app import pasta_dados
+MODELOS = str(pasta_dados() / "modelos_voz")
 BASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 ARQUIVOS = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 VOZ, VELOCIDADE = "pf_dora", 1.08
-TOM_SEMITONS = 2
+TOM_SEMITONS = 3
 PRONTIDAO = ("Recebi. Já vou analisar.", "Certo, estou verificando.", "Recebi seu pedido. Só um instante.")
 CACHE_PRONTIDAO = os.path.join(MODELOS, f"prontidao-v2-{VOZ}-{VELOCIDADE}-tom{TOM_SEMITONS}.npz")
 FIM_FRASE = re.compile(r"(.+?[.!?…:;])(\s+|$)|(.+?)\n", re.S)

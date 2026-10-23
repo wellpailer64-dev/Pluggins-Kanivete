@@ -1,6 +1,6 @@
 // Teste opcional e separado da conversa principal.
 (() => {
-  const menu = document.getElementById('ferramentas-menu');
+  const menu = document.getElementById('ferramentas-codigo');
   if (!menu) return;
   const abrir = document.createElement('button');
   abrir.className = 'bt';

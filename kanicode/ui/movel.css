@@ -9,6 +9,7 @@ html.movel .conversa { overflow-x: hidden; }
 html.movel .msg, html.movel .passo, html.movel .perm, html.movel .perg { min-width: 0; max-width: 100%; }
 html.movel .msg.kc pre, html.movel .dif, html.movel .passo pre { max-width: 100%; }
 html.movel .mic { width: 36px; height: 36px; font-size: 18px; margin: 0 -2px 0 0; }
+html.movel .mic-x { width: 32px; height: 32px; font-size: 16px; margin: 0 -2px 0 4px; }
 /* contas: painel que sobe de baixo; trocar só (entrar/remover/renomear ficam no PC) */
 html.movel .contas { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); max-height: 75dvh; z-index: 70;
                      border-radius: 14px; box-shadow: 0 -10px 40px #000a; }
@@ -59,3 +60,44 @@ html.movel #kv-bt.on { color: var(--lima); }
 .kv-msg button { height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--lima); color: var(--fundo); font-weight: 600; }
 .kv:fullscreen { align-items: center; border: 0; }
 .kv:fullscreen img { max-height: 100vh; height: 100vh; }
+
+/* Conversa ocupa a tela; opções ficam abaixo do texto, sem apertar o campo. */
+html.movel body { height: var(--movel-altura, 100dvh); }
+html.movel .corpo:has(> .lado.aberto) { padding-left: 0; }
+html.movel .trilho-coluna { display: none; }
+html.movel .conversa { padding: 16px 14px; overscroll-behavior: contain; }
+html.movel .msg { font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
+html.movel .msg.eu { max-width: 90%; margin-left: auto; border-radius: 18px; }
+html.movel .entrada { display: grid; grid-template-columns: auto 1fr auto; gap: 8px;
+  margin: 0 10px 6px; padding: 10px; border: 1px solid var(--borda); border-radius: 22px; }
+html.movel .campo { grid-column: 1 / -1; grid-row: 1; width: 100%; min-width: 0; }
+html.movel .campo .seta { display: none; }
+html.movel textarea { width: 100%; min-height: 48px; max-height: 30dvh; padding: 8px; }
+html.movel .entrada-opcoes { grid-column: 2; grid-row: 2; height: 44px; min-width: 0; }
+html.movel .seletor { height: 40px; border: 0; padding: 0 6px; }
+html.movel .quem-bt > span { display: inline; max-width: 85px; overflow: hidden; text-overflow: ellipsis; }
+html.movel .enviar { grid-column: 3; grid-row: 2; align-self: center; min-width: 60px;
+  min-height: 44px; padding: 0 12px; border-radius: 22px; }
+.movel-fotos { display: flex; align-items: center; grid-column: 1; grid-row: 2; gap: 2px; }
+.movel-foto { width: 40px; height: 44px; padding: 0; background: transparent; color: var(--texto);
+  border: 0; border-radius: 14px; font: 25px var(--sans); cursor: pointer; }
+.movel-foto:active { background: var(--lima-suave); }
+.movel-foto:focus-visible { outline: 2px solid var(--lima); }
+html.movel .anexos { padding: 8px 14px; }
+html.movel .anexo { width: 72px; height: 72px; border-radius: 14px; }
+html.movel .anexo button { width: 28px; height: 28px; }
+html.movel .rodape { padding: 0 14px 6px; gap: 8px; }
+html.movel .menu-quem { bottom: calc(100% + 8px); left: 0; max-width: 100%; }
+html.movel .dif, html.movel pre { overflow-x: auto; }
+
+/* Pastas são escolhidas no PC; no celular a faixa só informa o projeto. */
+html.movel #pasta { pointer-events: none; }
+html.movel .pasta-adicionar, html.movel #pasta-remover { display: none !important; }
+html.movel .abas-chat { padding: 0 8px; height: 54px; gap: 5px; overflow-x: auto;
+  overflow-y: hidden; scrollbar-width: thin; touch-action: pan-x; }
+html.movel .aba-chat { flex: 0 0 155px; height: 48px; min-width: 120px; font-size: 13px; }
+html.movel .aba-chat.on { height: 49px; }
+html.movel .aba-mod { font-size: 10px; }
+html.movel .aba-x { min-width: 32px; min-height: 40px; }
+html.movel .aba-mais { flex: 0 0 44px; height: 48px; font-size: 24px; }
+

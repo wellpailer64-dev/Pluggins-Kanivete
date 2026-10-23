@@ -114,3 +114,69 @@ def briefing(d, caminho):
         linhas += ["", "COMENTÁRIOS"] + [f"[{c['created_at'][:16]}] {c['comment_text']}" for c in d["comentarios"]]
     with open(os.path.join(caminho, "BRIEFING.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(linhas))
+
+
+# ---------- cliente novo: pasta no padrão, ícone da foto de perfil e ligação no mapa (sistema ↔ pasta) ----------
+SUBPASTAS = ["00 - ORCAMENTO", "01 - IDENTIDADE VISUAL", "02 - PRODUCOES", "03 - ANOTACAO DE CALLS", "04 - NOTAS FISCAIS"]
+
+
+def cor_da_foto(foto, padrao="#f26b1d"):
+    """Cor mais marcante da foto (a mais frequente entre as saturadas); foto P&B → tom escuro dela; sem foto → padrão."""
+    if not foto:
+        return padrao
+    from PIL import Image
+    import colorsys
+    im = Image.open(foto).convert("RGB").resize((80, 80)).quantize(12).convert("RGB")
+    cores = sorted(im.getcolors(6400), reverse=True)
+    viva = [(n, c) for n, c in cores if colorsys.rgb_to_hsv(*[v / 255 for v in c])[1] > 0.35 and 40 < max(c) < 250]
+    n, c = viva[0] if viva else min(cores, key=lambda x: sum(x[1]))
+    return "#%02x%02x%02x" % c
+
+
+def icone_pasta(pasta, foto, nome):
+    """Foto → .ico redondo (16 a 256 px) dentro da pasta + desktop.ini (o Windows mostra a foto na pasta)."""
+    from PIL import Image, ImageDraw
+    im = Image.open(foto).convert("RGBA")
+    l = min(im.size); im = im.crop(((im.width - l) // 2, (im.height - l) // 2, (im.width + l) // 2, (im.height + l) // 2)).resize((256, 256), Image.LANCZOS)
+    m = Image.new("L", (1024, 1024), 0); ImageDraw.Draw(m).ellipse((8, 8, 1016, 1016), fill=255)
+    im.putalpha(m.resize((256, 256), Image.LANCZOS))
+    ico = os.path.join(pasta, f"{nome}.ico")
+    ini = os.path.join(pasta, "desktop.ini")
+    for f in (ini, ico):   # oculto/sistema não deixa regravar
+        if os.path.exists(f):
+            os.system(f'attrib -s -h -r "{f}"')
+    im.save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    with open(ini, "w", encoding="utf-16", newline="") as f:   # o Explorer lê UTF-16 (acentos no caminho)
+        f.write(f"[.ShellClassInfo]\r\nIconResource={os.path.abspath(ico)},0\r\n[ViewState]\r\nMode=\r\nVid=\r\nFolderType=Generic\r\n")
+    os.system(f'attrib +s +h "{ini}" & attrib +h "{ico}" & attrib +r "{pasta}"')
+    return ico
+
+
+def preparar_cliente(tag, pasta=None, foto=None):
+    """Cria/arruma CLIENTES/<pasta> com as subpastas padrão, ícone e entrada no mapa_clientes.json (chave = id[:8])."""
+    m = mapa()
+    pasta = pasta or _limpo(tag["name"]).upper()
+    base = os.path.join(m["raiz"], pasta)
+    for s in SUBPASTAS:
+        os.makedirs(os.path.join(base, s), exist_ok=True)
+    ico = icone_pasta(base, foto, pasta) if foto else None
+    if foto:   # como o botão "Pasta Local" do site: a foto também em 01 - IDENTIDADE VISUAL
+        from PIL import Image
+        Image.open(foto).convert("RGB").save(os.path.join(base, "01 - IDENTIDADE VISUAL", f"{pasta}_PERFIL.png"))
+    m.setdefault("clientes", {})[tag["id"][:8]] = {"nome": tag["name"], "pasta": pasta, "producao": "02 - PRODUCOES",
+                                                   "modelo": r"{ano}\{mm} - {MES}", "demanda": "{nn} - {TIPO} - {TITULO}"}
+    with open(MAPA, "w", encoding="utf-8") as f:
+        json.dump(m, f, ensure_ascii=False, indent=1)
+    return base, ico
+
+
+def anotar(tag_id, **campos):
+    """grava campos extras (ex.: drive) na entrada do cliente no mapa_clientes.json"""
+    m = mapa()
+    c = m.get("clientes", {}).get(tag_id[:8])
+    if c is None:
+        return False
+    c.update({k: v for k, v in campos.items() if v})
+    with open(MAPA, "w", encoding="utf-8") as f:
+        json.dump(m, f, ensure_ascii=False, indent=1)
+    return True

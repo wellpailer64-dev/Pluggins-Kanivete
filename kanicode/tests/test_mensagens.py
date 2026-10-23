@@ -85,6 +85,19 @@ class MensagensTest(unittest.TestCase):
         self.app.mensagem_enviar('1','Primeira',[imagem])
         self.assertEqual([i[1] for i in self.enviadas], ['Primeira','Segunda'])
 
+    def test_cancelar_tira_da_fila_sem_entregar(self):
+        self.app.mensagem_enviar('1','Fica')
+        self.app.mensagem_enviar('2','Cancelada')
+        self.assertTrue(self.app.mensagem_cancelar('2'))
+        self.assertFalse(self.app.mensagem_cancelar('2'))
+        self.assertEqual(self.app._para_janela.call_args.args[0]['estado'], 'cancelada')
+        self.terminar()
+        self.esperar(lambda: len(self.enviadas)==1 and not self.app._ctx().mensagens.enviando)
+        self.terminar()
+        threading.Event().wait(.1)
+        self.assertEqual([i[1] for i in self.enviadas], ['Fica'])
+        self.assertEqual(self.app.mensagens_fila(), [])
+
     def test_urgente_interrompe_uma_vez_e_preserva_resto_da_fila(self):
         self.app.mensagem_enviar('1','Normal')
         self.app.mensagem_enviar('2','Urgente')

@@ -1,6 +1,6 @@
 """Linha de comando do KaniBrowser para o agente. O navegador mora no processo que o abriu (canal privado; não há porta
-do Chrome): o KANIVETE em modo agente (porta 9222 do Pailer ou --porta 9333 de teste) se ele já está com o KaniBrowser
-aberto; senão o KaniCode (kanicode/navegador.py, canal 127.0.0.1:47613 com chave) — funciona sem o KANIVETE aberto.
+do Chrome): PREFERÊNCIA = o navegador embutido do KaniCode (painel 🌐, aberto sozinho à vista; kanicode/navegador.py,
+canal 127.0.0.1:47613 com chave); só sem o KaniCode aberto vai para o KANIVETE em modo agente (9222 ou --porta 9333).
 --onde kanivete|kanicode força um dos dois. Depois de ir/abrir/nova/js/instagram/chatgpt/link sai "tela: <print>"
 (JPEG da aba da Kani; o KaniCode mostra na conversa, no PC e no celular); --sem-foto não tira.
 
@@ -11,6 +11,7 @@ aberto; senão o KaniCode (kanicode/navegador.py, canal 127.0.0.1:47613 com chav
   py -3.13 kb.py imagens [--aba ID] [--min 250]
   py -3.13 kb.py baixar [--aba ID] [--max 20] [--min 250] (--demanda ID8 | --pasta P)
   py -3.13 kb.py destinos
+  py -3.13 kb.py painel "estado|mostrar ID|nova URL|ir URL|fechar_aba ID|acao voltar|aparelho celular"   (abas do Pailer)
   py -3.13 kb.py js "<código JS>" | js @arquivo.js     (na aba da Kani; aceita async/Promise; volta o valor)
   py -3.13 kb.py chatgpt "<pergunta ou pedido de imagem>" [--pasta P]   (conta do Pailer; imagens salvas)
   py -3.13 kb.py instagram <@perfil>      link <url> (--demanda ID8 | --pasta P)      pesquisar "<termo>" [--max 3]
@@ -52,12 +53,23 @@ def chamar_kanicode(funcao, args=None, timeout=420):
 
 
 def chamar(porta, funcao, args=None, timeout=420, onde="auto"):
-    """manda para o KANIVETE (se ele já está com o navegador aberto) ou para o KaniCode"""
+    """manda para o navegador embutido do KaniCode (preferência, 2026-10-23) ou, sem o KaniCode, para o KANIVETE"""
     if "x" not in _onde:
         _onde["x"] = onde
-        if onde == "auto":
-            # regra do Pailer (2026-10-21): com o KANIVETE aberto, o navegador mora NELE, na aba do KaniBrowser à
-            # vista, para ele acompanhar ao vivo; o KaniCode só hospeda quando o KANIVETE não está aberto
+        if onde in ("auto", "kanicode"):
+            # regra do Pailer (2026-10-23): o KaniCode é autossuficiente — o navegador mora no painel 🌐 dele, aberto à
+            # vista (ao vivo, brilho verde-limão em volta enquanto a Kani mexe); o KANIVETE só quando o KaniCode não está aberto
+            try:
+                if not chamar_kanicode("painel", {}, 10).get("aberto"):
+                    import time
+                    for _ in range(60):   # o painel abre o KaniBrowser (e solta o do KANIVETE, se ele estiver com ele)
+                        time.sleep(0.5)
+                        if chamar_kanicode("painel", {}, 10).get("aberto"):
+                            break
+                _onde["x"] = "kanicode"
+            except Exception:
+                pass   # KaniCode fechado ou versão antiga (sem "painel"): segue o caminho antigo
+        if _onde["x"] == "auto":
             try:
                 aberto = chamar_kanivete(porta, "estado", {}, 15).get("aberto")
                 if not aberto:
@@ -164,6 +176,15 @@ def _rodar(a, c):
         elif a.cmd == "destinos":
             for d in c("destinos"):
                 print(d["id"][:8], d["cliente"], "|", d["nome"])
+        elif a.cmd == "painel":   # o painel 🌐 do KaniCode como o Pailer usa: painel estado|mostrar ID|nova URL|ir URL|fechar_aba ID|acao voltar|aparelho celular
+            o, _, arg = (a.arg or "estado").partition(" ")
+            r = chamar_kanicode("painel_cmd", {"o": o, **({"a": arg} if arg else {})})
+            if isinstance(r, dict) and "abas" in r:
+                for t in r["abas"]:
+                    print(("> " if t["id"] == r.get("aba") else "  ") + t["id"][:8], ("[kani] " if t.get("kani") else "") + t["titulo"][:50], t["url"][:80])
+                print("modo:", r.get("modo"), r.get("faixa"), r.get("tam"), "| trabalhando:", r.get("trabalhando"))
+            else:
+                print(r)
         elif a.cmd in ("frente", "fechar"):
             c(a.cmd, aba=a.aba); print("ok")
         else:

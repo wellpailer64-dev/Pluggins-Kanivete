@@ -23,6 +23,9 @@ _missao_trava = threading.Lock()
 _ULTIMA = {"codex": None}   # última sessão do Codex nesta conversa ("continuar")
 
 FERRAMENTAS = [
+    {"name": "mapa_d", "description": "Mapa local e vivo do disco D: busca arquivos/pastas por nome e caminho, lista uma pasta ou informa atualização. Não lê conteúdo nem altera os arquivos. Confira o indicador parcial.",
+     "inputSchema": {"type": "object", "properties": {"acao": {"type": "string", "enum": ["buscar", "listar", "status"]},
+         "busca": {"type": "string"}, "pasta": {"type": "string"}, "extensao": {"type": "string"}}, "required": ["acao"]}},
     {"name": "missao",
      "description": ("Ler ou atualizar o ponto de retomada desta sessão, guardado em disco. Sem campos, consulta. "
                      "Em missão longa: guarde no início, após cada etapa relevante e antes de encerrar. Após compactação "
@@ -68,6 +71,47 @@ FERRAMENTAS = [
 ]
 
 
+ROTINAS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rotinas.json")
+
+
+def _rotinas():
+    """rotinas.json → {nome: rotina}; arquivo quebrado não derruba a equipe"""
+    import perfil_portatil
+    return perfil_portatil.rotinas(app=os.path.dirname(ROTINAS))
+
+
+def _ferramentas():
+    out = list(FERRAMENTAS)
+    for r in _rotinas().values():
+        props = {k: {kk: vv for kk, vv in v.items() if kk != "obrigatorio"} for k, v in r.get("args", {}).items()}
+        out.append({"name": r["name"], "description": "[rotina] " + r["description"],
+                    "inputSchema": {"type": "object", "properties": props,
+                                    "required": [k for k, v in r.get("args", {}).items() if v.get("obrigatorio")]}})
+    return out
+
+
+def _rodar_rotina(r, args):
+    """monta a linha de comando: '{arg}' → valor; vazio derruba o par '--flag {arg}'; flags booleanas no fim"""
+    cmd, partes = [], r["cmd"]
+    for i, p in enumerate(partes):
+        nome = p[1:-1] if p.startswith("{") and p.endswith("}") else None
+        prox = partes[i + 1] if i + 1 < len(partes) else ""
+        if p.startswith("--") and prox.startswith("{") and not str(args.get(prox[1:-1]) or "").strip():
+            continue
+        if nome is not None:
+            v = str(args.get(nome) or "").strip()
+            if not v:
+                continue
+            cmd.append(v)
+        else:
+            cmd.append(p)
+    cmd += [f for k, f in (r.get("flags") or {}).items() if args.get(k)]
+    p = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
+                       timeout=int(r.get("prazo") or 300), creationflags=0x08000000)
+    saida = ((p.stdout or "") + ("\n" + p.stderr if p.returncode and p.stderr else "")).strip()
+    return {"ok": p.returncode == 0}, (saida[-6000:] or "(sem saída)") + ("" if p.returncode == 0 else f"\n[código {p.returncode}]")
+
+
 def _avisar(ev):
     """manda o andamento para a janela do KaniCode (se ela estiver aberta; senão, segue em silêncio)"""
     try:
@@ -93,38 +137,55 @@ def _responder(id_, result=None, erro=None):
 
 
 def _git(*args):
-    try:
-        return subprocess.run(["git", *args], cwd=PASTA, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                              timeout=60, creationflags=0x08000000).stdout
-    except Exception:
-        return ""
+    r = subprocess.run(["git", *args], cwd=PASTA, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       timeout=60, creationflags=0x08000000)
+    if r.returncode:
+        raise RuntimeError("não foi possível conferir o Git: " + (r.stderr or r.stdout)[-400:])
+    return r.stdout
 
 
 def _mudados(extras=()):
-    """arquivos já versionados que estão modificados (git diff: rápido) + os que o Codex disse que mexeu (os novos),
-    cada um com o hash do conteúdo para comparar antes × depois. `git status -uall` levava ~1 min neste projeto (muito
-    arquivo solto) e passava do limite: a revisão dizia "nenhum arquivo mudou" — medido 2026-10-20."""
-    nomes = set(_git("diff", "--name-only").splitlines())
-    for a in extras:
-        try:
-            nomes.add(os.path.relpath(os.path.join(PASTA, a), PASTA).replace("\\", "/"))
-        except ValueError:
-            pass
+    """Fotografa conteúdo versionado e novo, inclusive alterações anteriores ao contrato."""
+    import hashlib
+    nomes = set(_git("ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".").split("\0"))
+    nomes.update(extras)
     out = {}
     for caminho in nomes:
-        caminho = caminho.strip().strip('"')
         if not caminho:
             continue
+        absoluto = os.path.realpath(os.path.join(PASTA, caminho))
         try:
-            with open(os.path.join(PASTA, caminho), "rb") as f:
-                out[caminho] = hash(f.read())
-        except OSError:
-            out[caminho] = None
+            if os.path.normcase(os.path.commonpath([os.path.realpath(PASTA), absoluto])) != os.path.normcase(os.path.realpath(PASTA)):
+                continue
+        except ValueError:
+            continue
+        relativo = os.path.relpath(absoluto, PASTA).replace("\\", "/")
+        try:
+            with open(absoluto, "rb") as f:
+                out[relativo] = hashlib.file_digest(f, "sha256").hexdigest()
+        except FileNotFoundError:
+            out[relativo] = None
+        except IsADirectoryError:
+            continue
     return out
 
 
+def _ambiente_revisao():
+    """Saídas de verificações ficam no D, sem mudar o ambiente global."""
+    ambiente = os.environ.copy()
+    ambiente["KANICODE_TESTE"] = "1"
+    ambiente.setdefault("KANICODE_DADOS_TESTE", "D:/kanivete_testes/revisao_dados")
+    ambiente.setdefault("PLAYWRIGHT_BROWSERS_PATH", "D:/kanivete_testes/playwright")
+    for chave, nome in (("TEMP", "tmp"), ("TMP", "tmp"), ("PYTHONPYCACHEPREFIX", "pycache"),
+                        ("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata")):
+        destino = os.path.join("D:/kanivete_testes", nome)
+        os.makedirs(destino, exist_ok=True)
+        ambiente[chave] = destino
+    return ambiente
+
+
 def _sintaxe(caminho):
-    """None = ok; texto = erro"""
+    """None = ok; texto = erro de sintaxe ou verificação inconclusiva."""
     p = os.path.join(PASTA, caminho)
     ext = os.path.splitext(p)[1].lower()
     cmd = ([sys.executable.replace("pythonw.exe", "python.exe"), "-m", "py_compile", p] if ext == ".py"
@@ -138,54 +199,111 @@ def _sintaxe(caminho):
             return str(e)[:300]
     if not cmd:
         return None
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=0x08000000)
-    return None if r.returncode == 0 else (r.stderr or r.stdout)[-400:]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           creationflags=0x08000000, timeout=60, env=_ambiente_revisao())
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return "INCONCLUSIVO: " + str(e)[:300]
+    if r.returncode:
+        return (r.stderr or r.stdout or f"verificador terminou com código {r.returncode}")[-400:]
+    return None
 
 
 TESTE_PRAZO = 180   # s: teste da revisão que passa disso é dado como TRAVADO (não como falha do código)
 
 
 def _revisar(antes, teste, arquivos_codex=()):
-    """o que o Codex mudou + sintaxe + teste: o relatório que o Claude lê no lugar dos arquivos"""
-    depois = _mudados(arquivos_codex)
-    mexidos = sorted(k for k, h in depois.items() if antes.get(k, "∅") != h)
+    """Compara, confere e guarda evidência sem confundir ausência de teste com aprovação."""
+    import time
+    import uuid
+    inicio = time.monotonic()
     linhas = ["REVISÃO AUTOMÁTICA DO KANICODE:"]
-    if not mexidos:
-        linhas.append("- nenhum arquivo mudou")
-    else:
-        stat = _git("diff", "--stat", "--", *mexidos).strip().splitlines()
-        linhas.append(f"- {len(mexidos)} arquivo(s) mudado(s): " + ", ".join(mexidos))
-        if stat:
-            linhas.append("- diff: " + stat[-1].strip())
-        _avisar({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": f"conferindo a sintaxe de {len(mexidos)} arquivo(s)"})
-        erros = [(m, e) for m in mexidos if os.path.isfile(os.path.join(PASTA, m)) for e in [_sintaxe(m)] if e]
-        linhas.append("- sintaxe: ok" if not erros else "- sintaxe com ERRO: " + "; ".join(f"{m}: {e}" for m, e in erros))
+    dados = {"projeto": PASTA, "inicio": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+             "arquivos": [], "sintaxe": "não executada", "teste": "não executado"}
+    try:
+        if antes is None:
+            raise RuntimeError("fotografia inicial indisponível; alterações não podem ser atribuídas ao agente")
+        depois = _mudados(arquivos_codex)
+        mexidos = sorted(k for k in antes.keys() | depois.keys() if antes.get(k) != depois.get(k))
+        dados["arquivos"] = mexidos
+        if not mexidos:
+            linhas.append("- nenhum arquivo mudou")
+        else:
+            linhas.append(f"- {len(mexidos)} arquivo(s) mudado(s): " + ", ".join(mexidos))
+            _avisar({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": f"conferindo a sintaxe de {len(mexidos)} arquivo(s)"})
+            erros = [(m, e) for m in mexidos if os.path.isfile(os.path.join(PASTA, m)) for e in [_sintaxe(m)] if e]
+            dados["sintaxe"] = "com pendências" if erros else "ok nos tipos suportados"
+            linhas.append("- sintaxe: ok nos tipos suportados (Python, JS e JSON)" if not erros else
+                          "- sintaxe com pendências: " + "; ".join(f"{m}: {e}" for m, e in erros))
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:
+        dados["sintaxe"] = "inconclusiva"
+        linhas.append("- comparação/sintaxe INCONCLUSIVA: " + str(e)[:500])
     if teste:
         _avisar({"t": "ajudante", "quem": "codex", "fase": "passo", "texto": "rodando o teste: " + teste[:60]})
-        p = subprocess.Popen(teste, cwd=PASTA, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                             encoding="utf-8", errors="replace", creationflags=0x08000000)
         try:
-            saida, _ = p.communicate(timeout=TESTE_PRAZO)
-            saida = (saida or "").strip().splitlines()
-            linhas.append(f"- teste ({teste}): {'PASSOU' if p.returncode == 0 else 'FALHOU (código ' + str(p.returncode) + ')'}")
-            linhas += ["    " + l for l in saida[-15:]]
-        except subprocess.TimeoutExpired:
-            # shell=True: o teste é neto do cmd; taskkill /T derruba a árvore toda
-            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True, creationflags=0x08000000)
-            linhas.append(f"- teste ({teste}): TRAVOU (passou de {TESTE_PRAZO // 60} min) — não é falha confirmada do código; "
-                          "rode você mesmo para ver onde para")
+            p = subprocess.Popen(teste, cwd=PASTA, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                 encoding="utf-8", errors="replace", creationflags=0x08000000, env=_ambiente_revisao())
+            try:
+                saida, _ = p.communicate(timeout=TESTE_PRAZO)
+            except subprocess.TimeoutExpired:
+                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True,
+                               creationflags=0x08000000, timeout=15)
+                saida, _ = p.communicate(timeout=10)
+                dados["teste"] = "travou"
+                linhas.append(f"- teste ({teste}): TRAVOU (passou de {TESTE_PRAZO} s); não comprova falha do código")
+            else:
+                dados["codigo_teste"] = p.returncode
+                if p.returncode in (-1, 4294967295):
+                    dados["teste"] = "inconclusivo"
+                    resultado = f"INCONCLUSIVO (processo encerrado com código {p.returncode}); não comprova falha do código"
+                else:
+                    dados["teste"] = "passou" if p.returncode == 0 else "falhou"
+                    resultado = "PASSOU" if p.returncode == 0 else f"FALHOU (código {p.returncode})"
+                linhas.append(f"- teste ({teste}): {resultado}")
+            linhas += ["    " + l for l in (saida or "").strip().splitlines()[-15:]]
+        except (OSError, subprocess.TimeoutExpired) as e:
+            dados["teste"] = "inconclusivo"
+            linhas.append("- teste INCONCLUSIVO (infraestrutura): " + str(e)[:400])
+    else:
+        linhas.append("- teste: NÃO EXECUTADO (nenhum comando informado)")
+    dados["duracao_s"] = round(time.monotonic() - inicio, 3)
+    try:
+        pasta = "D:/kanivete_testes/revisoes_kanicode"
+        os.makedirs(pasta, exist_ok=True)
+        registro = os.path.join(pasta, time.strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex + ".json")
+        with open(registro, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+        linhas.append("- evidência e duração: " + registro)
+    except OSError as e:
+        linhas.append("- não foi possível guardar a evidência: " + str(e)[:200])
     return "\n".join(linhas)
 
 
 def _chamar(id_, nome, args):
     try:
-        if nome == "codex":
+        if nome == "mapa_d":
+            import mapa_d
+            mapa_d.iniciar()
+            acao = args.get("acao", "buscar")
+            if acao == "status": r = mapa_d.status()
+            elif acao == "listar": r = mapa_d.listar(args.get("pasta") or 'D:/')
+            elif acao == "buscar": r = mapa_d.buscar(args.get("busca", ""), args.get("pasta", ""), args.get("extensao", ""), pastas=True)
+            else: raise ValueError("Ação inválida para mapa_d")
+            texto = json.dumps(r, ensure_ascii=False)
+        elif nome == "codex":
             editar, teste = bool(args.get("editar")), (args.get("teste") or "").strip()
             contrato = args.get("contrato", "")
             extra = licoes.anexo(PASTA, contrato)
             if extra:
                 contrato += "\n\n" + extra
-            antes = _mudados() if editar else {}
+            antes = {}
+            if editar:
+                try:
+                    antes = _mudados()
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:
+                    antes = None
+                    _avisar({"t": "ajudante", "quem": "codex", "fase": "passo",
+                             "texto": "fotografia inicial indisponível: " + str(e)[:300]})
             retomar = _ULTIMA["codex"] if args.get("continuar") else None
             if retomar:
                 contrato = args.get("contrato", "")   # a sessão dele já tem as regras e lições
@@ -213,6 +331,10 @@ def _chamar(id_, nome, args):
         elif nome == "kani":
             r = ajudantes.kani(args.get("pedido", ""), args.get("contexto", ""), ao_evento=_avisar)
             texto = r["texto"] + f"\n[Kani (local): {r['tokens']} tokens, {r['ms'] / 1000:.0f} s]"
+        elif nome in (rot := _rotinas()):
+            _avisar({"t": "ajudante", "quem": "kani", "fase": "passo", "texto": "rotina: " + nome})
+            r, texto = _rodar_rotina(rot[nome], args)
+            _avisar({"t": "ajudante", "quem": "kani", "fase": "fim", "ok": r["ok"]})   # sem isso o selo ficava contando
         else:
             raise ValueError(f"ferramenta desconhecida: {nome}")
         _responder(id_, {"content": [{"type": "text", "text": texto}], "isError": not r["ok"]})
@@ -234,7 +356,7 @@ def main():
             _responder(id_, {"protocolVersion": (m.get("params") or {}).get("protocolVersion", "2025-06-18"),
                              "capabilities": {"tools": {}}, "serverInfo": {"name": "equipe-kanicode", "version": "1"}})
         elif metodo == "tools/list":
-            _responder(id_, {"tools": FERRAMENTAS})
+            _responder(id_, {"tools": _ferramentas()})
         elif metodo == "tools/call":
             p = m.get("params") or {}
             threading.Thread(target=_chamar, args=(id_, p.get("name"), p.get("arguments") or {}), daemon=True).start()

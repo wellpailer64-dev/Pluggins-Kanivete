@@ -281,10 +281,16 @@ def _sem_barra():
             u32.SetWindowPos(h, 0, vx - (r.right - r.left) - 3000, r.top, 0, 0, 0x0001 | 0x0004 | 0x0010)
 
 
+_docadas = set()   # janelas (windowId) encaixadas no KaniCode: o esconder não mexe
+
+
 def esconder(tid):
     """leva a janela da aba para fora da tela (aba nova aberta por site, janelinha de login...)"""
     try:
-        b = _cmd("Browser.getWindowForTarget", {"targetId": tid})["bounds"]
+        jw = _cmd("Browser.getWindowForTarget", {"targetId": tid})
+        if jw["windowId"] in _docadas:   # encaixada no painel do KaniCode (navegador_painel.py): fica onde está
+            return
+        b = jw["bounds"]
         f = _fora(b.get("width", 1280), b.get("height", 860))
         if b.get("windowState") != "normal" or b.get("left", 0) > f["left"] + 200:
             _janela(tid, f)

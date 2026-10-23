@@ -11,6 +11,8 @@ import json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.parse, 
 import ajudantes
 import codigo_agente
 import habilidades
+import kani_consultas
+import organizacao_pailer
 
 MAX_PASSOS = 12
 _SEM_JANELA = 0x08000000
@@ -19,6 +21,14 @@ PANDA = r"D:\Kanivete\Plugins\pandalab\panda.py"
 FERRAMENTAS = {
     "responder": "Responde ao Pailer e TERMINA. args: {mensagem}",
     "passar_para_claude": "Passa ao Claude e TERMINA quando faltar ferramenta ou a tarefa for complexa demais. Código pode ser feito por codigo_ na cópia. args: {motivo}",
+    "todo_listar": "Consulta a lista pessoal de tarefas do Pailer. args: {}",
+    "todo_salvar": "Salva uma tarefa pessoal quando pedida ou combinada com o Pailer; nunca anota etapas internas do seu trabalho. Para editar use o ID existente. Prazo opcional AAAA-MM-DD. args: {titulo, prazo: opcional, id: opcional}",
+    "todo_concluir": "Conclui ou reabre tarefa pessoal quando o Pailer pedir. args: {id, concluida: true ou false}",
+    "todo_agenda": "Consulta lembretes locais e eventos dos calendários conectados nos próximos sete dias. args: {}",
+    "todo_lembrar": "Marca lembrete/alarme local com aviso falado quando pedido; nunca cria evento no Google Calendar. PC precisa estar ligado. inicio AAAA-MM-DDTHH:MM com a hora QUE O PAILER DISSE e antes em minutos. args: {titulo, inicio, antes: 10}",
+    "todo_alarmes": "Lista os alarmes/lembretes marcados (com id, data, hora, dias). args: {}",
+    "todo_alarme_editar": "Muda um alarme existente pelo id (de todo_alarmes). args: {id, titulo, inicio: AAAA-MM-DDTHH:MM, antes: 10}",
+    "todo_alarme_apagar": "Apaga um alarme pelo id (de todo_alarmes), só a pedido do Pailer. args: {id}",
     "agenda_google": "Consulta eventos dos próximos 7 dias nos calendários Google conectados em Configurações > Conexões. Somente leitura. args: {}",
     "drive_buscar": "Busca arquivos/pastas pelo nome. Retorna IDs e links. pasta vazia busca em tudo; root = Meu Drive; lixeira=true consulta excluídos recuperáveis. args: {busca, proxima: token opcional, pasta: ID opcional, lixeira: false}",
     "drive_criar_pasta": "Cria pasta no Drive, somente se solicitada pelo usuário. args: {nome, pasta: ID da pasta destino ou root}",
@@ -27,7 +37,15 @@ FERRAMENTAS = {
     "drive_lixeira": "Move arquivo/pasta para a lixeira, recuperável, somente a pedido do usuário. restaurar=true restaura. Não exclui definitivamente. Confira o ID exato. args: {id, restaurar: false}",
     "drive_enviar": "Envia um arquivo local ao Drive, somente a pedido do usuário; cria um arquivo novo, sem sobrescrever. args: {caminho: caminho local completo, pasta: ID destino ou root}",
     "drive_baixar": "Baixa um arquivo do Drive na pasta local informada, sem sobrescrever. Google Docs/Sheets/Slides exportam para docx/xlsx/pptx por padrão; pdf opcional. Pasta inteira não é baixada automaticamente. args: {id, destino: pasta local completa, formato: opcional}",
+    "mapa_d": "Consulta o mapa vivo do disco D: buscar nomes de arquivos ou pastas, listar uma pasta ou ver estado/atualização. Retorna caminhos conferidos e indica índice parcial. args: {acao: buscar|listar|status, busca: opcional, pasta: opcional, extensao: opcional}",
+    "buscar_arquivos": "Procura documentos existentes no PC pelo nome do cliente/arquivo e pelo nome das pastas. Não é pesquisa na internet. Retorna caminhos reais e indica busca parcial. args: {busca: nome curto, raiz: pasta opcional, extensao: pdf opcional}",
+    "previsao_tempo": "Consulta previsão atual pela Open-Meteo. Nunca invente clima. Sem cidade, pergunte. Se retornar cidades homônimas, pergunte estado/país. args: {cidade, dias: 3}",
+    "gmail_buscar": "Consulta e-mails da conta conectada em Configurações > Conexões > Gmail. Apenas leitura. Busca Gmail: is:unread, from:, subject:, has:attachment. args: {busca, proxima: opcional}",
+    "gmail_ler": "Lê um e-mail pelo ID real retornado por gmail_buscar; não envia nem altera mensagens. args: {id}",
     "espaco_disco": "Espaço livre e usado dos discos C e D. args: {}",
+    "casa": "Casa do Pailer (luzes, tomadas, alimentador dos gatos) pela rede. acao: lista | ligar | desligar | brilho | "
+            "alimentar. alvo: aparelho, cômodo ('cozinha' = cozinha+lavanderia) ou 'luzes'. alimentar solta ração: só com "
+            "confirmo=true quando o Pailer JÁ disse sim nesta conversa. args: {acao, alvo: opcional, valor: brilho 0-100, porcoes: 1, confirmo: false}",
     "listar_pasta": "Lista o que tem numa pasta (com tamanhos). args: {caminho}",
     "ler_arquivo": "Lê o começo de um arquivo de texto (md, py, js, txt, json...). args: {caminho}",
     "procurar_no_codigo": "Procura um termo nos arquivos do projeto (git grep). args: {termo}",
@@ -97,7 +115,7 @@ FERRAMENTAS = {
 FERRAMENTAS.update(codigo_agente.FERRAMENTAS)
 # só para o agente forte (Big Pickle): a Kani local (4B) fica com as ferramentas guiadas
 PODER = ("rodar_comando", "rodar_js_kanivete", "escrever_arquivo", "plano")
-SOMENTE_LEITURA = {"responder", "passar_para_claude", "espaco_disco", "listar_pasta", "ler_arquivo",
+SOMENTE_LEITURA = {"mapa_d", "buscar_arquivos", "previsao_tempo", "gmail_buscar", "gmail_ler", "drive_buscar", "responder", "passar_para_claude", "espaco_disco", "listar_pasta", "ler_arquivo",
                    "procurar_no_codigo", "buscar_no_mapa", "demandas_panda", "git_resumo", "consultar_receita",
                    "ver_kanivete", "ver_kanibrowser", "programas_abertos", "ler_kani", "ler_site", "whatsapp_conversas", "whatsapp_ler", "imagens_kani"}
 
@@ -107,7 +125,8 @@ _FERR_IDS = {"video": "video-cutter", "vídeo": "video-cutter", "editor": "video
              "slider": "slider-kanivete", "lux": "lux-kanivete", "3d": "lux-kanivete", "encoder": "kanivete-encoder",
              "ata": "ata-kanivete", "transcrever": "transcrever-audio", "inicio": "home", "início": "home"}
 PORTA_KANIVETE = int(os.environ.get("KANI_PORTA_KANIVETE") or 9222)   # testes: o app de teste (9333)
-DADOS = os.path.join(os.path.splitdrive(os.path.abspath(__file__))[0] + os.sep, "Kanivete", "KaniCode")
+from dados_app import pasta_dados
+DADOS = str(pasta_dados())
 NOTAS = os.path.join(DADOS, "kani_notas.md")          # o caderno da Kani (ferramenta lembrar)
 REGISTRO = os.path.join(DADOS, "kani_modo.jsonl")     # cada pedido do modo Kani (kanicode.py grava)
 KB = r"D:\Kanivete\Plugins\kanibrowser\kb.py"
@@ -168,6 +187,9 @@ REGRAS:
   do KANIVETE: NUNCA feche o KaniBrowser para consertar um site. Abas repetidas = fechar_aba_kanibrowser 'repetidas'.
 - O Pailer te ensinou algo ou pediu para lembrar = lembrar. Você só lembra do que está no caderno abaixo.
 - Conversa, dúvida simples ou ideia: responda direto com "responder" (sem ferramenta antes).
+- Documento EXISTENTE de cliente ("PDF da Camila", "orçamento do João") = buscar_arquivos primeiro, com nome curto do cliente e extensao pdf se couber. Não é site no Google nem criação de documento. Busca parcial não prova que o arquivo não existe. Mostre os caminhos encontrados; abrir só o arquivo exato, se solicitado. Se houver vários candidatos, pergunte qual.
+- Origem explícita manda: "no Drive" = drive_buscar; "nos e-mails/Gmail" = gmail_buscar e gmail_ler. Não navegue no Google para procurar documentos privados. Drive/Gmail desconectado: informe que precisa conectar em Configurações > Conexões; nunca diga que consultou.
+- Previsão do tempo = previsao_tempo com cidade informada na conversa. Sem cidade, pergunte. Responda com local, datas, temperaturas, chuva e fonte retornados; nunca use memória como previsão atual.
 - Pergunta sobre arquivos, disco, demandas ou o projeto: use a ferramenta certa, olhe o resultado e responda com os dados.
 - Para tarefas com várias etapas, consultar_receita ensina o caminho (abrir_ferramenta, abrir_projeto, computador, pesquisar, editar, arte = flyer/carrossel/post).
 - Depois de clicar, leia o estado novamente antes de dizer que concluiu. Se não consegue conferir, diga isso.
@@ -303,6 +325,26 @@ _RECEITAS = {
 
 def _executar(acao, a, pasta):
     """roda a ferramenta; devolve o resumo (texto curto) que volta para o modelo"""
+    if acao == "mapa_d":
+        import mapa_d
+        mapa_d.iniciar()
+        tipo = a.get("acao", "buscar")
+        if tipo == "status": r = mapa_d.status()
+        elif tipo == "listar": r = mapa_d.listar(a.get("pasta") or 'D:/')
+        elif tipo == "buscar": r = mapa_d.buscar(a.get("busca", ""), a.get("pasta", ""), a.get("extensao", ""), pastas=True)
+        else: raise ValueError("Use buscar, listar ou status no mapa do disco D.")
+        return json.dumps(r, ensure_ascii=False)
+    if acao == "buscar_arquivos":
+        return json.dumps(kani_consultas.buscar_arquivos(a.get("busca", ""), pasta, a.get("raiz", ""), a.get("extensao", "")), ensure_ascii=False)
+    if acao == "previsao_tempo":
+        return json.dumps(kani_consultas.previsao_tempo(a.get("cidade", ""), a.get("dias", 3)), ensure_ascii=False)
+    if acao in ("gmail_buscar", "gmail_ler"):
+        import google_gmail
+        try:
+            r = google_gmail.gmail.buscar(a.get("busca", ""), a.get("proxima", "")) if acao == "gmail_buscar" else google_gmail.gmail.ler(a.get("id", ""))
+            return json.dumps(r, ensure_ascii=False)
+        except (google_gmail.FalhaGmail, OSError, ValueError, TypeError) as e:
+            return 'NÃO FEITO: ' + str(e)
     if acao.startswith("drive_"):
         import google_drive
         operacoes = {
@@ -320,6 +362,23 @@ def _executar(acao, a, pasta):
             return json.dumps(operacoes[acao](), ensure_ascii=False)
         except (google_drive.FalhaDrive, OSError, ValueError, TypeError) as e:
             return 'NÃO FEITO: ' + str(e)
+    if acao in ("todo_listar", "todo_salvar", "todo_concluir", "todo_agenda", "todo_lembrar", "todo_alarmes", "todo_alarme_editar", "todo_alarme_apagar"):
+        import tarefas
+        operacoes = {
+            "todo_listar": lambda: tarefas.tarefas.listar(),
+            "todo_salvar": lambda: tarefas.tarefas.salvar(a.get("titulo"), a.get("prazo", ""), a.get("id", ""), "kani"),
+            "todo_concluir": lambda: tarefas.tarefas.concluir(a.get("id"), a.get("concluida")),
+            "todo_agenda": tarefas.agenda,
+            # a hora sai do pedido (o modelo local inventava: 2h50 → 17h17)
+            "todo_lembrar": lambda: tarefas.lembrar(a.get("titulo"), tarefas.hora_do_pedido(pedido_atual[0], a.get("inicio")), a.get("antes", 10)),
+            "todo_alarmes": tarefas.alarmes,
+            "todo_alarme_editar": lambda: tarefas.alarme_salvar(a.get("id"), a.get("titulo"), tarefas.hora_do_pedido(pedido_atual[0], a.get("inicio")), a.get("antes", 10)),
+            "todo_alarme_apagar": lambda: tarefas.alarme_apagar(a.get("id")) if re.search(r"apag|exclu|cancel|tir[ae]|remov|desmarc", pedido_atual[0], re.I) else {"NÃO FEITO": "o Pailer não pediu para apagar"},
+        }
+        try:
+            return json.dumps(operacoes[acao](), ensure_ascii=False)
+        except (ValueError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as e:
+            return "NÃO FEITO: " + str(e) + (" Confira a agenda antes de repetir: o lembrete pode ter sido salvo, mas o aviso falhou." if acao == "todo_lembrar" else "")
     if acao == "agenda_google":
         import google_calendar
         try:
@@ -332,6 +391,16 @@ def _executar(acao, a, pasta):
         if tipo not in _RECEITAS:
             return "NÃO FEITO: receita desconhecida. Tipos: " + ", ".join(_RECEITAS)
         return _RECEITAS[tipo]
+    if acao == "casa":
+        cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "casa.py"), str(a.get("acao") or "lista")]
+        if a.get("alvo"):
+            cmd.append(str(a["alvo"]))
+            if a.get("valor") not in (None, ""):
+                cmd.append(str(a["valor"]))
+        cmd += ["--porcoes", str(a.get("porcoes") or 1)] + (["--confirmo"] if a.get("confirmo") is True else [])
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+                           stdin=subprocess.DEVNULL, creationflags=0x08000000)
+        return ((p.stdout or "") + (p.stderr or "")).strip()[:2000] or "(sem saída)"
     if acao == "espaco_disco":
         out = []
         for d in ("C:\\", "D:\\"):
@@ -356,6 +425,15 @@ def _executar(acao, a, pasta):
         p = _caminho(a.get("caminho"), pasta)
         if not os.path.isfile(p):
             raise ValueError(f"arquivo não existe: {p}")
+        if p.lower().endswith('.pdf'):
+            from pypdf import PdfReader
+            leitor = PdfReader(p)
+            trechos = []
+            for pagina in leitor.pages[:5]:
+                trechos.append((pagina.extract_text() or '')[:3500])
+                if sum(map(len, trechos)) >= 3500:
+                    break
+            return '\n'.join(trechos)[:3500] or 'PDF sem texto extraível (pode ser digitalizado); não foi possível ler o conteúdo.'
         with open(p, encoding="utf-8", errors="replace") as f:
             return f.read(3500)
     if acao == "procurar_no_codigo":
@@ -1363,10 +1441,18 @@ def _rodar_pedido(pedido, pasta, ao_evento, historico=None, por_voz=False, parar
            .replace("{notas}", ("\n\nSEU CADERNO (o que o Pailer já te ensinou):\n" + notas()) if motor is None and notas() else ""))
     if motor is not None:
         sis = motor.sistema(pasta, permitidas, por_voz)
+    sis += organizacao_pailer.contexto(pedido)
     msgs = [{"role": "system", "content": sis}]
     for m in (historico or [])[-16:]:
         msgs.append({"role": m["role"], "content": str(m["content"])[:500]})
     dica = _dica_habilidades(pedido, permitidas)
+    fonte = kani_consultas.fonte_pedido(pedido)
+    orientacao = {"pc": "Documento privado existente: use buscar_arquivos no PC, não o Google nem criação de PDF.",
+                  "drive": "Consulte o Google Drive conectado usando drive_buscar.",
+                  "gmail": "Consulte o Gmail conectado usando gmail_buscar e gmail_ler; não pesquise na web.",
+                  "clima": "Use previsao_tempo; se não houver cidade na conversa, pergunte qual é."}.get(fonte, "")
+    if orientacao:
+        msgs[0]["content"] += "\n\nFONTE DESTE PEDIDO: " + orientacao
     msgs.append({"role": "user", "content": pedido + dica})
     usou_hab = cobrou_hab = False
     pedido_atual[0] = pedido
@@ -1413,6 +1499,9 @@ def _rodar_pedido(pedido, pasta, ao_evento, historico=None, por_voz=False, parar
                 raise ValueError("resposta inválida ou ferramenta não liberada")
             ajudantes._kani["uso"] = time.time()
             acao, args = r.get("acao"), r.get("args") or {}
+            if fonte in ("pc", "drive", "gmail") and acao in ("navegar_kani", "abrir_no_kanibrowser", "pedir_ao_kanivete", "foto_do_google"):
+                msgs.append({"role": "user", "content": "Ação recusada para este pedido. " + orientacao + " Se faltar conexão ou localização, pergunte ao Pailer; não invente resultado."})
+                continue
             if plano and isinstance(r.get("feitas"), int) and feitas < r["feitas"] <= len(plano) and not (acao == "responder" and falhou):
                 feitas = r["feitas"]
                 ao_evento({"t": "kani_plano", "itens": plano, "feitas": feitas})

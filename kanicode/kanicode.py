@@ -14,7 +14,8 @@ from mensagens import Fila
 import webview
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
-DADOS = os.path.join(os.path.splitdrive(PASTA)[0] + os.sep, "Kanivete", "KaniCode")   # nada no C:
+from dados_app import pasta_dados
+DADOS = str(pasta_dados())   # nada no C:
 ESTADO = os.path.join(DADOS, "estado.json")
 PORTA = 47613
 BOLA = 64                 # tamanho da bolinha em pixels da interface (o Windows aplica o zoom do monitor)
@@ -125,6 +126,7 @@ class App:
         self._comandos = []
         self._pendente = None      # "recarregar"/"reiniciar" pedido no meio de uma resposta: roda quando ela terminar
         self._carregado = time.time()   # para o "atualizar" saber o que mudou depois de aberto
+        self._mtimes = self._fotografar()   # data de cada arquivo do código: o "atualizar" aplica só o que mudou
         self._voz = None           # voz.py: "Ei Kani" + fala para texto
         self._fala = None          # fala.py: resposta lida em voz alta (pedido por voz com a janela fechada)
         self._por_voz = False
@@ -171,15 +173,16 @@ class App:
                                                     "assunto": a.assunto, "modelo": a.modelo, "manual": a.manual}
                                                     for a in self._abas.values()]}
 
-    def aba_nova(self):
+    def aba_nova(self, ativar=True):
         # número nunca repetido: a conversa de uma aba fechada não reaparece numa aba nova
         usados = [int(i) for i in list(self._abas) + list(self._fechadas) if i.isdigit()]
         n = max(usados + [int(_ler_estado().get("aba_ultima") or 0)]) + 1
         _gravar_estado(aba_ultima=n)
-        self._abas[str(n)] = _Aba(n, self._abas[self._aba_ativa].quem)
-        self._aba_ativa = str(n)
+        self._abas[str(n)] = _Aba(n, self._ctx().quem)
+        if ativar:
+            self._aba_ativa = str(n)
         self._abas_gravar()
-        return self.abas()
+        return dict(self.abas(), ativa=str(n))
 
     def aba_ativar(self, aba):
         aba = str(aba)
@@ -189,6 +192,147 @@ class App:
             q = self._abas[aba].quem
             self._na_ui(lambda: self._bola and self._bola.definir(quem=q))
         return self.abas()
+
+    def perfil_resumo(self):
+        import perfil_portatil
+        return perfil_portatil.resumo()
+
+    def perfil_exportar(self):
+        import perfil_portatil
+        return perfil_portatil.exportar()
+
+    def perfil_conferir(self, texto):
+        import perfil_portatil
+        with _ESTADO_TRAVA:
+            return perfil_portatil.previa(texto)
+
+    def perfil_restaurar(self, texto, conferencia, politica="manter"):
+        import perfil_portatil
+        if self._alguma_ocupada():
+            raise ValueError("Espere as tarefas terminarem antes de restaurar o perfil.")
+        with _ESTADO_TRAVA:
+            return perfil_portatil.aplicar(texto, conferencia, politica)
+
+    def mapa_d_status(self):
+        import mapa_d
+        return mapa_d.status()
+
+    def mapa_d_buscar(self, busca):
+        import mapa_d
+        mapa_d.iniciar()
+        return mapa_d.buscar(busca, limite=80, pastas=True)
+
+    def mapa_d_listar(self, pasta="D:/"):
+        import mapa_d
+        if not mapa_d.dentro(pasta, 'D:/'):
+            raise ValueError("O mapa cobre apenas o disco D.")
+        return mapa_d.listar(pasta, limite=200)
+
+    def consumo(self):
+        import consumo
+        return consumo.resumo(DADOS)
+
+    # ── painel Projeto (projeto.py: árvore, alterações do git, ler arquivo; só leitura) ──
+    def projeto(self, acao, arq=""):
+        import projeto
+        try:
+            f = {"arvore": projeto.arvore, "alteracoes": projeto.alteracoes, "diff": projeto.diff, "ler": projeto.ler,
+                 "buscar": projeto.buscar}[acao]
+            return f(self._pasta(), arq) if acao != "alteracoes" else f(self._pasta())
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
+
+    # ── aba Casa (casa.py: aparelhos Tuya pela rede local) ──
+    def casa_estado(self):
+        import casa
+        try:
+            return {"ok": True, "itens": casa.estado()}
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
+
+    def casa_alternar(self, nome):
+        import casa
+        try:
+            return casa.alternar(str(nome))
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
+
+    def casa_alimentar(self, porcoes=1):
+        """só pelo botão da aba Casa, depois da confirmação na tela"""
+        import casa, io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = casa.alimentar(int(porcoes or 1), True)
+        return {"ok": rc == 0, "texto": buf.getvalue().strip()}
+
+    def todo_listar(self):
+        import tarefas
+        return tarefas.tarefas.listar()
+
+    def todo_salvar(self, titulo, prazo="", id=""):
+        import tarefas
+        return tarefas.tarefas.salvar(titulo, prazo, id)
+
+    def todo_concluir(self, id, concluida):
+        import tarefas
+        return tarefas.tarefas.concluir(id, concluida)
+
+    def todo_agenda(self, sincronizar=False):
+        import tarefas
+        if sincronizar:
+            import google_calendar
+            if google_calendar.calendar.status().get("conectado"):
+                self.google_sincronizar()
+        return tarefas.agenda()
+
+    def todo_lembrar(self, titulo, inicio, antes=10):
+        import tarefas
+        return tarefas.lembrar(titulo, inicio, antes)
+
+    def todo_alarmes(self):
+        import tarefas
+        return tarefas.alarmes()
+
+    def todo_alarme_salvar(self, id, titulo, inicio="", antes=10, dias=None):
+        import tarefas
+        return tarefas.alarme_salvar(id, titulo, inicio, antes, dias)
+
+    def todo_alarme_apagar(self, id):
+        import tarefas
+        return tarefas.alarme_apagar(id)
+
+    def gmail_status(self):
+        import google_gmail
+        return google_gmail.gmail.status()
+
+    def gmail_importar(self):
+        import google_gmail
+        arquivos = self._janela.create_file_dialog(webview.FileDialog.OPEN, file_types=('Credenciais Google (*.json)',))
+        return google_gmail.gmail.importar(arquivos[0]) if arquivos else google_gmail.gmail.status()
+
+    def gmail_usar_calendar(self):
+        import google_gmail
+        return google_gmail.gmail.usar_calendar()
+
+    def gmail_conectar(self):
+        import google_gmail
+        return google_gmail.gmail.conectar()
+
+    def gmail_desconectar(self):
+        import google_gmail
+        return google_gmail.gmail.desconectar()
+
+    def gmail_buscar(self, busca="", proxima=""):
+        import google_gmail
+        return google_gmail.gmail.buscar(busca, proxima)
+
+    def gmail_ler(self, id):
+        import google_gmail
+        return google_gmail.gmail.ler(id)
+
+    def gmail_rascunho(self, para, assunto, texto):
+        import google_gmail
+        return google_gmail.gmail.rascunho(para, assunto, texto)
 
     def drive_status(self):
         import google_drive
@@ -368,6 +512,7 @@ class App:
         self._janela.show()
         self._janela.restore()
         self._aberta = True
+        self._encaixe_ligar()
         ocupada = self._alguma_ocupada()
         self._na_ui(lambda: self._bola and self._bola.definir(aberta=True, estado="trabalhando" if ocupada else ""))
         if not ja:
@@ -391,11 +536,19 @@ class App:
         return round(wx + r["x"] * k) - b.margem, round(wy + r["y"] * k) - b.margem
 
     def _encaixar(self):
-        if not self._doca_ligada() or self._bola.na_doca:
-            return
-        time.sleep(0.12)   # a janela acabou de aparecer: o layout da página assenta
-        ponto = self._doca_ponto()
-        if not ponto:
+        # reinício pelo botão (2026-10-23): o chat abre junto com a ENTRADA da bolinha (voo de 3,4 s) e com a página
+        # ainda carregando (sem kbDocaAlvo) — desistia na 1ª tentativa e a bolinha ficava fora. Espera as duas (até 10 s)
+        ponto, fim = None, time.time() + 10
+        while time.time() < fim:
+            if not self._aberta or not self._doca_ligada() or self._bola.na_doca:
+                return
+            if not self._bola._voo:
+                time.sleep(0.12)   # a janela acabou de aparecer: o layout da página assenta
+                ponto = self._doca_ponto()
+                if ponto:
+                    break
+            time.sleep(0.2)
+        if not ponto or not self._aberta:
             return
         b = self._bola
         if not b._voo:
@@ -472,6 +625,18 @@ class App:
         threading.Thread(target=self.esconder, daemon=True).start()
 
     # ── tamanho: a janela é sem moldura, então as bordas são desenhadas no HTML e o redimensionar vem por aqui ──
+    def _encaixe_ligar(self):
+        """Win + setas encaixam a janela (encaixe.py); "encaixe": false no estado desliga. Pode repetir."""
+        if not _ler_estado().get("encaixe", True):
+            return
+        def ligar():
+            try:
+                import encaixe
+                encaixe.ligar(self._hwnd())
+            except Exception as ex:
+                print("encaixe:", ex, file=sys.stderr)
+        self._na_ui(ligar)
+
     def _hwnd(self):
         return int(self._janela.native.Handle.ToInt64())
 
@@ -529,6 +694,21 @@ class App:
             time.sleep(0.012)
         return True
 
+    def painel_espaco(self, largura=270):
+        """Abre espaço para as ferramentas sem reduzir uma janela maior ou sair do monitor."""
+        if self.maximizada() or getattr(self, '_imagem_tela_cheia', False):
+            return False
+        k = self._bola.escala if self._bola else 1
+        largura = max(270, min(1600, float(largura)))
+        x, y, w, h = self.tam_inicio()
+        esquerda, direita = self._area()
+        alvo = max(w, min(round((JW + largura) * k), direita - esquerda))
+        if alvo <= w:
+            return False
+        x = max(esquerda, min(x, direita - alvo))
+        self.tam_mudar(x, y, alvo, h)
+        return True
+
     def tarefas_ler(self, arquivos):
         """andamento das tarefas em segundo plano do Claude Code: última linha da saída e o código de saída quando acaba"""
         r = {}
@@ -572,6 +752,16 @@ class App:
         ctypes.windll.user32.SetWindowPos(self._hwnd(), 0, *map(int, r), 0x0004 | 0x0010)
         return bool(on)
 
+    def maximizar(self, on):
+        """botão ⤢: maximiza de verdade (a tela toda, como Win+cima); de novo = volta ao tamanho de antes"""
+        import ctypes
+        ctypes.windll.user32.ShowWindow(self._hwnd(), 3 if on else 9)   # SW_MAXIMIZE | SW_RESTORE
+        return self.maximizada()
+
+    def maximizada(self):
+        import ctypes
+        return bool(ctypes.windll.user32.IsZoomed(self._hwnd()))
+
     def tam_padrao(self):
         """duplo clique no canto: volta ao tamanho de fábrica, ao lado da bolinha"""
         _gravar_estado(tamanho=None)
@@ -600,9 +790,14 @@ class App:
         _gravar_estado(voz=bool(on))
         return {"on": bool(on)}
 
-    def ouvir(self, fim=False):
-        """botão do microfone na caixa de texto: ouve um pedido sem "Ei Kani" (fim=True: terminou de falar)"""
+    def ouvir(self, fim=False, cancelar=False):
+        """botão do microfone na caixa de texto: ouve um pedido sem "Ei Kani" (fim=True: terminou de falar;
+        cancelar=True: o ✕ descarta a gravação)"""
         try:
+            if cancelar:
+                if self._voz:
+                    self._voz.cancelar()
+                return {"ok": True}
             if fim:
                 if self._voz:
                     self._voz.terminar()
@@ -698,6 +893,10 @@ class App:
                 from sons_bolinha import parar
                 parar()
         return self._sons_ativos
+
+    def bola_som_envio(self):
+        """Gravação do Pailer junto da animação de envio ao GitHub."""
+        return self._som_bolinha("git_push")
 
     def _som_bolinha(self, acao):
         if not self._sons_ativos or self._estado_voz in ("ouvindo", "transcrevendo"):
@@ -969,11 +1168,56 @@ class App:
         self._para_janela({"t": "local", "acao": "aviso", "texto": "Tarefa concluída! 👍"})
         return True
 
+    def _casa_rapido(self, texto, de):
+        """casa (casa.py): "apaga a cozinha", "alimenta os gatos" → executa na hora, sem IA (~0,5 s, como a Alexa)"""
+        if texto.strip().startswith("/"):
+            return False
+        try:
+            import casa
+            r = casa.rapido(texto)
+        except Exception:
+            return False
+        if not r:
+            return False
+        self._para_janela({"t": "local", "acao": "aviso", "texto": "🏠 " + r})
+        if "(por voz)" in texto and de == "pc":
+            try:
+                f = self._fala_obj()
+                f.novo()
+                f.pedaco(r)
+                f.terminar()
+            except Exception:
+                pass
+        return True
+
+    def janela_diagnostico(self, etapa, mensagem=""):
+        """Falhas da janela e entrada na ponte, sem copiar o pedido para o diagnóstico."""
+        try:
+            os.makedirs(DADOS, exist_ok=True)
+            ev = {"quando": time.strftime("%Y-%m-%d %H:%M:%S"), "etapa": str(etapa)[:100],
+                  "mensagem": str(mensagem)[:1500],
+                  "aba": getattr(getattr(self, '_local', None), 'aba', None) or getattr(self, '_aba_ativa', None)}
+            with open(os.path.join(DADOS, "janela_diagnostico.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+        return True
+
     def ajudante(self, quem, texto, _de="pc"):
+        self.janela_diagnostico("ajudante.recebido", quem)
+        try:
+            return self._ajudante_iniciar(quem, texto, _de)
+        except Exception as erro:
+            self.janela_diagnostico("ajudante.erro", str(erro))
+            raise
+
+    def _ajudante_iniciar(self, quem, texto, _de="pc"):
         import ajudantes
         if quem not in ("codex", "kani", "pickle"):
             raise ValueError("ajudante desconhecido")
         if not texto or not texto.strip():
+            return False
+        if self._casa_rapido(texto, _de):
             return False
         if self._comando_conclusao(texto, _de):
             return True
@@ -1259,6 +1503,17 @@ class App:
         self._fila_tentar()
         return True
 
+    def mensagem_cancelar(self, id_):
+        return self._na_aba(self._ctx().id, self._mensagem_cancelar)(id_)
+
+    def _mensagem_cancelar(self, id_):
+        item = self._ctx().mensagens.cancelar(id_)
+        if not item:
+            return False
+        self._fila_evento(item)
+        self._fila_tentar()   # se ela pausava a fila (falha), a próxima segue
+        return True
+
     def _fila_tentar(self):
         a = self._ctx()
         with a.mensagens.trava:
@@ -1312,6 +1567,8 @@ class App:
             return True
         # a mensagem aparece também nos outros aparelhos abertos (janela do PC × celular, movel.py)
         self._para_janela({"t": "eco_eu", "texto": texto, "de": _de, "minis": [i.get("mini") for i in imagens or [] if i.get("mini")]})
+        if not imagens and self._casa_rapido(texto, _de):
+            return False   # resolvido aqui: a janela não fica esperando resposta
         # comandos que o próprio KaniCode resolve (os outros "/" vão para o Claude Code como no terminal)
         cmd, _, arg = texto.partition(" ")
         if cmd in ("/clear", "/nova", "/new"):
@@ -1435,6 +1692,67 @@ class App:
         import recursos_resposta as recursos
         return recursos.abrir_caminho(caminho, self._pasta())
 
+    # ── navegador dentro da janela (navegador_painel.py + ui/navegador.js): KaniBrowser encaixado à direita ──
+    _nav_trava = threading.Lock()
+
+    def _nav(self):
+        with self._nav_trava:   # o HTML chama nav_area/nav_abrir/favoritos juntos: um painel só (eram dois → tela branca)
+            return self._nav_criar()
+
+    def _nav_criar(self):
+        if not getattr(self, "_nav_painel", None):
+            import navegador, navegador_painel
+            navegador._ponte(self._pasta())
+            self._nav_painel = navegador_painel.Painel(sys.modules["kanibrowser"], self._hwnd(), self._na_ui)
+        return self._nav_painel
+
+    def nav_abrir(self, largura=0):
+        """abre o painel; largura > 0 = a janela cresce para a direita esse tanto (px da página) antes"""
+        if float(largura or 0) > 0 and not self.maximizada():
+            self.crescer(0, largura)
+        try:
+            return self._nav().abrir()
+        except Exception as e:
+            return {"erro": str(e)}
+
+    def nav_fechar(self, largura=0):
+        self._nav().fechar()
+        if float(largura or 0) > 0 and not self.maximizada():
+            self.crescer(0, -float(largura))
+        return True
+
+    def nav_area(self, x, y, w, h, largura=0):
+        return self._nav().area(x, y, w, h, largura)
+
+    def nav_estado(self):
+        try:
+            return self._nav().estado()
+        except Exception as e:
+            return {"erro": str(e), "abas": []}
+
+    def nav_favoritos(self, op="listar", a=None):
+        """barra de favoritos do painel: listar / salvar (☆, alterna) / remover / renomear / ordenar"""
+        try:
+            import navegador_painel
+            self._nav()
+            return navegador_painel.favoritos(op, a)
+        except Exception as e:
+            return {"erro": str(e)}
+
+    def nav_cmd(self, o, a=None):
+        """ir/nova/mostrar/fechar_aba/acao/foco/print na aba mostrada do painel"""
+        p = self._nav()
+        try:
+            if o == "print":
+                return {"caminho": p.print_aba(os.path.join(DADOS, "anexos", "paginas"))}
+            if o in ("ir", "nova", "mostrar", "fechar_aba", "acao", "aparelho"):
+                return getattr(p, o)(a) if a is not None else getattr(p, o)()
+            if o == "foco":
+                return p.foco()
+        except Exception as e:
+            return {"erro": str(e)}
+        return {"erro": "comando desconhecido: " + str(o)}
+
     def resposta_navegador(self, navegador=None):
         if navegador is not None:
             if navegador not in ('chrome', 'padrao'):
@@ -1545,6 +1863,13 @@ class App:
             self._encerrar_todas()
             _gravar_estado(projeto=nova)
         return nova
+
+    def remover_pasta(self):
+        if self._alguma_ocupada():
+            return False
+        self._encerrar_todas()
+        _gravar_estado(projeto=PROJETO_PADRAO)
+        return True
 
     def reiniciar(self):
         """Reabre o KaniCode; tarefas em andamento terminam antes do reinício."""
@@ -1664,6 +1989,7 @@ class App:
         t = ev.get("t")
         if t not in ("texto", "pensando", "kani_pensando"):   # passos ao vivo para o Claude acompanhar (2026-10-21)
             try:
+                os.makedirs(DADOS, exist_ok=True)
                 with open(os.path.join(DADOS, "ao_vivo.jsonl"), "a", encoding="utf-8") as f:
                     f.write(json.dumps({"h": time.strftime("%H:%M:%S"), **ev}, ensure_ascii=False, default=str)[:1500] + "\n")
             except OSError:
@@ -1748,14 +2074,13 @@ class App:
             self._pend.clear()
         try:
             import movel
-            if ev["aba"] == self._aba_ativa:
-                movel.publicar(ev)
+            movel.publicar(ev)   # cada tela filtra pela própria aba selecionada
         except Exception:
             pass
         try:
             self._janela.evaluate_js("window.kcEv && kcEv(%s)" % json.dumps(ev, ensure_ascii=False))
-        except Exception:
-            pass
+        except Exception as erro:
+            self.janela_diagnostico("evento.janela", str(erro))
 
     def _bola_estado(self, estado):
         self._na_ui(lambda: self._bola and self._bola.definir(estado=estado))
@@ -1787,7 +2112,27 @@ class App:
 
     def _clique(self):
         # chamado na thread da interface: abrir/esconder a janela do pywebview sai dela (senão trava esperando)
-        threading.Thread(target=self.esconder if self._aberta else self.mostrar, daemon=True).start()
+        # falando: espera meio segundo para ver se vêm mais cliques; 3 cliques rápidos = calar (não abre nem fecha)
+        if not (self._fala and self._fala.falando):
+            threading.Thread(target=self.esconder if self._aberta else self.mostrar, daemon=True).start()
+            return
+        agora = time.time()
+        self._cliques = [t for t in getattr(self, "_cliques", []) if agora - t < 1.5] + [agora]
+        t = getattr(self, "_clique_timer", None)
+        if t:
+            t.cancel()
+        if len(self._cliques) >= 3:
+            self._cliques = []
+            self._fala.parar()
+            self._fala_estado("parou")   # rosto da bolinha volta ao normal (sem reabrir o microfone)
+            return
+        self._clique_timer = threading.Timer(0.5, self._clique_solto)
+        self._clique_timer.daemon = True
+        self._clique_timer.start()
+
+    def _clique_solto(self):
+        self._cliques = []
+        (self.esconder if self._aberta else self.mostrar)()
 
     def _movida(self, x, y):
         _gravar_estado(bola_px=[int(x), int(y)])
@@ -1855,6 +2200,63 @@ class App:
         return False
 
     # ── atualizar depois de um ajuste no código do KaniCode (recarregar.py) ──
+    def _fotografar(self):
+        r = {}
+        for raiz, pastas, nomes in os.walk(PASTA):
+            pastas[:] = [d for d in pastas if d not in ("__pycache__", "android", "modelos", "tests", ".git")]
+            for n in nomes:
+                if n.endswith((".py", ".css", ".js", ".html")):
+                    c = os.path.join(raiz, n)
+                    try:
+                        r[c] = os.path.getmtime(c)
+                    except OSError:
+                        pass
+        return r
+
+    def _quente(self):
+        """atualizar SEM reiniciar (2026-10-23): CSS troca na página; JS/HTML recarregam só a página (a conversa e a tarefa
+        em andamento continuam, o motor do Claude mora neste processo); .py de módulo com RECARREGAVEL = True é recarregado
+        aqui dentro e os objetos vivos trocam de classe (o painel do navegador mantém as janelas). Outro .py = None
+        (precisa reiniciar). Devolve o que fez ou None."""
+        novo = self._fotografar()
+        mud = [c for c, t in novo.items() if t > self._mtimes.get(c, self._carregado)]
+        if not mud:
+            return "nada"
+        py = [c for c in mud if c.endswith(".py")]
+        mods = []
+        for c in py:
+            nome = os.path.splitext(os.path.basename(c))[0]
+            m = sys.modules.get(nome)
+            if m is None and nome != "kanicode":
+                continue   # nunca carregado: vale o arquivo novo quando for importado
+            if m is None or not getattr(m, "RECARREGAVEL", False) or os.path.dirname(os.path.abspath(getattr(m, "__file__", ""))) != os.path.dirname(c):
+                return None
+            mods.append(m)
+        import importlib
+        for m in mods:
+            velho = {k: v for k, v in vars(m).items() if isinstance(v, type)}
+            importlib.reload(m)
+            for obj in (getattr(self, "_nav_painel", None),):   # objetos vivos: mesma memória, métodos novos
+                if obj is not None and type(obj) in velho.values():
+                    nova = getattr(m, type(obj).__name__, None)
+                    if isinstance(nova, type):
+                        obj.__class__ = nova
+        css = [os.path.relpath(c, os.path.join(PASTA, "ui")).replace("\\", "/") for c in mud if c.endswith(".css")]
+        pagina = any(c.endswith((".js", ".html")) for c in mud)
+        self._mtimes, self._carregado = novo, time.time()
+        feito = [f"py: {', '.join(m.__name__ for m in mods)}"] if mods else []
+        try:
+            if pagina:
+                self._janela.evaluate_js("setTimeout(() => location.reload(), 50)")
+                feito.append("página recarregada")
+            elif css:
+                self._janela.evaluate_js("(" + json.dumps(css) + ").forEach(n => document.querySelectorAll('link[rel=stylesheet]').forEach(l => {"
+                                         " if (l.getAttribute('href').split('?')[0] === n) l.href = n + '?v=' + Date.now(); }))")
+                feito.append("css: " + ", ".join(css))
+        except Exception:
+            pass
+        return "quente: " + "; ".join(feito) if feito else "nada"
+
     def _o_que_mudou(self):
         """'reiniciar' se algum .py mudou depois de aberto; 'recarregar' se só a janela (ui/, .css/.js); senão None"""
         py = ui = False
@@ -1875,6 +2277,12 @@ class App:
     def _pedir(self, acao):
         """acao: atualizar (decide sozinho) | recarregar | reiniciar. No meio de uma resposta, espera ela terminar."""
         if acao == "atualizar":
+            # sem reiniciar sempre que der; recarregar a página no meio de uma tarefa só sem cartão esperando resposta
+            pagina = any(c.endswith((".js", ".html")) and t > self._mtimes.get(c, self._carregado) for c, t in self._fotografar().items())
+            if not (pagina and self._pend):
+                r = self._quente()
+                if r is not None:
+                    return r
             acao = self._o_que_mudou()
             if not acao:
                 return "nada"
@@ -1898,58 +2306,115 @@ class App:
         args = [a for a in sys.argv[1:] if a not in ("--reaberto", "--abrir")] + ["--reaberto"] + (["--abrir"] if self._aberta else [])
         subprocess.Popen([sys.executable, os.path.abspath(__file__), *args], cwd=PASTA, close_fds=True,
                          creationflags=0x00000008 | 0x00000200)
+        # 2026-10-23: algum fio preso segurava este processo (e a porta): o novo esperava 15 s e desistia, ou abria por
+        # cima do navegador interno deste ainda fechando. Sai de verdade, no máximo 8 s depois (a despedida da bolinha leva ~3,5 s)
+        threading.Timer(8, lambda: os._exit(0)).start()
         self.sair()
+
+    def _kb_painel(self):
+        """o agente vai usar o navegador: abre o painel 🌐 (o Pailer vê ao vivo, com o brilho verde-limão) → estado"""
+        p = getattr(self, "_nav_painel", None)
+        if not (p and p.aberto) and self._janela:
+            self._janela.evaluate_js("window.kcNavegador && window.kcNavegador.abrir(); true")
+        return {"aberto": bool(getattr(self, "_nav_painel", None) and self._nav_painel.aberto)}
 
     def _kb(self, c, linha):
         with c:
             try:
                 import navegador
-                r = navegador.chamar(linha, DADOS, self._pasta())
+                r = navegador.chamar(linha, DADOS, self._pasta(), {"painel": self._kb_painel})
                 c.settimeout(30)
                 c.sendall(json.dumps(r, ensure_ascii=False, default=str).encode("utf-8") + b"\n")
             except OSError:
                 pass
 
+    def previa_git(self):
+        """Reproduz a animação com som, sem executar comandos nem criar eventos de Git."""
+        if not self._aberta:
+            self.mostrar()
+        js = "setTimeout(() => window.kbGitAnimar && kbGitAnimar('push'), 1200); true"
+        return self._janela.evaluate_js(js)
+
+    def _canal_atender(self, c):
+        # Cada conexão fica fora da escuta: uma chamada da interface não prende ping/reinício.
+        with c:
+            try:
+                c.settimeout(3)
+                buf = b""
+                while not buf.endswith(b"\n") and len(buf) < 1_000_000:
+                    pedaco = c.recv(65536)
+                    if not pedaco:
+                        break
+                    buf += pedaco
+                cmd = buf.decode("utf-8", "replace").strip()
+                if cmd.startswith("kb "):
+                    self._kb(c, cmd[3:])
+                    return
+                if cmd.startswith("evento "):
+                    with self._canal_eventos:   # início/fim das ferramentas continuam na mesma ordem
+                        c.sendall(b"ok\n")
+                        try:
+                            self._evento(json.loads(cmd[7:]))
+                        except ValueError:
+                            pass
+                    return
+                if cmd in ("atualizar", "recarregar", "reiniciar"):
+                    c.sendall(self._pedir(cmd).encode() + b"\n")
+                    return
+                c.sendall(b"ok\n" if cmd in ("ping", "mostrar", "sair", "previa_git") else b"?\n")
+                if cmd == "mostrar":
+                    self.mostrar()
+                elif cmd == "previa_git":
+                    self.previa_git()
+                elif cmd == "sair":
+                    self.sair()
+            except OSError:
+                pass
+
     def _servir(self, srv):
+        self._canal_eventos = threading.Lock()
         while not self._saindo:
             try:
                 c, _ = srv.accept()
             except OSError:
                 break
-            with c:
-                try:
-                    c.settimeout(3)
-                    buf = b""
-                    while not buf.endswith(b"\n") and len(buf) < 1_000_000:   # evento pode ser maior que um pacote
-                        pedaco = c.recv(65536)
-                        if not pedaco:
-                            break
-                        buf += pedaco
-                    cmd = buf.decode("utf-8", "replace").strip()
-                except OSError:
-                    continue
-                if cmd.startswith("kb "):   # KaniBrowser hospedado aqui (navegador.py; kb.py manda): numa thread, pode demorar
-                    threading.Thread(target=self._kb, args=(c.dup(), cmd[3:]), daemon=True).start()
-                    continue
-                if cmd.startswith("evento "):   # andamento dos ajudantes (mcp_equipe.py, aberto pelo Claude Code)
-                    c.sendall(b"ok\n")
-                    try:
-                        self._evento(json.loads(cmd[7:]))
-                    except ValueError:
-                        pass
-                    continue
-                if cmd in ("atualizar", "recarregar", "reiniciar"):
-                    c.sendall(self._pedir(cmd).encode() + b"\n")
-                    if self._saindo:
-                        break
-                    continue
-                c.sendall(b"ok\n" if cmd in ("ping", "mostrar", "sair") else b"?\n")
-                if cmd == "mostrar":
-                    self.mostrar()
-                elif cmd == "sair":
-                    self.sair()
-                    break
+            threading.Thread(target=self._canal_atender, args=(c,), daemon=True).start()
         srv.close()
+
+
+def _icone_na_janela(titulo="KaniCode"):
+    """a janela do pywebview herda o ícone do python.exe: põe o do KaniCode (barra de tarefas e Alt+Tab) por WM_SETICON"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        ico = os.path.join(DADOS, "kanicode.ico")   # o mesmo dos atalhos (atalhos.py)
+        if not os.path.isfile(ico):
+            from PIL import Image
+            Image.open(os.path.join(PASTA, "icone.png")).convert("RGBA").save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64)])
+        u = ctypes.windll.user32
+        u.LoadImageW.restype = wintypes.HANDLE
+        u.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        meu, achadas = os.getpid(), []
+
+        def ver(hwnd, _):
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value == meu:
+                buf = ctypes.create_unicode_buffer(256)
+                u.GetWindowTextW(hwnd, buf, 256)
+                if buf.value == titulo:
+                    achadas.append(hwnd)
+            return True
+        u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(ver), 0)
+        for hwnd in achadas:
+            for tipo, metrica in ((0, 49), (1, 11)):   # ICON_SMALL/SM_CXSMICON, ICON_BIG/SM_CXICON (no tamanho do DPI)
+                t = u.GetSystemMetrics(metrica)
+                h = u.LoadImageW(None, ico, 1, t, t, 0x10)   # IMAGE_ICON, LR_LOADFROMFILE
+                if h:
+                    u.SendMessageW(hwnd, 0x80, tipo, h)   # WM_SETICON
+        return bool(achadas)
+    except Exception:
+        return False
 
 
 def main():
@@ -1979,15 +2444,24 @@ def main():
             time.sleep(0.15)
     if not srv:
         return
+    if reaberto:
+        _esperar_webview_antigo()
     app = App()
     e = _ler_estado()
     w, h = _tamanho()
     app._janela = webview.create_window("KaniCode", os.path.join(PASTA, "ui", "janela.html"), js_api=app, width=w, height=h,
-                                        hidden=True, frameless=True, easy_drag=False, on_top=bool(e.get("fixa", True)),
+                                        hidden=True, frameless=True, easy_drag=False, text_select=True, on_top=bool(e.get("fixa", True)),
                                         resizable=True, min_size=(MIN_W, MIN_H), background_color="#0E1110")
     app._janela.events.closing += app._fechando
+    import anexos_locais
+    app._janela.events.loaded += lambda: anexos_locais.ligar(app._janela)
     threading.Thread(target=app._servir, args=(srv,), daemon=True).start()
     os.makedirs(DADOS, exist_ok=True)
+    try:
+        import mapa_d
+        mapa_d.iniciar()   # processo próprio: busca e observação do disco continuam durante o reinício
+    except Exception:
+        pass
     if e.get("movel", True):   # KaniCode no celular (movel.py): só em 127.0.0.1; de fora, pelo Tailscale
         try:
             import movel
@@ -1996,21 +2470,48 @@ def main():
             pass
 
     def comecar():
+        def icone():   # a janela nasce escondida: tenta até ela existir
+            for _ in range(20):
+                if _icone_na_janela():
+                    return
+                time.sleep(0.3)
+        threading.Thread(target=icone, daemon=True).start()
         app._criar_bola()
-        if e.get("encaixe", True):   # Win + setas encaixam a janela (encaixe.py); "encaixe": false no estado desliga
-            def encaixar():
-                try:
-                    import encaixe
-                    encaixe.ligar(app._hwnd())
-                except Exception:
-                    pass
-            app._na_ui(encaixar)
+        app._encaixe_ligar()
         if e.get("voz"):   # o Ei Kani estava ligado: volta ligado
             threading.Timer(1.5, app.voz, args=(True,)).start()
         # Reinício pelo topo retoma o chat; abertura normal continua só com a KaniBall.
         if reaberto and "--abrir" in sys.argv:
+            for _ in range(100):   # a bolinha nasce na thread da interface: espera ela existir (o encaixe precisa dela)
+                if app._bola:
+                    break
+                time.sleep(0.05)
             app.mostrar()
     webview.start(comecar, debug="--console" in sys.argv, storage_path=os.path.join(DADOS, "webview"))
+
+
+def _esperar_webview_antigo(limite=8.0):
+    """reinício: o navegador interno (WebView2) do KaniCode anterior ainda fechando com a MESMA pasta de dados faz o
+    novo se pendurar nele e a página vem quebrada (script faltando, 2026-10-23). Espera ele sumir (até 8 s)."""
+    try:
+        import psutil
+    except ImportError:
+        time.sleep(1.5)
+        return
+    pasta = os.path.normcase(os.path.join(DADOS, "webview"))
+    fim = time.time() + limite
+    while time.time() < fim:
+        vivos = False
+        for p in psutil.process_iter(["name", "cmdline"]):
+            try:
+                if (p.info["name"] or "").lower() == "msedgewebview2.exe" and pasta in os.path.normcase(" ".join(p.info["cmdline"] or [])):
+                    vivos = True
+                    break
+            except (psutil.Error, TypeError):
+                continue
+        if not vivos:
+            return
+        time.sleep(0.25)
 
 
 if __name__ == "__main__":

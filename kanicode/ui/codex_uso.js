@@ -180,6 +180,8 @@
     if (!texto) return;
     if (ev.reiniciar) { andamento = null; mensagens.clear(); }
     if (!andamento?.isConnected || andamento !== conversa.lastElementChild) {
+      // Só a rodada mais recente fica aberta; o histórico continua acessível pelo título.
+      conversa.querySelectorAll('.codex-andamento[open]').forEach(bloco => { bloco.open = false; });
       mensagens.clear();
       andamento = document.createElement('details');
       andamento.className = 'codex-andamento';
@@ -193,6 +195,7 @@
     let p = mensagens.get(chave);
     if (!p) { p = document.createElement('p'); mensagens.set(chave, p); andamento.appendChild(p); }
     p.textContent = texto;
+    andamento.open = true;
   }
   const anterior = window.kcEv;
   window.kcEv = ev => {

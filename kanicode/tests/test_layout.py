@@ -48,6 +48,8 @@ class LayoutTest(unittest.TestCase):
               ocupada:false, modo:modoTeste, limite:{h5:.32,sem:.25}};
             if (nome === 'modo') { modoTeste=args[0]; return modoTeste; }
             if (nome === 'expandir') return args[0];
+            if (nome === 'maximizar') { window.janelaMaximizadaTeste = args[0]; return args[0]; }
+            if (nome === 'maximizada') return !!window.janelaMaximizadaTeste;
             if (nome === 'quem') { agenteTeste=args[0]; return true; }
             if (nome === 'contas_listar' || nome === 'conta_atualizar') return {lista:contasTeste, ativa:'principal'};
             if (nome === 'historico') return historicoTeste;
@@ -65,10 +67,26 @@ class LayoutTest(unittest.TestCase):
     def evento(self, ev):
         self.page.evaluate("ev => kcEv(ev)", ev)
 
+    def test_aba_codigo_atualiza_conteudo_e_colore_sem_executar_html(self):
+        self.evento({'t':'codex_alteracao', 'arquivo':'exemplo.py', 'conteudo':'def soma(x):\n    return x + 1',
+                     'diff':'@@ -1 +1 @@\n-x=1\n+x=2', 'adicionadas':1, 'removidas':1})
+        self.page.evaluate("document.getElementById('codigo-aba').click()")
+        self.assertEqual(self.page.locator('.codigo-painel select').input_value(), 'exemplo.py')
+        self.assertIn('+1 / −1', self.page.locator('.codigo-resumo').inner_text())
+        self.assertGreater(self.page.locator('.codigo-painel .sintaxe-palavra').count(), 0)
+        self.evento({'t':'codex_alteracao', 'arquivo':'exemplo.py', 'conteudo':'x = 3', 'adicionadas':2, 'removidas':1})
+        self.assertEqual(self.page.locator('.codigo-painel code').inner_text(), 'x = 3')
+        html = self.page.evaluate("KCResposta.md('```python\\nprint(\"<img src=x onerror=alert(1)>\")\\n```')")
+        self.assertIn('sintaxe-texto', html)
+        self.assertNotIn('<img src=x', html)
+        self.page.evaluate("conversa.replaceChildren()")
+        self.page.wait_for_function("document.querySelector('.codigo-painel select').options.length === 0")
+        self.assertEqual(self.erros, [])
+
     def test_controles_nas_posicoes_pedidas_e_fotos(self):
         p = self.page
-        self.assertEqual(p.locator('.topo button').count(), 4)
-        self.assertEqual(p.locator('#ferramentas-menu button').count(), 9)
+        self.assertEqual(p.locator('.topo button').count(), 5)   # + 🌐 navegador
+        self.assertEqual(p.locator('#ferramentas-menu button').count(), 6)
         self.assertEqual(p.get_by_role('button', name='OpenCode · teste Big Pickle', exact=True, include_hidden=True).count(), 1)
         self.assertEqual(p.locator('#lado-contas img').count(), 2)
         self.assertEqual(p.locator('#lado-contas .cnt').count(), 3)
@@ -97,6 +115,7 @@ class LayoutTest(unittest.TestCase):
         p.wait_for_function("document.querySelector('#grande').getAttribute('aria-pressed') === 'false'")
         self.assertEqual(p.locator('#lado-aj svg path').get_attribute('d'),'m14 7-5 5 5 5')
         p.click('#lado-aj')
+
         p.wait_for_selector('#contas', state='visible')
         p.click('#quem-bt')
         self.assertEqual(p.locator('[data-q="claude"] img').get_attribute('src'),'claude.svg')
@@ -154,24 +173,91 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(p.evaluate("chamadas.filter(c => c.nome === 'gpu_info').length"),antes)
         self.assertEqual(self.erros, [])
 
-    def test_menu_e_atividades_so_expandem_com_clique(self):
+    def test_ferramentas_e_configuracoes_ficam_separadas(self):
         p = self.page
         self.assertTrue(p.locator('#ferramentas-menu').is_hidden())
         self.evento({"t":"ferr", "id":"bg", "nome":"Bash", "entrada":{"command":"teste", "run_in_background":True}})
-        self.assertNotIn('aberto',p.locator('#atv').get_attribute('class'))
-        self.assertLessEqual(p.locator('#atv').bounding_box()['width'],34)
-        p.click('#ferramentas-bt')
-        self.assertTrue(p.locator('#ferramentas-menu').is_visible())
-        p.click('#som')
-        self.assertTrue(p.locator('#ferramentas-menu').is_hidden())
-        self.assertIn('Sons das ações',p.locator('#som').inner_text())
-        p.click('#ferramentas-bt'); p.keyboard.press('Escape')
-        self.assertTrue(p.locator('#ferramentas-menu').is_hidden())
-        self.assertFalse(p.evaluate("chamadas.some(c => c.nome === 'esconder')"))
+        self.assertNotIn('aberto', p.locator('#atv').get_attribute('class'))
         p.click('#atv-trilho')
-        p.wait_for_function("document.querySelector('#atv').classList.contains('aberto')")
+        self.assertEqual(p.locator('#atv-trilho').get_attribute('aria-label'), 'Ferramentas')
+        self.assertTrue(p.locator('#atv #ferramentas-menu').is_visible())
+        self.assertEqual(p.locator('#ferramentas-menu .ferramentas-grupo h3').all_text_contents(), ['CONVERSA E CÓDIGO', 'ARQUIVOS'])
+        self.assertEqual(p.locator('#ferramentas-codigo button').count(), 5)
+        self.assertEqual(p.locator('#ferramentas-arquivos button').count(), 1)
+        self.assertEqual(p.locator('#ferramentas-menu #som, #ferramentas-menu #fixar, #ferramentas-menu #config-conexoes').count(), 0)
+        p.click('#ferramentas-bt')
+        self.assertTrue(p.locator('#config-menu').is_visible())
+        self.assertTrue(p.locator('#config-menu #perfil-portatil-bt').is_visible())
+        p.click('#som')
+        self.assertTrue(p.locator('#ferramentas-menu').is_visible())
+        self.assertTrue(p.locator('#config-menu').is_visible())
+        p.keyboard.press('Escape')
+        self.assertTrue(p.locator('#config-menu').is_hidden())
+        self.assertTrue(p.locator('#ferramentas-menu').is_visible())
+        p.screenshot(path=r'D:/kanivete_testes/kanicode_painel_ferramentas.png')
+        p.get_by_text('Atividade da conversa', exact=True).click()
+        self.assertTrue(p.locator('#atv-lista').is_visible())
+        p.click('#codigo-aba')
+        self.assertTrue(p.locator('#ferramentas-conteudo').is_hidden())
+        self.assertTrue(p.locator('.codigo-painel').is_visible())
+        p.click('#codigo-atividades')
+        self.assertTrue(p.locator('#ferramentas-menu').is_visible())
         p.click('#atv-fechar')
-        p.wait_for_function("!document.querySelector('#atv').classList.contains('aberto')")
+        self.assertTrue(p.locator('#painel-ajuste').is_hidden())
+        self.assertEqual(self.erros, [])
+
+    def test_envio_com_erro_preserva_pedido_e_mostra_diagnostico(self):
+        p = self.page
+        p.evaluate("""() => {
+          quemDefinir('codex', false);
+          const anterior = pywebview.api;
+          pywebview.api = new Proxy(anterior, {get(alvo, nome) {
+            if (nome === 'ajudante') return async () => { throw new Error('falha controlada da ponte'); };
+            return alvo[nome];
+          }});
+        }""")
+        p.fill('#texto', 'Pedido que precisa permanecer disponível')
+        p.click('#enviar')
+        p.wait_for_function("document.querySelector('#conversa').textContent.includes('falha controlada da ponte')")
+        self.assertEqual(p.locator('#texto').input_value(), 'Pedido que precisa permanecer disponível')
+        self.assertFalse(p.evaluate('K.ocupada'))
+        self.assertTrue(p.evaluate("chamadas.some(c => c.nome === 'janela_diagnostico' && c.args[0] === 'envio')"))
+        self.assertEqual(self.erros, [])
+
+    def test_divisoria_arrasta_guarda_e_respeita_o_tamanho_da_janela(self):
+        p = self.page
+        p.set_viewport_size({'width': 1100, 'height': 740})
+        p.click('#atv-trilho')
+        ajuste = p.locator('#painel-ajuste')
+        self.assertEqual(ajuste.get_attribute('aria-valuenow'), '270')
+        self.assertEqual(p.evaluate("chamadas.filter(c => c.nome === 'painel_espaco').at(-1).args"), [270])
+        p.wait_for_function("Math.abs(document.querySelector('#ferramentas-painel').getBoundingClientRect().width - 270) < 1")
+        caixa = ajuste.bounding_box()
+        x, y = caixa['x'] + caixa['width']/2, caixa['y'] + 100
+        p.mouse.move(x, y); p.mouse.down(); p.mouse.move(x-160, y, steps=8); p.mouse.up()
+        self.assertEqual(ajuste.get_attribute('aria-valuenow'), '430')
+        self.assertEqual(p.evaluate("localStorage.getItem('kanicode-painel-largura')"), '430')
+        self.assertAlmostEqual(p.locator('#ferramentas-painel').bounding_box()['width'], 430, delta=1)
+        p.click('#codigo-aba')
+        self.assertAlmostEqual(p.locator('.codigo-painel').bounding_box()['width'], 430, delta=1)
+        p.click('#codigo-atividades')
+        p.screenshot(path=r'D:/kanivete_testes/kanicode_painel_regulavel.png')
+        p.set_viewport_size({'width': 700, 'height': 740})
+        p.wait_for_function("Number(document.querySelector('#painel-ajuste').getAttribute('aria-valuenow')) <= 280")
+        p.wait_for_function("document.querySelector('#ferramentas-painel').getBoundingClientRect().width <= 280")
+        self.assertGreaterEqual(p.locator('.meio').bounding_box()['width'], 320)
+        p.set_viewport_size({'width': 1100, 'height': 740})
+        p.wait_for_function("document.querySelector('#painel-ajuste').getAttribute('aria-valuenow') === '430'")
+        self.assertEqual(p.evaluate("chamadas.filter(c => c.nome === 'painel_espaco').length"), 1)
+        p.reload(); p.evaluate("dispatchEvent(new Event('pywebviewready'))")
+        p.click('#atv-trilho')
+        self.assertEqual(ajuste.get_attribute('aria-valuenow'), '430')
+        ajuste.focus(); p.keyboard.press('ArrowRight')
+        self.assertEqual(ajuste.get_attribute('aria-valuenow'), '410')
+        p.keyboard.press('Home')
+        self.assertEqual(ajuste.get_attribute('aria-valuenow'), '270')
+        p.click('#atv-fechar')
+        self.assertTrue(ajuste.is_hidden())
         self.assertEqual(self.erros, [])
 
     def test_pastas_aparecem_por_operacao_e_somem_no_fim(self):
@@ -306,6 +392,31 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(self.page.locator('.msg.aju').count(), 2)
         self.assertEqual(self.erros, [])
 
+    def test_andamento_codex_recolhe_anterior_quando_comeca_nova_rodada(self):
+        self.page.evaluate("quemDefinir('codex', false)")
+        self.evento({'t':'ajudante','quem':'codex','fase':'inicio','texto':'Organizar'})
+        self.evento({'t':'ajudante','quem':'codex','fase':'passo','id':'a','operacao':'inicio','texto':'primeira etapa'})
+        blocos = self.page.locator('.codex-andamento')
+        self.assertTrue(blocos.nth(0).evaluate('(el) => el.open'))
+        self.evento({'t':'ajudante','quem':'codex','fase':'passo','id':'a','operacao':'fim','texto':'pensando','ok':True})
+        self.assertTrue(blocos.nth(0).evaluate('(el) => el.open'))
+        self.evento({'t':'codex_progresso','id':'m','texto':'Primeira etapa concluída. Vou continuar.'})
+        self.evento({'t':'ajudante','quem':'codex','fase':'passo','id':'b','operacao':'inicio','texto':'segunda etapa'})
+        self.assertEqual(blocos.count(), 2)
+        self.assertFalse(blocos.nth(0).evaluate('(el) => el.open'))
+        self.assertTrue(blocos.nth(1).evaluate('(el) => el.open'))
+        self.assertIn('✓ Concluído: primeira etapa', blocos.nth(0).text_content())
+        # Ainda é possível consultar manualmente um andamento anterior.
+        blocos.nth(0).locator('summary').click()
+        self.assertTrue(blocos.nth(0).evaluate('(el) => el.open'))
+        self.evento({'t':'ajudante_resposta','quem':'codex','texto':'Concluído','ok':True})
+        self.evento({'t':'ajudante','quem':'codex','fase':'inicio','texto':'Outro pedido'})
+        self.evento({'t':'ajudante','quem':'codex','fase':'passo','id':'c','operacao':'inicio','texto':'terceira etapa'})
+        self.assertEqual(blocos.count(), 3)
+        self.assertEqual(self.page.locator('.codex-andamento[open]').count(), 1)
+        self.assertTrue(blocos.nth(2).evaluate('(el) => el.open'))
+        self.assertEqual(self.erros, [])
+
     def test_limite_redefinicao_e_saldo_atualizado(self):
         self.page.evaluate("""() => {
           window.resetsTeste = [];
@@ -360,6 +471,7 @@ class LayoutTest(unittest.TestCase):
         p.click('#conversa', position={'x':200, 'y':20})
         self.assertTrue(p.locator('.codex-conta').is_hidden())
         p.click('#lado-aj')
+
         p.wait_for_selector('.lado.aberto')
         p.wait_for_selector('#codex-conta-lateral .codex-email', state='visible')
         self.assertIn('codex@exemplo.com', p.locator('#codex-conta-lateral .codex-email').inner_text())
@@ -412,7 +524,7 @@ class LayoutTest(unittest.TestCase):
             return alvo[nome];
           }});
         }""")
-        self.page.click('#ferramentas-bt')
+        self.page.click('#atv-trilho')
         self.page.get_by_role('button', name='Revisar código isolado', exact=True).click()
         self.page.wait_for_function("!document.querySelector('.codigo-aplicar').disabled")
         self.assertIn('+return a+b', self.page.locator('.codigo-diff').inner_text())

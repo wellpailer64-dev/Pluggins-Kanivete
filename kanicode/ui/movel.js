@@ -6,7 +6,7 @@
   document.documentElement.classList.add('movel');
 
   async function chamar(nome, args) {
-    const r = await fetch('/api/' + nome, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-KC-De': KC_DE },
+    const r = await fetch('/api/' + nome, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-KC-De': KC_DE, 'X-KC-Aba': window.KC_ABAS?.ativa || '' },
                                            body: JSON.stringify(args) });
     if (r.status === 403) { location.reload(); throw new Error('sem chave'); }
     const j = await r.json();
@@ -93,12 +93,15 @@
     V.gravando = g; micVisual(true); vozEv({ fase: 'ouvindo' });
     if (navigator.vibrate) navigator.vibrate(30);
   }
-  async function micParar() {
+  // 2 toques na bolinha do app: liga o microfone; outros 2 toques com ele ligado descartam a gravação
+  window.kcBolaOuvir = () => V.gravando ? micParar(true) : micLigar();
+  async function micParar(cancelar) {
     const g = V.gravando; if (!g) return;
     V.gravando = null; micVisual(false);
     setTimeout(fundoLigar, 300);   // o silêncio volta depois do microfone (com a tela aberta ele não atrapalha)
     g.proc.disconnect(); g.fonte.disconnect(); g.fluxo.getTracks().forEach(t => t.stop()); g.ctx.close();
     if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    if (cancelar === true) { atividade('Gravação descartada'); return; }
     if (g.falou < 0.3) { atividade('Pronto'); return; }
     // 16 kHz, 16 bits
     const total = g.partes.reduce((n, p) => n + p.length, 0), passo = g.sr / 16000, n = Math.floor(total / passo);
@@ -209,13 +212,17 @@
   let swReg = null;
   async function avisoBotao() {
     const b = document.getElementById('aviso-bt'); if (!b) return;
-    const sub = swReg && await swReg.pushManager.getSubscription();
-    const on = !!sub && Notification.permission === 'granted';
+    const nativo = window.KCApp && typeof KCApp.avisosEstado === 'function';
+    const sub = !nativo && swReg?.pushManager && await swReg.pushManager.getSubscription();
+    const on = nativo ? KCApp.avisosEstado() === 'ligados' : !!sub && window.Notification?.permission === 'granted';
     b.classList.toggle('on', on); b.textContent = on ? '🔔' : '🔕';
     b.title = on ? 'Avisos ligados: chega notificação quando eu terminar ou precisar de você' : 'Ligar avisos no celular';
   }
   async function avisoAlternar() {
-    if (!swReg || !('PushManager' in window)) { bolha('erro', 'Este navegador não aceita avisos.'); return; }
+    if (window.KCApp && typeof KCApp.avisosAlternar === 'function') {
+      KCApp.avisosAlternar(); setTimeout(avisoBotao, 300); return;
+    }
+    if (!swReg?.pushManager || !('PushManager' in window)) { bolha('sis', 'Para receber avisos, use o app Android atualizado ou abra o KaniCode no Chrome.'); return; }
     const sub = await swReg.pushManager.getSubscription();
     if (sub && Notification.permission === 'granted') {
       await post('/push/sair', { endpoint: sub.endpoint }); await sub.unsubscribe();
@@ -231,19 +238,45 @@
     avisoBotao();
   }
   const visto = () => post('/push/visto', { de: KC_DE, on: document.visibilityState === 'visible' }).catch(() => {});
-  document.addEventListener('visibilitychange', visto);
+  document.addEventListener('visibilitychange', () => { visto(); if (!document.hidden) avisoBotao(); });
+  window.kcAvisosAtualizar = avisoBotao;
   window.addEventListener('pagehide', () => navigator.sendBeacon && navigator.sendBeacon('/push/visto', new Blob([JSON.stringify({ de: KC_DE, on: false })], { type: 'application/json' })));
 
   window.addEventListener('DOMContentLoaded', () => {
     ligar();
     visto();
+    // A mesma prévia e o mesmo envio de imagens da conversa do PC.
+    const entrada = document.querySelector('.entrada');
+    const fotos = document.createElement('div');
+    fotos.className = 'movel-fotos';
+    for (const [nome, icone, camera] of [['Câmera', '◎', true], ['Galeria', '▧', false]]) {
+      const arquivo = document.createElement('input');
+      arquivo.type = 'file'; arquivo.accept = 'image/*'; arquivo.hidden = true;
+      if (camera) arquivo.setAttribute('capture', 'environment');
+      else arquivo.multiple = true;
+      const botao = document.createElement('button');
+      botao.type = 'button'; botao.className = 'movel-foto';
+      botao.textContent = icone; botao.title = nome; botao.setAttribute('aria-label', nome);
+      botao.onclick = () => arquivo.click();
+      arquivo.onchange = async () => {
+        await anexar(Array.from(arquivo.files || [])); arquivo.value = '';
+      };
+      fotos.append(botao, arquivo);
+    }
+    entrada.append(fotos);
+    // O teclado reduz a área útil também nos navegadores que não redimensionam o body.
+    const tamanho = () => document.documentElement.style.setProperty('--movel-altura',
+      (window.visualViewport ? window.visualViewport.height : window.innerHeight) + 'px');
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', tamanho);
+    window.addEventListener('resize', tamanho); tamanho();
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(r => { swReg = r; avisoBotao(); }).catch(() => {});
     // 🎤 e 🎙 do celular no lugar dos do PC (que usam o microfone do PC); 👤 abre as contas
     document.addEventListener('click', e => {
-      const b = e.target.closest('#mic, #voz, #contas-bt, #aviso-bt'); if (!b) return;
+      const b = e.target.closest('#mic, #mic-x, #voz, #contas-bt, #aviso-bt'); if (!b) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (!V.tocando && !V.fundo) { V.audio.play().catch(() => {}); V.audio.pause(); }   // libera o som neste toque (o celular exige um toque antes)
       if (b.id === 'mic') micLigar();
+      else if (b.id === 'mic-x') micParar(true);
       else if (b.id === 'voz') {
         V.conversa = !V.conversa; localStorage.setItem('kc-conversa', V.conversa ? '1' : '0'); conversaBotao();
         bolha('sis', V.conversa ? '🎙 Modo conversa: leio as respostas em voz alta e depois já ouço você.' : 'Modo conversa desligado.');
@@ -260,6 +293,14 @@
     // eventos da conversa → leitura em voz alta
     const ev0 = window.kcEv;
     window.kcEv = ev => {
+      const outra = ev.aba != null && window.KC_ABAS?.ativa && String(ev.aba) !== KC_ABAS.ativa;
+      if (window.KCApp && typeof KCApp.notificar === 'function') {
+        if (ev.t === 'permissao' || ev.t === 'pergunta') KCApp.notificar('Preciso de você', 'Abra o KaniCode para responder.', !!outra);
+        else if (ev.t === 'fim' || ev.t === 'ajudante_resposta' || (ev.t === 'saiu' && ev.erro)) {
+          KCApp.notificar(ev.erro || ev.ok === false ? 'A tarefa precisa de atenção' : 'Tarefa concluída', 'Abra o KaniCode para ver a resposta.', !!outra);
+        }
+      }
+      if (outra) { ev0(ev); return; }   // voz e rosto acompanham a conversa selecionada
       if (window.KCApp) {   // a cara da bolinha do app acompanha a conversa (trabalhando / pergunta / parada)
         if (ev.t === 'inicio' || ev.t === 'texto' || ev.t === 'passo' || ev.t === 'ferr' || ev.t === 'kani_pensando') KCApp.tarefa('trabalhando');
         else if (ev.t === 'permissao' || ev.t === 'pergunta') KCApp.tarefa('pergunta');
@@ -315,6 +356,10 @@
       ['aviso-bt', '🔔', 'Avisos no celular', $$('aviso-bt')?.classList.contains('on') ? 'ligados' : 'desligados'],
       ['contas-bt', '👤', 'Contas do Claude', ''],
       ['atv-trilho', '⚡', 'Atividades', n ? n + ' rodando' : ''],
+      ['todo-trilho', '☑', 'Tarefas e agenda', ''],
+      ['consumo-trilho', '📊', 'Consumo de tokens', ''],
+      ['mapa-d-bt', '▤', 'Mapa do disco D', ''],
+      ['casa-trilho', '🏠', 'Casa', ''],
       ['recarregar', '⟳', 'Recarregar a tela', ''],
     ];
     const m = $$('menu-m');

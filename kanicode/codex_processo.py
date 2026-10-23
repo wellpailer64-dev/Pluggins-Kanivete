@@ -54,7 +54,7 @@ def _encerrar(processo, job):
         processo.kill()
 
 
-def executar(cmd, pasta, entrada, ao_linha, ao_espera, parar=None, prazo=600, ao_pulso=None):
+def executar(cmd, pasta, entrada, ao_linha, ao_espera, parar=None, prazo=1200, ao_pulso=None):
     """Entrega stdout linha a linha, stderr limitado e motivo distinto de interrupção."""
     inicio = time.monotonic()
     ambiente = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")

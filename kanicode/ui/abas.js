@@ -4,7 +4,7 @@
    avisam na faixa (bolinha girando = trabalhando, verde = terminou, amarela = espera você). Carregado por último:
    embrulha o kcEv de todos os outros scripts. */
 (() => {
-  if (window.KC_MOVEL) return;   // o celular segue a aba aberta no PC
+  // No celular, a aba selecionada segue no cabeçalho HTTP; o PC conserva a seleção dele.
   const A = { ativa: null, lista: [], est: {}, repetindo: false, mudando: false };
   const faixa = document.createElement('div');
   faixa.className = 'abas-chat'; faixa.id = 'abas-chat'; faixa.setAttribute('role', 'tablist');
@@ -77,7 +77,7 @@
       ocupada(K.ocupada); fim();
     }
     desenhar();
-    texto.focus();
+    if (!window.KC_MOVEL) texto.focus();
   }
 
   async function trocar(id) {
@@ -164,7 +164,7 @@
     if (ev && ev.aba != null && A.mudando) { est(String(ev.aba)).fila.push(ev); return; }   // trocando de aba: chega depois
     if (ev && ev.aba != null && A.ativa && String(ev.aba) !== A.ativa) {
       const e = est(String(ev.aba));
-      if (!e.visto) return;   // aba nunca aberta nesta janela: a conversa vem do disco quando ela for aberta
+      // Mesmo sem histórico aberto, o indicador acompanha a tarefa desta aba.
       e.fila.push(ev);
       if (TRAB.includes(ev.t) && !(ev.t === 'ajudante' && ev.fase === 'fim')) e.ocupada = true;
       if (ev.t === 'inicio' && ev.modelo) guardarModelo(String(ev.aba), ev.modelo);
@@ -201,5 +201,15 @@
     r.lista.forEach(a => { if (a.ocupada && a.id !== A.ativa) est(a.id).ocupada = true; });
     desenhar();
   });
+  if (window.KC_MOVEL) setInterval(async () => {
+    if (!A.ativa || A.mudando || document.hidden) return;
+    try {
+      const r = await api().abas();
+      if (!Array.isArray(r?.lista)) return;
+      if (!r.lista.some(a => String(a.id) === A.ativa)) {
+        guardar(); await entrar(r.ativa, r);
+      } else { A.lista = r.lista; desenhar(); }
+    } catch (e) { /* a conexão SSE já sinaliza quando o PC está desconectado */ }
+  }, 3000);
   window.KC_ABAS = A;
 })();

@@ -30,6 +30,8 @@ PROMPT_KANICODE = ("Você está no KaniCode: janela de ~500 px na área de traba
                    "tempos e arquivos; prefira isso a coordenadas de mouse). Após compactação ou interrupção, leia o "
                    "registro e confira o projeto real antes de continuar. Registre só resultados que verificou; o fim "
                    "de uma ferramenta não comprova que a edição ou exportação ficou correta.\n"
+                   "Web: use o navegador embutido do KaniCode (`py -3.13 D:/Kanivete/Plugins/kanibrowser/kb.py ...`; abre "
+                   "sozinho no painel 🌐, ao vivo), nunca Chrome externo nem o do KANIVETE; trabalhe na aba da Kani, à vista.\n"
                    "Mexeu no próprio KaniCode (D:/Kanivete/Plugins/kanicode)? No fim rode "
                    "`py -3.13 D:/Kanivete/Plugins/kanicode/recarregar.py`.\n"
                    "Mensagem terminada em '(por voz)': o Pailer falou e pode estar só OUVINDO a resposta (lida em voz alta, "

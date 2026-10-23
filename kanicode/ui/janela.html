@@ -36,7 +36,9 @@
   .bt.on { color: var(--lima); }
   .bt.sair:hover { background: #3A1C1E; color: var(--erro); }
   /* conversa */
-  .conversa { flex: 1; overflow-y: auto; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .conversa { flex: 1; overflow-y: auto; padding: 14px 80px 8px; display: flex; flex-direction: column; gap: 8px;
+              -webkit-mask-image: linear-gradient(to bottom, transparent, #000 48px);
+              mask-image: linear-gradient(to bottom, transparent, #000 48px); }
   .msg { max-width: 94%; padding: 8px 11px; border-radius: 10px; word-wrap: break-word; overflow-wrap: anywhere; }
   .msg.eu { align-self: flex-end; background: #22301A; border: 1px solid #34481F; white-space: pre-wrap; }
   .msg.kc { align-self: flex-start; background: var(--painel); border: 1px solid var(--borda); }
@@ -117,6 +119,10 @@
   .mic:hover { color: var(--texto); }
   .mic.on { background: var(--lima); color: var(--fundo); animation: mic-pulsa 1.2s ease-in-out infinite; }
   @keyframes mic-pulsa { 50% { opacity: .6; } }
+  .mic-x { display: none; align-self: center; width: 22px; height: 22px; margin: -2px -4px -2px 6px; border: 0; border-radius: 50%;
+           background: transparent; color: var(--fraco, #8A9488); font-size: 13px; cursor: pointer; }
+  .mic.on + .mic-x { display: inline-block; }
+  .mic-x:hover { color: var(--texto); background: rgba(255,255,255,.08); }
   .enviar:disabled { opacity: .45; cursor: default; }
   .enviar.parar { background: #3A1C1E; color: var(--erro); }
   .meio-tarefa { border-left: 3px solid var(--lima); }
@@ -248,6 +254,9 @@
   .perg .res { font: 12.5px var(--mono); color: var(--fraco); }
   /* painel estreito das contas, à esquerda */
   .corpo { flex: 1; display: flex; min-height: 0; }
+  /* paineis.js: coluna do chat (.principal: corpo + status + entrada + rodapé) e o painel da direita (.atv) até o fim */
+  .area-linha { flex: 1; display: flex; min-height: 0; }
+  .principal { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .lado { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0 10px;
           background: var(--painel); border-right: 1px solid var(--borda); }
   .lado .esp2 { flex: 1; }
@@ -301,9 +310,12 @@
   .caixa button { height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--borda); background: transparent; color: var(--texto); cursor: pointer; font: 13px var(--sans); }
   .caixa button.ok { background: var(--lima); color: var(--fundo); border-color: var(--lima); font-weight: 600; }
   ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2A3530; border-radius: 4px; }
-  /* ── coluna das contas aberta (paineis.js): a janela cresce para a esquerda ── */
-  .lado { transition: width .18s ease; overflow: hidden; }
-  .lado.aberto { width: 252px; align-items: stretch; padding: 10px; }
+  /* ── coluna das contas aberta (paineis.js): por cima da conversa, sem mudar o tamanho da janela ── */
+  .corpo { position: relative; }
+  .corpo:has(> .lado.aberto) { padding-left: 52px; }
+  .lado { overflow: hidden; }
+  .lado.aberto { position: absolute; left: 0; top: 0; bottom: 0; z-index: 45; width: 252px; align-items: stretch; padding: 10px;
+                 background: var(--painel); border-right: 1px solid var(--borda); box-shadow: 12px 0 30px rgba(0, 0, 0, .45); }
   .lado.aberto > #lado-contas, .lado.aberto > .mais, .lado.aberto > .esp2 { display: none !important; }
   .lado.aberto .contas { position: static; inset: auto; max-height: none; flex: 1; overflow-y: auto; box-shadow: none; border: 0; padding: 0;
                          background: transparent; animation: entra .25s ease; }
@@ -378,6 +390,7 @@
 <link rel="stylesheet" href="opencode_mvp.css">
 <link rel="stylesheet" href="codigo_agente.css">
 <link rel="stylesheet" href="codex_uso.css">
+<link rel="stylesheet" href="navegador.css">
 </head>
 <body>
   <div class="topo pywebview-drag-region">
@@ -392,6 +405,7 @@
   </div>
   <nav class="pastas-nav" id="pastas-nav" aria-label="Pastas em uso">
     <button class="pasta" id="pasta" aria-label="Abrir pasta de projeto" title="Abrir pasta de projeto"><span class="pasta-adicionar" aria-hidden="true">＋</span><span data-pasta-nome></span></button>
+    <button id="pasta-remover" class="pasta-remover" hidden aria-label="Remover pasta do projeto" title="Remover referência da pasta (não apaga arquivos)">×</button>
     <div id="pastas-ativas" class="pastas-ativas" aria-live="polite"></div>
   </nav>
   <div class="corpo">
@@ -411,7 +425,7 @@
     </div>
     <div class="menu-quem" id="menu-quem" hidden></div>
     <label class="campo"><span class="seta">&gt;</span><textarea id="texto" rows="1" placeholder="Fale com o Claude…  ( / mostra os comandos )"></textarea>
-      <button class="mic" id="mic" type="button" title="Falar o pedido (sem dizer &quot;Ei Kani&quot;) · clique de novo quando terminar">🎤</button></label>
+      <button class="mic" id="mic" type="button" title="Falar o pedido (sem dizer &quot;Ei Kani&quot;) · clique de novo quando terminar">🎤</button><button class="mic-x" id="mic-x" type="button" title="Cancelar a gravação, sem enviar (Esc)" aria-label="Cancelar a gravação">✕</button></label>
     <button class="enviar" id="enviar" disabled>Enviar</button>
   </div>
   <div class="rodape">
@@ -426,18 +440,29 @@
     <span class="cota" id="csem" title="Semana" hidden>sem <i><b></b></i><span></span></span>
   </div>
   <div class="ferramentas-menu" id="ferramentas-menu" aria-label="Ferramentas do KaniCode" hidden>
-    <div class="menu-titulo">FERRAMENTAS</div>
+    <section class="ferramentas-grupo" id="ferramentas-codigo" aria-label="Conversa e código">
+      <h3 class="menu-titulo">CONVERSA E CÓDIGO</h3>
     <button class="bt" id="nova" title="Conversa nova nesta pasta · /nova"><span class="icone">＋</span><span>Nova conversa</span><small>/nova</small></button>
     <button class="bt" id="revisar" title="Revisar o código alterado"><span class="icone">⌕</span><span>Revisar código</span></button>
     <button class="bt" id="habil" title="Guias, skills e comandos"><span class="icone">▦</span><span>Habilidades</span></button>
-    <div class="menu-divisor"></div>
+    </section>
+    <section class="ferramentas-grupo" id="ferramentas-arquivos" aria-label="Arquivos">
+      <h3 class="menu-titulo">ARQUIVOS</h3>
+    </section>
+  </div>
+  <div class="ferramentas-menu config-menu" id="config-menu" aria-label="Configurações do KaniCode" hidden>
+    <section class="ferramentas-grupo" aria-label="Voz e som">
+      <h3 class="menu-titulo">VOZ E SOM</h3>
     <button class="bt" id="voz" title="Ativar ou desativar Ei Kani"><span class="icone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v2a6 6 0 0 0 12 0v-2M12 19v3m-3 0h6"/></svg></span><span>Ei Kani</span></button>
     <button class="bt" id="som" title="Sons suaves das ações"><span class="icone">◖</span><span>Sons das ações</span></button>
-    <div class="menu-divisor"></div>
+    </section>
+    <section class="ferramentas-grupo" id="config-perfil" aria-label="Preferências">
+      <h3 class="menu-titulo">PREFERÊNCIAS</h3>
     <button class="bt" id="fixar" title="Sempre por cima"><span class="icone">⌖</span><span>Sempre por cima</span></button>
     <button class="bt" id="config-conexoes" title="Conectar serviços"><span class="icone">⇄</span><span>Conexões</span></button>
 
     <label class="navegador-links">Abrir links com<select id="navegador-links" title="Navegador externo; a última escolha fica salva"><option value="chrome">Chrome (ou padrão)</option><option value="padrao">Padrão do Windows</option></select></label>
+    </section>
   </div>
   <link rel="stylesheet" href="conexoes.css">
   <div class="uso" id="uso" hidden></div>
@@ -469,6 +494,18 @@
         <form id="drive-busca"><label for="drive-termo">Buscar arquivos e pastas pelo nome</label><div class="drive-campo"><input id="drive-termo" maxlength="200" placeholder="Ex.: orçamento, cliente, referências…" autocomplete="off"><button type="submit">Buscar</button></div></form>
         <p id="drive-resultado-status" role="status"></p><div id="drive-arquivos"></div><button id="drive-mais" hidden>Carregar mais</button>
         <p class="config-nota">A Kani também pode gerenciar os arquivos pela conversa, quando você pedir. Downloads não sobrescrevem arquivos locais. Documentos Google são exportados; pastas são baixadas arquivo por arquivo. Itens da lixeira seguem o prazo de retenção do Google.</p>
+      </div>
+    </section>
+    <section id="conexao-gmail" aria-labelledby="gmail-titulo" hidden>
+      <h4 id="gmail-titulo" tabindex="-1">Gmail · Leitura e rascunhos</h4>
+      <p id="gmail-status" role="status" aria-live="polite">Verificando conexão…</p>
+      <div class="config-acoes"><button id="gmail-reutilizar">Usar configuração do Calendar</button><button id="gmail-importar">Importar JSON OAuth</button><button id="gmail-conectar">Conectar Gmail</button><button id="gmail-desconectar" hidden>Desconectar Gmail</button></div>
+      <details><summary>Como conectar o Gmail</summary><p>Ative a Gmail API no projeto Google e configure os escopos gmail.readonly e gmail.compose na tela de consentimento. Em modo de teste, adicione seu e-mail aos usuários de teste. Reutilize o cadastro OAuth Desktop do Calendar ou importe outro JSON e conecte pelo navegador.</p><p>O Google agrupa criação de rascunhos e envio na mesma permissão. Aqui só estão disponíveis leitura, busca e criação de rascunhos. A autorização é independente do Calendar e Drive.</p></details>
+      <div id="gmail-consulta" hidden>
+        <form id="gmail-busca"><label>Buscar no Gmail <input id="gmail-termo" maxlength="500" placeholder="Ex.: from:cliente assunto"></label><button>Buscar</button></form>
+        <p id="gmail-resultados" role="status"></p><div id="gmail-lista"></div><button id="gmail-mais" hidden>Carregar mais</button>
+        <article id="gmail-leitura" hidden><h4 id="gmail-assunto"></h4><p id="gmail-cabecalho"></p><pre id="gmail-corpo" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto"></pre></article>
+        <form id="gmail-rascunho"><h4>Novo rascunho</h4><label>Para <input id="gmail-para" type="email" required maxlength="2000"></label><label>Assunto <input id="gmail-novo-assunto" maxlength="1000"></label><label>Mensagem <textarea id="gmail-texto" rows="6" maxlength="200000"></textarea></label><button>Criar rascunho no Gmail</button></form>
       </div>
     </section>
     <section id="conexao-sugestao" aria-labelledby="sugestao-titulo" hidden>
@@ -506,6 +543,7 @@
     <div class="lista" id="hab-lista"></div>
   </div>
 <script src="respostas_render.js"></script>
+<script src="diagnostico.js"></script>
 <script>
   const $ = id => document.getElementById(id);
   const api = () => window.pywebview && pywebview.api;
@@ -942,7 +980,17 @@
         <span>Modelo</span><span>${esc(K.modelo || 'padrão')}</span>
       </div>`;
   }
-  const alternarUso = () => { $('uso').hidden = !$('uso').hidden; if (!$('uso').hidden) painelUso(); };
+  function posicionarUso() {
+    const uso = $('uso');
+    if (uso.hidden) return;
+    const topo = $('status').getBoundingClientRect().top;
+    uso.style.position = 'fixed';
+    uso.style.bottom = Math.max(8, innerHeight - topo + 8) + 'px';
+    uso.style.maxHeight = Math.max(40, topo - 18) + 'px';
+    uso.style.overflowY = 'auto';
+  }
+  const alternarUso = () => { $('uso').hidden = !$('uso').hidden; if (!$('uso').hidden) { painelUso(); posicionarUso(); } };
+  addEventListener('resize', posicionarUso);
   setInterval(() => cotas(), 30000);   // a contagem regressiva anda mesmo sem resposta nova
 
   // ── equipe trabalhando: avatar com anel girando no canto, o que está fazendo, tempo e tokens ──
@@ -1242,12 +1290,14 @@
   }
 
 
-  // ── imagens: Ctrl+V de print ou arrastar arquivo; vão junto da próxima mensagem ──
+  // ── anexos: imagens em miniatura; outros arquivos pelo caminho original no PC ──
   // lado maior até 1568 px (o que o Claude enxerga sem desperdício); foto vira JPEG, print fica PNG
   const ANX = [];
   function anexosDesenhar() {
     $('anexos').hidden = !ANX.length;
-    $('anexos').innerHTML = ANX.map((a, i) => `<div class="anexo"><img src="${a.mini}" alt=""><button data-i="${i}" title="Tirar">×</button></div>`).join('');
+    $('anexos').innerHTML = ANX.map((a, i) => a.arquivo
+      ? `<div class="anexo anexo-arquivo" title="${esc(a.caminho)}"><span class="anexo-tipo">${esc(a.nome.includes('.') ? a.nome.split('.').pop().slice(0, 8).toUpperCase() : 'ARQUIVO')}</span><span class="anexo-nome">${esc(a.nome)}</span><button data-i="${i}" title="Tirar" aria-label="Tirar ${esc(a.nome)}">×</button></div>`
+      : `<div class="anexo"><img src="${a.mini}" alt=""><button data-i="${i}" title="Tirar">×</button></div>`).join('');
     ajustar();
   }
   $('anexos').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { ANX.splice(+b.dataset.i, 1); anexosDesenhar(); } });
@@ -1273,9 +1323,13 @@
   }
   async function anexar(arqs) {
     for (const a of arqs) {
-      if (!a.type.startsWith('image/')) continue;
-      if (ANX.length >= 8) { bolha('sis', 'No máximo 8 imagens por mensagem.'); break; }
-      try { ANX.push(await lerImagem(a)); } catch (e) { bolha('erro', 'Não consegui abrir a imagem: ' + e.message); }
+      if (!a.type.startsWith('image/')) {
+        bolha('erro', 'Para anexar ' + a.name + ' pelo caminho original, arraste o arquivo na janela do KaniCode no PC.');
+        continue;
+      }
+      if (ANX.length >= 8) { bolha('sis', 'No máximo 8 anexos por mensagem.'); break; }
+      try { const imagem = await lerImagem(a); if (ANX.length < 8) ANX.push(imagem); }
+      catch (e) { bolha('erro', 'Não consegui abrir a imagem: ' + e.message); }
     }
     anexosDesenhar();
     texto.focus();
@@ -1286,7 +1340,10 @@
   });
   document.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); document.body.classList.add('arrastando'); } });
   document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('arrastando'); });
-  document.addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('arrastando'); anexar([...e.dataTransfer.files]); });
+  document.addEventListener('drop', e => {
+    e.preventDefault(); document.body.classList.remove('arrastando');
+    anexar([...e.dataTransfer.files].filter(a => !window.KC_DROP_LOCAL || window.kaniImagemAnexo(a.type)));
+  });
   function minis(lista) {
     if (!lista || !lista.length) return null;
     const d = document.createElement('div');
@@ -1457,23 +1514,36 @@
     enviar.title = enfileirar ? 'Aguardar a tarefa atual. Duplo clique na mensagem pendente para enviá-la com urgência.' : '';
   }
   async function mandar() {
-    const t = texto.value.trim();
+    const anterior = texto.value, anexos = ANX.slice(), estavaOcupada = K.ocupada;
+    try { await mandarAgora(); }
+    catch (erro) {
+      window.kaniRegistrarErro?.('envio', erro);
+      if (!texto.value) texto.value = anterior;
+      anexos.forEach(a => { if (!ANX.includes(a)) ANX.push(a); });
+      anexosDesenhar();
+      if (!estavaOcupada) ocupada(false);
+      ajustar();
+      bolha('erro', esc('Não foi possível confirmar o envio: ' + String(erro.message || erro)));
+    }
+  }
+  async function mandarAgora() {
+    const t = window.kaniTextoComAnexos(texto.value.trim());
     if (K.ocupada && !t && !ANX.length) { api().parar(); atividade('Parando…'); return; }
     if (!t && !ANX.length) return;
     const comandoNova = ['/clear', '/nova', '/new'].includes(t.split(' ')[0]);
-    if (K.quem === 'pickle' && (ANX.length || (t.startsWith('/') && !comandoNova))) {
+    if (K.quem === 'pickle' && (ANX.some(a => !a.arquivo) || (t.startsWith('/') && !comandoNova))) {
       bolha('sis', 'O Big Pickle recebe pedidos em texto e aceita /clear, /nova e /new para começar outra conversa. Anexos e outros comandos de terminal ainda não estão disponíveis neste agente.');
       return;
     }
     if (K.ocupada) {
       $('cmds').hidden = true;
-      const imgs = ANX.splice(0);
+      const imgs = ANX.splice(0).filter(a => !a.arquivo);
       anexosDesenhar();
       await mensagemEnfileirar(t, imgs);
       return;
     }
     $('cmds').hidden = true;
-    const imgs = ANX.splice(0);
+    const imgs = ANX.splice(0).filter(a => !a.arquivo);
     anexosDesenhar();
     const b = bolha('eu', t);
     const m = minis(imgs.map(i => i.mini)); if (m) b.prepend(m);
@@ -1484,10 +1554,8 @@
     ocupada(true);
     if (K.quem !== 'claude' && !t.startsWith('/') && !imgs.length) {   // direto com um ajudante (só texto)
       atividade(`${EQUIPE[K.quem].nome} trabalhando`);
-      try {
-        const ok = await api().ajudante(K.quem, t);
-        if (!ok) ocupada(false);
-      } catch (e) { bolha('erro', String(e)); ocupada(false); }
+      const ok = await api().ajudante(K.quem, t);
+      if (!ok) ocupada(false);
       return;
     }
     atividade('Enviando');
@@ -1495,6 +1563,7 @@
     if (!ok) ocupada(false);
   }
   async function trocarPasta() { if (K.ocupada) return; const p = await api().escolher_pasta(); if (p) carregar(); }
+  async function removerPasta() { if (K.ocupada) return; if (await api().remover_pasta()) await carregar(); }
   async function carregar() {
     const i = await api().info();
     if (api().sons_acoes) api().sons_acoes(SOM.on).catch(() => {});
@@ -1508,6 +1577,7 @@
     const normalPasta = p => String(p || '').replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
     const interna = K.pastasInternas.some(p => normalPasta(p) === normalPasta(i.pasta));
     $('pasta').querySelector('[data-pasta-nome]').textContent = interna ? '' : base(i.pasta);
+    $('pasta-remover').hidden = interna;
     $('pasta').title = interna ? 'Abrir pasta de outro projeto' : i.pasta + ' · clique para trocar a pasta do projeto';
     cotas(i.limite);
     conversa.innerHTML = '';
@@ -1553,6 +1623,7 @@
   enviar.addEventListener('click', mandar);
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
+    if ($('mic').classList.contains('on')) { $('mic-x').click(); return; }
     if (!$('uso').hidden) { $('uso').hidden = true; return; }
     if (!$('hab').hidden) { $('hab').hidden = true; return; }
     if (!$('menu-quem').hidden) { $('menu-quem').hidden = true; return; }
@@ -1574,6 +1645,7 @@
   });
   $('nova').addEventListener('click', async () => { if (K.ocupada) return; await api().nova(); carregar(); });
   $('pasta').addEventListener('click', trocarPasta);
+  $('pasta-remover').addEventListener('click', removerPasta);
   $('som').addEventListener('click', () => {
     SOM.on = !SOM.on;
     try { localStorage.setItem('kc-som', SOM.on ? '1' : '0'); } catch (e) { /* ok */ }
@@ -1589,6 +1661,7 @@
     if (ev.fase === 'ouvindo') atividade('Ouvindo… fale o pedido');
     else if (ev.fase === 'transcrevendo') atividade('Entendendo o que você falou');
     else if (ev.fase === 'escutando' && !K.ocupada) atividade('Pronto');
+    else if (ev.fase === 'cancelado') atividade('Gravação descartada');
     else if (ev.fase === 'desligada') { vozBotao(false); if (!K.ocupada) atividade('Pronto'); }
     else if (ev.fase && ev.fase.startsWith('erro:')) { bolha('erro', 'Ei Kani: ' + ev.fase.slice(5)); vozBotao(false); }
     else if (ev.fase === 'texto' && ev.texto) {
@@ -1613,19 +1686,26 @@
     const r = await api().ouvir(fim);
     if (r && r.erro) bolha('erro', 'Microfone: ' + r.erro);
   });
+  $('mic-x').addEventListener('click', e => {   // descarta o que gravou (no celular, movel.js intercepta)
+    e.preventDefault(); $('mic').classList.remove('on'); api().ouvir(false, true);
+  });
   setTimeout(() => api().voz(null).then(r => vozBotao(r.on)).catch(() => {}), 2500);
   $('quem-bt').addEventListener('click', menuQuem);
   $('habil').addEventListener('click', habAbrir);
   $('c5').addEventListener('click', alternarUso);
   $('csem').addEventListener('click', alternarUso);
   $('grande').addEventListener('click', async () => {
-    const on = !document.documentElement.classList.contains('grande');
-    const r = await api().expandir(on);
+    grandeMarcar(await api().maximizar(!document.documentElement.classList.contains('grande')));
+  });
+  // o botão acompanha a janela também quando ela maximiza/volta por Win+setas ou duplo clique do Windows
+  function grandeMarcar(r) {
     document.documentElement.classList.toggle('grande', !!r);
     $('grande').classList.toggle('on', !!r);
     $('grande').setAttribute('aria-pressed', String(!!r));
-    $('grande').setAttribute('aria-label', r ? 'Restaurar janela' : 'Ampliar janela');
-  });
+    $('grande').setAttribute('aria-label', r ? 'Restaurar janela' : 'Maximizar janela');
+  }
+  let grandeT = 0;
+  addEventListener('resize', () => { clearTimeout(grandeT); grandeT = setTimeout(() => api().maximizada().then(grandeMarcar).catch(() => {}), 150); });
   $('fixar').addEventListener('click', async () => { const on = !$('fixar').classList.contains('on'); $('fixar').classList.toggle('on', await api().fixar(on)); });
   // ── esticar a janela pelas bordas: o Python move/redimensiona a janela nativa (pixels físicos) ──
   ['n', 's', 'l', 'o', 'no', 'ne', 'so', 'se'].forEach(lado => {
@@ -1679,10 +1759,26 @@
     }
     kcEvBase(ev);
   };
-  window.addEventListener('pywebviewready', () => { carregar(); if (!window.KC_MOVEL) texto.focus(); });
+  window.addEventListener('pywebviewready', () => {
+    carregar().catch(erro => {
+      window.kaniRegistrarErro?.('historico', erro);
+      bolha('erro', esc('Falha ao carregar o histórico: ' + String(erro.message || erro)));
+    });
+    if (!window.KC_MOVEL) texto.focus();
+  });
 </script>
+<link rel="stylesheet" href="anexos.css">
+<script src="anexos.js"></script>
 <script src="reiniciar.js"></script>
 <script src="paineis.js"></script>
+<link rel="stylesheet" href="tarefas.css">
+<script src="tarefas.js"></script>
+<link rel="stylesheet" href="consumo.css">
+<script src="consumo.js"></script>
+<link rel="stylesheet" href="casa.css">
+<script src="casa.js"></script>
+<link rel="stylesheet" href="projeto.css">
+<script src="projeto.js"></script>
 <script src="organizacao.js"></script>
 <script src="kani_gpu.js"></script>
 <script src="respostas.js"></script>
@@ -1694,8 +1790,25 @@
 <script src="kaniball.js"></script>
 <script src="mensagens.js"></script>
 <script src="abas.js"></script>
+<script src="navegador.js"></script>
+<link rel="stylesheet" href="mapa_d.css">
+<script src="mapa_d.js"></script>
+<link rel="stylesheet" href="perfil_portatil.css">
+<script src="perfil_portatil.js"></script>
 <script src="conexoes.js"></script>
 <script src="conexoes_drive.js"></script>
+<script src="conexoes_gmail.js"></script>
 
+<script>
+  // conferência da carga (2026-10-23): no reinício a página às vezes vinha sem algum script (KCResposta não definido →
+  // conversa quebrada até fechar e abrir). Faltou peça: anota no diagnóstico e recarrega sozinha (no máximo 2 vezes)
+  (() => {
+    const falta = ['KCResposta', 'kaniPainelDireito'].filter(n => !window[n]);
+    if (!falta.length) { try { sessionStorage.removeItem('kc-recarga'); } catch (_) {} return; }
+    let n = 0; try { n = Number(sessionStorage.getItem('kc-recarga')) || 0; } catch (_) {}
+    try { window.pywebview.api.janela_diagnostico('carga.incompleta', falta.join(',') + ' · tentativa ' + n); } catch (_) {}
+    if (n < 2) { try { sessionStorage.setItem('kc-recarga', String(n + 1)); } catch (_) {} setTimeout(() => location.reload(), 300); }
+  })();
+</script>
 </body>
 </html>

@@ -54,6 +54,20 @@ py -3.13 verificar.py --area interface --arquivos google_calendar.py compromisso
 Mudanças Python exigem reabrir o KaniCode; não reiniciar o processo do usuário durante uma tarefa.
 O fluxo com uma conta real depende do projeto OAuth e da autorização do usuário no navegador.
 
+## Gmail
+
+Abra **Conexões → Gmail**. Ative a **Gmail API** no projeto Google e habilite os escopos
+`https://www.googleapis.com/auth/gmail.readonly` e `https://www.googleapis.com/auth/gmail.compose`
+na tela de consentimento. Se estiver em teste, adicione sua conta aos usuários de teste.
+Use o cadastro OAuth Desktop do Calendar ou importe outro JSON. A autorização e os tokens
+são independentes, protegidos por DPAPI em `conexoes/gmail/google.dpapi.json`.
+
+Busque usando a sintaxe do Gmail, abra mensagens em texto e crie novos rascunhos.
+O escopo compose também permite envio no Google, mas esta integração não implementa envio.
+Não há download de anexos nesta etapa. Rascunhos ficam na conta Gmail; desconectar não os apaga.
+O fluxo real exige autorização no navegador. Testes usam API simulada, sem conta ou rede.
+Validação: `py -3.13 verificar.py --area interface --arquivos google_gmail.py kanicode.py ui/conexoes_gmail.js ui/conexoes.js tests/test_google_gmail.py tests/test_conexoes_ui.py`.
+
 ## Google Drive
 
 Abra **engrenagem à direita → Conexões → Google Drive**. Ative a Google Drive API no projeto Google.

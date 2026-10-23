@@ -8,6 +8,17 @@
   py -3.13 panda.py clientes
   py -3.13 panda.py status <id> --status todo|in_progress|adjustment [--sim]   comentar <id> --descricao "texto" [--sim]
   py -3.13 panda.py finais <id>   (o que vai na entrega)
+  py -3.13 panda.py novo-cliente "Nome ou empresa" [--whatsapp "conversa"|--foto F] [--cor #hex] [--servico caixa_rapido|
+        gerenciamento|pacote_artes] [--pasta "PASTA"] [--sim]
+      cria a tag no sistema (nome, cor, foto de perfil) + CLIENTES/<PASTA> com 00 ORCAMENTO..04 NOTAS FISCAIS, a foto como
+      ícone da pasta e a ligação sistema ↔ pasta no mapa_clientes.json. Sem --cor: cor tirada da foto. Pasta que já existe é
+      aproveitada (só completa o que falta).
+  py -3.13 panda.py ligar-pasta <cliente> [--pasta "PASTA"] [--whatsapp "conversa"|--foto F] [--sim]   (cliente que já existe)
+  py -3.13 panda.py editar-cliente <cliente> [--nome N] [--cor #hex] [--foto F] [--sim]
+  novo-cliente também aceita --drive (pasta no Drive da agência) e --login L --pin 1234 (Área do Cliente: aparece em Clientes)
+  py -3.13 panda.py reuniao <cliente> --data AAAA-MM-DD --hora HH:MM [--titulo T] [--link URL] [--participantes a,b] [--sim]   (sem --link: Meet + Agenda)
+  py -3.13 panda.py drive-cliente <cliente> [--sim]   (cria a pasta no Drive e grava o link na aba Drive do cliente + mapa)
+  py -3.13 panda.py ligar-drive <cliente> --link URL [--sim]    py -3.13 panda.py esquema [parte do nome da tabela]        py -3.13 panda.py area-cliente <cliente> --login L --pin 1234 [--sim]
 """
 import argparse, json, os, sys
 
@@ -53,6 +64,12 @@ def main():
     ap.add_argument("--mes", help="AAAA-MM do mês da pauta (padrão: mês de hoje)")
     ap.add_argument("--tipo", default="estatico"); ap.add_argument("--descricao")
     ap.add_argument("--sim", action="store_true", help="confirma a escrita no Pandalab")
+    ap.add_argument("--foto"); ap.add_argument("--whatsapp"); ap.add_argument("--cor"); ap.add_argument("--nome")
+    ap.add_argument("--servico", default="caixa_rapido")
+    ap.add_argument("--drive", action="store_true", help="novo-cliente: cria também a pasta no Drive (como o site)")
+    ap.add_argument("--login"); ap.add_argument("--pin", help="Área do Cliente: 4 dígitos")
+    ap.add_argument("--participantes", help="reuniao: nomes da equipe separados por vírgula (ex.: pailer,nanda)")
+    ap.add_argument("--data"); ap.add_argument("--hora"); ap.add_argument("--titulo"); ap.add_argument("--link")
     a = ap.parse_args()
     try:
         if a.cmd == "login":
@@ -125,6 +142,82 @@ def main():
         elif a.cmd == "finais":
             r = pl.finais(a.ref)
             print(r["pasta"]); [print("  -", os.path.basename(f)) for f in r["arquivos"]]
+        elif a.cmd in ("novo-cliente", "ligar-pasta"):
+            import pastas, subprocess
+            foto = a.foto
+            if a.whatsapp and not foto:   # foto de perfil do WhatsApp (640 px) pelo KaniBrowser
+                foto = os.path.join(os.environ.get("TEMP", "."), f"perfil_{os.getpid()}.jpg")
+                wa = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "kanibrowser", "wa.py")
+                r = subprocess.run([sys.executable, wa, "foto", "--conversa", a.whatsapp, "--saida", foto],
+                                   capture_output=True, text=True, encoding="utf-8")
+                if r.returncode:
+                    print("Sem foto do WhatsApp:", (r.stdout + r.stderr).strip()[-200:]); foto = None
+            if a.cmd == "ligar-pasta":   # cliente que JÁ existe no sistema: só pasta, ícone e mapa
+                c = pl.achar_cliente(a.ref)
+                print(f"Ligar: {c['name']} ({c['id'][:8]}) → CLIENTES/{a.pasta or c['name'].upper()} | ícone: {'sim' if foto else 'não'}")
+                if not a.sim:
+                    print("(prévia: nada mudou. Repita com --sim.)"); return 0
+                base, ico = pastas.preparar_cliente(c, a.pasta, foto)
+                print("Pasta:", base); print("Ícone:", ico or "-"); return 0
+            if not a.ref:
+                print('Uso: panda.py novo-cliente "Nome ou empresa" [--whatsapp "conversa"|--foto F] [--cor #hex] '
+                      '[--servico caixa_rapido|gerenciamento|pacote_artes] [--pasta "NOME DA PASTA"] [--sim]'); return 1
+            cor = a.cor or pastas.cor_da_foto(foto)
+            print(f"Novo cliente: '{a.ref}' | cor {cor}{'' if a.cor else ' (tirada da foto)'} | {a.servico} | "
+                  f"foto: {foto or 'sem'} | pasta: CLIENTES/{a.pasta or pastas._limpo(a.ref).upper()}")
+            if not a.sim:
+                print("(prévia: nada foi criado. Repita com --sim para criar no Pandalab.)"); return 0
+            c = pl.criar_cliente(a.ref, cor, foto, a.servico)
+            print("No sistema:", c["id"][:8], c["name"], c["color"], c.get("profile_image_path") or "")
+            base, ico = pastas.preparar_cliente(c, a.pasta, foto)
+            print("Pasta:", base); print("Ícone:", ico or "-")
+            if a.drive:
+                url = pl.pasta_drive_cliente(c["name"], c.get("profile_image_path"), c["id"])
+                pastas.anotar(c["id"], drive=url); print("Drive:", url)
+            if a.login and a.pin:
+                pl.area_cliente(c["id"], a.login, a.pin); print(f"Área do Cliente: login {a.login} (PIN definido)")
+        elif a.cmd in ("drive-cliente", "area-cliente"):
+            c = pl.achar_cliente(a.ref)
+            if a.cmd == "area-cliente" and not (a.login and a.pin):
+                print('Uso: panda.py area-cliente <cliente> --login usuario --pin 1234 [--sim]'); return 1
+            print(f"{a.cmd}: {c['name']}" + (f" | login {a.login}" if a.cmd == "area-cliente" else ""))
+            if not a.sim:
+                print("(prévia: nada mudou. Repita com --sim.)"); return 0
+            if a.cmd == "drive-cliente":
+                import pastas
+                url = pl.pasta_drive_cliente(c["name"], (pl._ler("client_tags", select="profile_image_path", id="eq." + c["id"]) or [{}])[0].get("profile_image_path"), c["id"])
+                pastas.anotar(c["id"], drive=url); print("Drive:", url)
+            else:
+                pl.area_cliente(c["id"], a.login, a.pin); print("Área do Cliente criada/atualizada.")
+        elif a.cmd == "reuniao":
+            if not (a.ref and a.data and a.hora):
+                print('Uso: panda.py reuniao <cliente> --data AAAA-MM-DD --hora HH:MM [--titulo T] [--link URL | sem link = gera Meet + Agenda] [--sim]'); return 1
+            print(f"Reunião: {a.ref} | {a.data} {a.hora} | {a.titulo or 'Reunião com <cliente>'} | link: {a.link or 'gerar no Meet + Agenda'}")
+            if not a.sim:
+                print("(prévia: nada foi marcado. Repita com --sim.)"); return 0
+            r = pl.marcar_reuniao(a.ref, a.data, a.hora, a.titulo, a.link,
+                                  participantes=[x for x in (a.participantes or "").split(",") if x.strip()])
+            print("Marcada:", r.get("title"), r.get("meeting_date"), r.get("meeting_time"), r.get("meet_link"))
+        elif a.cmd == "esquema":
+            r = pl.esquema(a.ref)
+            if isinstance(r, list):
+                print(" ".join(r)); print(f"— {len(r)} tabelas (fonte: types.ts do repositório; pode faltar o que foi criado direto no banco)")
+            else:
+                for k, v in r.items():
+                    print(f"{k}:"); [print("   ", c) for c in v]
+        elif a.cmd == "ligar-drive":
+            c = pl.achar_cliente(a.ref)
+            if not a.link:
+                print("Uso: panda.py ligar-drive <cliente> --link URL_DA_PASTA [--sim]"); return 1
+            print(f"Drive de {c['name']} → {a.link}")
+            if not a.sim:
+                print("(prévia: nada mudou. Repita com --sim.)"); return 0
+            import pastas
+            pl.ligar_drive(c["id"], a.link, c["name"]); pastas.anotar(c["id"], drive=a.link); print("ligado.")
+        elif a.cmd == "editar-cliente":
+            if not a.sim:
+                print(f"Editar {a.ref}: nome={a.nome} cor={a.cor} foto={a.foto} (prévia; repita com --sim)"); return 0
+            print(pl.editar_cliente(a.ref, a.nome, a.cor, a.foto))
         elif a.cmd == "clientes":
             for c in pl.clientes():
                 print(c["id"][:8], c["name"])

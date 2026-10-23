@@ -56,6 +56,44 @@ ABRIR = """(async () => {
   return {erro: 'não abriu a conversa'};
 })()"""
 
+# foto de perfil grande: abre "Dados do contato/grupo", clica na foto (visualizador em 640 px), copia pelo canvas e fecha tudo
+FOTO = """(async () => {
+  const z = ms => new Promise(r => setTimeout(r, ms));
+  const fechar = () => { for (const b of document.querySelectorAll('[aria-label="Fechar"], [data-icon="x-viewer"], [data-icon="close"]')) (b.closest('button,[role=button]') || b).click(); };
+  const h = document.querySelector('#main header'); if (!h) return {erro: 'conversa não aberta'};
+  (h.querySelector('[role=button]') || h).click();
+  let bt = null;
+  for (let i = 0; i < 20 && !bt; i++) { await z(250);
+    bt = [...document.querySelectorAll('button')].find(b => { const r = b.getBoundingClientRect(); return r.width >= 90 && r.height >= 90 && r.x > innerWidth * 0.4 && r.y < 300; }); }
+  if (!bt) { fechar(); return {erro: 'sem foto de perfil (ou a pessoa esconde a foto)'}; }
+  bt.click();
+  let im = null;
+  for (let i = 0; i < 20 && !im; i++) { await z(300); im = [...document.querySelectorAll('img')].find(x => x.naturalWidth > 200 && x.complete); }
+  if (!im) { fechar(); return {erro: 'a foto grande não abriu'}; }
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  c.getContext('2d').drawImage(im, 0, 0); const url = c.toDataURL('image/jpeg', 0.95);
+  fechar(); await z(600); fechar();
+  return {ok: 1, w: c.width, b64: url.split(',')[1]};
+})()"""
+
+# documento colado na caixa de mensagem (o WhatsApp abre a prévia) → legenda opcional → enviar; confere o cabeçalho antes
+ANEXO = """(async () => {
+  NORMCAB
+  if (norm(cab()) !== %s) return {erro: 'conversa errada: ' + cab()};
+  const bin = atob(%s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  const f = new File([u], %s, {type: %s});
+  const ed = document.querySelector('#main footer [contenteditable=true]'); ed.focus();
+  const dt = new DataTransfer(); dt.items.add(f);
+  ed.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData: dt}));
+  let s = null;
+  for (let i = 0; i < 40 && !s; i++) { await new Promise(r => setTimeout(r, 500)); s = document.querySelector('[aria-label^="Enviar"][aria-label*="item"]'); }
+  if (!s) return {erro: 'a prévia do arquivo não abriu'};
+  const leg = %s;
+  if (leg) { const c = [...document.querySelectorAll('[contenteditable=true]')].find(e => !e.closest('#main footer'));
+    if (c) { c.focus(); document.execCommand('insertText', false, leg); await new Promise(r => setTimeout(r, 300)); } }
+  s.click(); return {ok: 1};
+})()""".replace("NORMCAB", NORM + CABEC)
+
 # carrega até n mensagens (rola para cima) e devolve cada uma já resumida
 # junta até n mensagens rolando para cima (a lista do WhatsApp só guarda na tela um pedaço) e volta para o fim
 LER = r"""(async () => {
@@ -260,7 +298,7 @@ def texto_audio(mid):
 def main():
     global PORTA
     ap = argparse.ArgumentParser()
-    ap.add_argument("acao", choices=["ler", "enviar", "conversas", "arquivo"])
+    ap.add_argument("acao", choices=["ler", "enviar", "conversas", "arquivo", "foto"])
     ap.add_argument("--conversa", default="")
     ap.add_argument("--texto", default="")
     ap.add_argument("--busca", default="")
@@ -268,6 +306,8 @@ def main():
     ap.add_argument("--transcrever", action="store_true")
     ap.add_argument("--nome", default="", help="arquivo: parte do nome do documento (vazio = o último)")
     ap.add_argument("--pasta", default=os.path.join(os.path.dirname(PASTA_AUD), "wa_arquivos"))
+    ap.add_argument("--saida", default="", help="foto: onde salvar o .jpg")
+    ap.add_argument("--arquivo", default="", help="enviar: arquivo a anexar como documento")
     ap.add_argument("--porta", type=int, default=9222)
     a = ap.parse_args()
     PORTA = a.porta
@@ -310,6 +350,30 @@ def main():
             open(destino, "wb").write(base64.b64decode(r["b64"]))
             print(destino)
             return 0
+        if a.acao == "foto":
+            r = js(FOTO)
+            if not isinstance(r, dict) or not r.get("ok"):
+                print("ERRO:", r); return 1
+            saida = a.saida or os.path.join(os.path.dirname(PASTA_AUD), "wa_fotos", re.sub(r'[<>:"/\\|?*]', "_", titulo) + ".jpg")
+            os.makedirs(os.path.dirname(saida) or ".", exist_ok=True)
+            open(saida, "wb").write(base64.b64decode(r["b64"]))
+            print(saida, f"({r['w']} px)")
+            return 0
+        if a.acao == "enviar" and a.arquivo:
+            import mimetypes
+            if not os.path.isfile(a.arquivo):
+                print("ERRO: arquivo não existe:", a.arquivo); return 1
+            b64 = base64.b64encode(open(a.arquivo, "rb").read()).decode()
+            nome = os.path.basename(a.arquivo)
+            r = js(ANEXO % (json.dumps(norm(titulo)), json.dumps(b64), json.dumps(nome),
+                            json.dumps(mimetypes.guess_type(nome)[0] or "application/octet-stream"), json.dumps(a.texto.replace("\\n", "\n"))))
+            if not isinstance(r, dict) or not r.get("ok"):
+                print("ERRO:", r); return 1
+            time.sleep(4)
+            ult = js(LER % (1, json.dumps(titulo), "true")).get("fim") or []
+            ok = any(m.get("doc") and nome[:20] in m["doc"] for m in ult)
+            print(("enviado: " if ok else "ENVIADO? confira: ") + nome)
+            return 0 if ok else 1
         if a.acao != "enviar" or not a.texto.strip():
             print("ERRO: enviar precisa de --texto"); return 1
         texto = a.texto.replace("\\n", "\n")

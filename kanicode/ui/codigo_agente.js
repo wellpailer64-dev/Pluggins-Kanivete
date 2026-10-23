@@ -1,6 +1,6 @@
 // Revisão humana da cópia: o modelo não dispõe de ferramenta para aplicar na origem.
 (() => {
-  const menu = document.getElementById('ferramentas-menu');
+  const menu = document.getElementById('ferramentas-codigo');
   if (!menu) return;
   const abrir = document.createElement('button');
   abrir.className = 'bt';

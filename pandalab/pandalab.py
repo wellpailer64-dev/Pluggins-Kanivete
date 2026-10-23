@@ -389,3 +389,153 @@ def finais(ref, limite_mb=400):
                 raise ErroPanda(f"Os finais passam de {limite_mb} MB: envie pelo botão normal do site.")
             return {"pasta": p, "arquivos": arqs}
     raise ErroPanda("Nenhum arquivo final na pasta (RENDERS, EXPORT ou imagens na raiz da demanda).")
+
+
+# ---------- cliente novo (tag): nome, cor e foto de perfil, como o site (bucket meeting-files/client-profiles) ----------
+SERVICOS = ("caixa_rapido", "gerenciamento", "pacote_artes")
+
+
+def subir_foto_perfil(caminho):
+    """Sobe a foto para meeting-files/client-profiles/<aleatório>.<ext> e devolve a URL pública (igual ao site)."""
+    import mimetypes, random
+    ext = os.path.splitext(caminho)[1].lower() or ".jpg"
+    destino = f"client-profiles/{random.random()}{ext}"
+    cfg = _config()
+    req = urllib.request.Request(f"{cfg['url'].rstrip('/')}/storage/v1/object/meeting-files/{destino}", method="POST",
+                                 data=open(caminho, "rb").read(),
+                                 headers={"apikey": cfg["chave"], "Authorization": "Bearer " + (_token() or cfg["chave"]),
+                                          "Content-Type": mimetypes.guess_type(caminho)[0] or "image/jpeg", "x-upsert": "false"})
+    try:
+        urllib.request.urlopen(req, timeout=60).read()
+    except urllib.error.HTTPError as e:
+        raise ErroPanda(f"Pandalab recusou a foto: {e.code} {e.read().decode('utf-8', 'replace')[:300]}")
+    return f"{cfg['url'].rstrip('/')}/storage/v1/object/public/meeting-files/{destino}"
+
+
+def criar_cliente(nome, cor, foto=None, servico="caixa_rapido"):
+    """Cria a tag de cliente (aparece no site com nome, cor e foto). Recusa nome repetido."""
+    if servico not in SERVICOS:
+        raise ErroPanda(f"Serviço inválido: {servico}. Use: {', '.join(SERVICOS)}")
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", cor or ""):
+        raise ErroPanda(f"Cor inválida: {cor} (use #rrggbb)")
+    if any(c["name"].strip().lower() == nome.strip().lower() for c in clientes()):
+        raise ErroPanda(f"Já existe um cliente chamado '{nome}'")
+    url = subir_foto_perfil(foto) if foto else None
+    r = _gravar("POST", "client_tags", {"name": nome.strip(), "color": cor.lower(), "profile_image_path": url,
+                                        "service_type": servico, "is_multi_company": False, "parent_tag_id": None})
+    return r[0] if isinstance(r, list) else r
+
+
+def editar_cliente(ref, nome=None, cor=None, foto=None):
+    c = achar_cliente(ref)
+    corpo = {}
+    if nome: corpo["name"] = nome
+    if cor: corpo["color"] = cor.lower()
+    if foto: corpo["profile_image_path"] = subir_foto_perfil(foto)
+    r = _gravar("PATCH", "client_tags", corpo, f"?id=eq.{c['id']}")
+    return r[0] if isinstance(r, list) and r else r
+
+
+def pasta_drive_cliente(nome, foto_url=None, tag_id=None):
+    """Pasta do cliente no Drive da agência, igual ao botão 'Pasta no Drive' do site (função create-client-drive-folder).
+    Com tag_id grava o link em client_drive_folders (aba Drive do cliente no site; o botão do site NÃO grava)."""
+    cfg = _config()
+    req = urllib.request.Request(cfg["url"].rstrip("/") + "/functions/v1/create-client-drive-folder", method="POST",
+                                 data=json.dumps({"clientName": nome.strip(), "profileImageUrl": foto_url}).encode(),
+                                 headers={"apikey": cfg["chave"], "Authorization": "Bearer " + (_token() or cfg["chave"]),
+                                          "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            d = json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        raise ErroPanda(f"Drive recusou: {e.code} {e.read().decode('utf-8', 'replace')[:300]}")
+    if not d.get("success"):
+        raise ErroPanda(f"Drive: {d.get('error') or d}")
+    if tag_id:
+        ligar_drive(tag_id, d.get("folderUrl"), nome)
+    return d.get("folderUrl")
+
+
+def ligar_drive(tag_id, url, nome=None):
+    """link da pasta do Drive na aba Drive do cliente (client_drive_folders), sem repetir"""
+    if not _ler("client_drive_folders", select="id", client_tag_id="eq." + tag_id, drive_url="eq." + url):
+        _gravar("POST", "client_drive_folders", {"client_tag_id": tag_id, "drive_url": url, "folder_name": nome})
+
+
+TIPOS_TS = os.path.join(os.path.splitdrive(os.path.abspath(__file__))[0] + os.sep, "01 - ALL IN CLOUD - HD PAILER",
+                        "01 - PANDA LAB", "00 - Sistema Pandalab", "src", "integrations", "supabase", "types.ts")
+
+
+def esquema(tabela=None):
+    """tabelas e colunas do banco pelo types.ts do repositório do site (o export-schema não está publicado).
+    Sem tabela: nomes; com parte do nome: colunas (nome: tipo) das que batem."""
+    txt = open(TIPOS_TS, encoding="utf-8").read()
+    txt = txt[txt.index("Tables: {"):txt.index("Views: {")]
+    tabs = {}
+    for m in re.finditer(r"\n      (\w+): \{\n        Row: \{\n(.*?)\n        \}", txt, re.S):
+        tabs[m.group(1)] = [l.strip() for l in m.group(2).splitlines() if l.strip()]
+    if not tabela:
+        return sorted(tabs)
+    return {k: v for k, v in tabs.items() if tabela.lower() in k.lower()}
+
+
+def area_cliente(tag_id, login, pin):
+    """Login da Área do Cliente (como o site: client_areas, PIN de 4 dígitos guardado em base64). Cria ou atualiza."""
+    if not re.fullmatch(r"\d{4}", pin or ""):
+        raise ErroPanda("O PIN deve ter exatamente 4 dígitos")
+    if any(a["login"].lower() == login.strip().lower() and a["tag_id"] != tag_id
+           for a in _ler("client_areas", select="tag_id,login")):
+        raise ErroPanda(f"O login '{login}' já é de outro cliente")
+    corpo = {"tag_id": tag_id, "login": login.strip(), "pin_hash": base64.b64encode(pin.encode()).decode(), "active": True}
+    if _ler("client_areas", select="tag_id", tag_id="eq." + tag_id):
+        return _gravar("PATCH", "client_areas", corpo, f"?tag_id=eq.{tag_id}")
+    return _gravar("POST", "client_areas", corpo)
+
+
+def marcar_reuniao(cliente, data, hora, titulo=None, link=None, gerar_link=True, participantes=None):
+    """Igual ao 'Marcar Reunião' do site: (opcional) create-meet-link gera o Meet + evento na Agenda do Google; grava em
+    meeting_reminders, na coluna de reuniões do cliente (meeting_columns, criada se faltar). cliente = tag ou nome livre."""
+    try:
+        tag = achar_cliente(cliente)
+    except ErroPanda:
+        tag = None
+    nome = tag["name"] if tag else cliente.strip()
+    titulo = titulo or f"Reunião com {nome}"
+    evento = None
+    if not link and gerar_link:
+        cfg = _config()
+        req = urllib.request.Request(cfg["url"].rstrip("/") + "/functions/v1/create-meet-link", method="POST",
+                                     data=json.dumps({"title": titulo, "meetingDate": data, "meetingTime": hora}).encode(),
+                                     headers={"apikey": cfg["chave"], "Authorization": "Bearer " + (_token() or cfg["chave"]),
+                                              "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                d = json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            raise ErroPanda(f"Meet recusou: {e.code} {e.read().decode('utf-8', 'replace')[:300]}")
+        if d.get("needsAuth"):
+            raise ErroPanda(f"O Google Agenda do sistema pede autorização: abra {d.get('authUrl')}")
+        link, evento = d.get("meetLink"), d.get("eventId")
+        if not link:
+            raise ErroPanda(f"Não veio link do Meet: {d}")
+    if tag:
+        col = _ler("meeting_columns", select="id", client_tag_id="eq." + tag["id"])
+        col = col[0]["id"] if col else _gravar("POST", "meeting_columns", {
+            "title": nome, "client_tag_id": tag["id"], "position": 0,
+            "profile_image_path": (_ler("client_tags", select="profile_image_path", id="eq." + tag["id"]) or [{}])[0].get("profile_image_path")})[0]["id"]
+    else:
+        col = _gravar("POST", "meeting_columns", {"title": nome, "position": 0})[0]["id"]
+    corpo_extra = {}
+    if participantes:   # nomes (parte) da equipe → employee_tags.id (coluna participant_ids, bolinhas no card)
+        equipe = _ler("employee_tags", select="id,name")
+        ids = []
+        for n in participantes:
+            achou = [e for e in equipe if n.strip().lower() in e["name"].lower()]
+            if len(achou) != 1:
+                raise ErroPanda(f"participante '{n}' achou {len(achou)}: {', '.join(e['name'] for e in achou) or '-'}")
+            ids.append(achou[0]["id"])
+        corpo_extra["participant_ids"] = ids
+    r = _gravar("POST", "meeting_reminders", {**corpo_extra, "title": titulo, "meeting_date": data, "meeting_time": hora, "meet_link": link,
+                                              "google_event_id": evento, "client_tag_id": tag["id"] if tag else None,
+                                              "client_name": nome, "column_id": col})
+    return (r[0] if isinstance(r, list) else r)

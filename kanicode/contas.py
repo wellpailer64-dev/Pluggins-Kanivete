@@ -11,8 +11,9 @@ E-mail e plano: `claude auth status`. Cotas sem gastar nada: `claude -p /usage` 
 """
 import json, os, re, shutil, subprocess, time
 
-DADOS = os.path.join(os.path.splitdrive(os.path.abspath(__file__))[0] + os.sep, "Kanivete", "KaniCode")
-PRINCIPAL = os.path.join(os.path.expanduser("~"), ".claude")
+from dados_app import pasta_dados
+DADOS = str(pasta_dados())
+PRINCIPAL = (os.environ.get("CLAUDE_CONFIG_DIR") or str(pasta_dados() / "claude")) if os.environ.get("KANICODE_TESTE") == "1" else os.path.join(os.path.expanduser("~"), ".claude")
 _PASTAS_COMUNS = ("projects", "skills", "plugins", "agents", "commands")
 _ARQUIVOS_COMUNS = ("settings.json", "CLAUDE.md", "keybindings.json")
 _SEM_JANELA = 0x08000000

@@ -18,7 +18,7 @@ as abas terminarem. Esta autorização não inclui o Kanivete nem outros program
 | `claude` | `sessao.py`, `continuidade.py`, `mcp_equipe.py` | `test_continuidade.py`; guia `CONTINUIDADE.md` |
 | `voz` | `fala.py`, `radio.py`, `kanicode.py` (tom e prontidão de todos os motores) | `test_fala_tom.py`, `test_codex_prontidao.py`, `test_codex_voz.py` |
 | `mensagens` | `mensagens.py`, `kanicode.py`, `sessao.py`, `ui/mensagens.js` | `test_mensagens.py`, teste de Enter e duplo clique em `test_layout.py`; guia `MENSAGENS.md` |
-| `interface` | `ui/janela.html`, `ui/organizacao.js`, `ui/kani_gpu.js` | `test_layout.py` |
+| `interface` | `kanicode.py` (`painel_espaco`), `ui/janela.html`, `ui/paineis.js`, `ui/organizacao.js`, `ui/kani_gpu.js` | `test_layout.py`, `test_janela_painel.py` |
 | `respostas` | `recursos_resposta.py`, `ui/respostas.js`, `ui/respostas_render.js` | `test_recursos_resposta.py`, `test_respostas_ui.py` |
 | `gpu` | `gpu.py`; `App.gpu_info` em `kanicode.py` | `test_gpu.py` |
 | `contas` | `contas.py`, `avatares.py` | `test_avatares.py` |
@@ -54,6 +54,12 @@ Testes ignorados são destacados como cobertura parcial; leia os motivos no rela
 Logs e scripts extraídos ficam numa pasta `D:\kanivete_testes\verificar_*` indicada no final.
 TEMP, TMP, APPDATA, LOCALAPPDATA e cache Python são configurados no D para os processos
 filhos, sem alterar as configurações globais do Windows. Cada comando filho tem prazo de 180 s.
+O Chromium usa automaticamente `D:/kanivete_testes/playwright` (uma escolha explícita por
+`PLAYWRIGHT_BROWSERS_PATH` é preservada). Cada suíte recebe dados, CODEX_HOME e configuração
+Claude próprios sob a pasta do relatório. `dados_app.py` redireciona os armazenamentos quando
+`KANICODE_TESTE=1`; `teste_isolado.py` bloqueia gravações em `D:/Kanivete/KaniCode` e
+`D:/Kanivete/casa`, além de conexões à porta 9222. O teste da ponte usa WebView2 invisível
+via pythonw, API real e motor simulado: não usa a janela, contas ou modelos do usuário.
 `--listar` apenas consulta, sem executar testes nem criar saídas.
 
 ## Criar uma ferramenta com conferência

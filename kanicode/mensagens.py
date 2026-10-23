@@ -48,6 +48,20 @@ class Fila:
             self.pausada = False
             return item, not repetir
 
+    def cancelar(self, id_):
+        """tira da fila uma mensagem que ainda não foi entregue (o ✕ da bolha)"""
+        with self.trava:
+            item = next((i for i in self.itens if i['id'] == id_), None)
+            if not item or item['estado'] not in ('pendente', 'urgente', 'falha'):
+                return None
+            self.itens.remove(item)
+            if self.interrompendo == id_:
+                self.interrompendo = None
+            if item['estado'] == 'falha' and not any(i['estado'] == 'falha' for i in self.itens):
+                self.pausada = False
+            item['estado'] = 'cancelada'
+            return item
+
     def concluir(self, item, ok, erro=''):
         with self.trava:
             self.enviando = None

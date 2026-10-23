@@ -10,7 +10,7 @@ import fala
 
 
 class FalaTomTest(unittest.TestCase):
-    def test_dois_semitons_preservam_duracao(self):
+    def test_tres_semitons_preservam_duracao(self):
         taxa = 24000
         t = np.arange(taxa * 2) / taxa
         original = (0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
@@ -18,7 +18,7 @@ class FalaTomTest(unittest.TestCase):
         miolo = audio[taxa // 4:-taxa // 4]
         espectro = np.abs(np.fft.rfft(miolo * np.hanning(len(miolo))))
         frequencia = np.fft.rfftfreq(len(miolo), 1 / sr)[np.argmax(espectro)]
-        self.assertAlmostEqual(frequencia, 440 * 2 ** (2 / 12), delta=2)
+        self.assertAlmostEqual(frequencia, 440 * 2 ** (3 / 12), delta=2)
         self.assertAlmostEqual(len(audio) / sr, len(original) / taxa, delta=.06)
         self.assertEqual(sr, taxa)
         self.assertTrue(np.isfinite(audio).all())

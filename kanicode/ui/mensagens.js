@@ -8,7 +8,14 @@
       b = bolha('eu', ev.texto || ''); b.dataset.mensagemId = ev.id;
       const m = minis(ev.minis); if (m) b.prepend(m);
     }
+    if (ev.estado === 'cancelada') { b.remove(); return; }
     b.dataset.mensagemEstado = ev.estado;
+    let x = b.querySelector('.mensagem-cancelar');
+    const cancelavel = ['pendente','urgente','falha'].includes(ev.estado);
+    if (cancelavel && !x) {
+      x = document.createElement('button'); x.type = 'button'; x.className = 'mensagem-cancelar'; x.textContent = '✕';
+      x.title = 'Cancelar esta mensagem (não envia)'; x.setAttribute('aria-label', x.title); b.appendChild(x);
+    } else if (!cancelavel) x?.remove();
     b.classList.toggle('mensagem-pendente', ['pendente','urgente'].includes(ev.estado));
     b.classList.toggle('mensagem-urgente', ev.estado === 'urgente');
     let nota = b.querySelector('.mensagem-fila-nota');
@@ -36,7 +43,17 @@
       desenhar({...ev, estado:'falha', erro:String(erro.message || erro)});
     }
   };
+  conversa.addEventListener('click', async e => {
+    const x = e.target.closest('.mensagem-cancelar'); if (!x) return;
+    e.preventDefault(); e.stopPropagation();
+    const b = x.closest('[data-mensagem-id]'); if (!b) return;
+    let r = false;
+    try { r = await api().mensagem_cancelar(b.dataset.mensagemId); } catch (erro) { /* ok */ }
+    // falha local (a fila nem recebeu): some daqui mesmo; senão o evento 'cancelada' já tirou a bolha
+    if (r || b.dataset.mensagemEstado === 'falha') { b.remove(); atividade('Mensagem cancelada'); }
+  });
   conversa.addEventListener('dblclick', async e => {
+    if (e.target.closest('.mensagem-cancelar')) return;
     const b = e.target.closest('.mensagem-pendente[data-mensagem-id]');
     if (!b) return;
     e.preventDefault();

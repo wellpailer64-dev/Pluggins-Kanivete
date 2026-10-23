@@ -16,10 +16,10 @@ UI = os.path.join(PASTA, "ui")
 PORTA = 47614
 
 # o que o celular pode chamar (o resto da js_api mexe na janela do PC: no celular não faz nada)
-LIBERADOS = {"info", "abas", "aba_ajudante", "aba_parar", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
-             "mensagem_enviar", "mensagem_urgente", "mensagens_fila",
+LIBERADOS = {"mapa_d_status", "mapa_d_buscar", "mapa_d_listar", "todo_listar", "todo_salvar", "todo_concluir", "todo_agenda", "todo_lembrar", "todo_alarmes", "todo_alarme_salvar", "todo_alarme_apagar", "info", "abas", "aba_nova", "aba_ativar", "aba_fechar", "aba_assunto", "aba_renomear", "aba_ajudante", "aba_parar", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
+             "mensagem_enviar", "mensagem_urgente", "mensagem_cancelar", "mensagens_fila",
              "nova", "quem", "ajudante", "habilidades", "miniatura", "tarefas_ler", "contas_listar", "conta_atualizar",
-             "conta_usar", "pendentes", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
+             "conta_usar", "pendentes", "casa_estado", "casa_alternar", "casa_alimentar", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
 NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "tam_fim", "tam_padrao", "abrir_imagem",
         "escolher_pasta", "sair", "voz", "ouvir", "conta_adicionar", "conta_entrar_de_novo", "conta_renomear", "conta_remover"}
 _TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -212,11 +212,29 @@ class _H(BaseHTTPRequestHandler):
         if not u.path.startswith("/api/"):
             return self._enviar(404)
         nome = u.path[5:]
+        aba_anterior = getattr(_app._local, "aba", None)
         try:
             n = int(self.headers.get("Content-Length") or 0)
             args = json.loads(self.rfile.read(n) or b"[]") if n else []
             de = self.headers.get("X-KC-De") or "movel"
-            if nome in NADA:
+            aba_anterior = getattr(_app._local, "aba", None)
+            aba = self.headers.get("X-KC-Aba") or _app._aba_ativa
+            _app._local.aba = aba if aba in _app._abas else _app._aba_ativa
+            if nome == "aba_ativar":
+                destino = str(args[0])
+                if destino not in _app._abas:
+                    raise ValueError("Esta aba já foi fechada")
+                r = dict(_app.abas(), ativa=destino)
+            elif nome == "aba_nova":
+                r = _app.aba_nova(ativar=False)
+            elif nome == "abas":
+                r = dict(_app.abas(), ativa=_app._ctx().id)
+            elif nome == "aba_fechar":
+                selecionada = _app._ctx().id
+                r = _app.aba_fechar(*args)
+                if selecionada in _app._abas:
+                    r = dict(r, ativa=selecionada)
+            elif nome in NADA:
                 r = None
             elif nome == "enviar":
                 import radio
@@ -235,6 +253,8 @@ class _H(BaseHTTPRequestHandler):
             return self._enviar(200, json.dumps({"r": r}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
         except Exception as e:
             return self._enviar(500, json.dumps({"erro": str(e)}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
+        finally:
+            _app._local.aba = aba_anterior
 
 
     def _push(self, o_que):
@@ -282,12 +302,12 @@ class _H(BaseHTTPRequestHandler):
                     texto = glossario.corrigir(texto)
                 return self._enviar(200, json.dumps({"texto": texto}, ensure_ascii=False).encode("utf-8"), _TIPOS[".json"])
             import io, wave
-            from fala import VELOCIDADE, VOZ, limpar
+            from fala import limpar, sintetizar
             frase = limpar(json.loads(corpo or b"{}").get("texto") or "")
             if len(frase) < 2:
                 return self._enviar(204)
             with _tts:
-                a, sr = _app._fala_obj().carregar().create(frase, voice=VOZ, speed=VELOCIDADE, lang="pt-br")
+                a, sr = sintetizar(_app._fala_obj().carregar(), frase)
             buf = io.BytesIO()
             with wave.open(buf, "wb") as w:
                 w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)

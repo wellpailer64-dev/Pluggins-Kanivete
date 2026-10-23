@@ -2,7 +2,7 @@
 html[data-ferramenta="plugin-kanibrowser"] { --primary: #F0A01C; --primary-hover: #FFB83F; --primary-soft: rgba(240,160,28,.14); --primary-line: rgba(240,160,28,.42); }
 .content-area:has(#page-plugin-kanibrowser.active) { padding: 10px; overflow: hidden; }
 #page-plugin-kanibrowser { height: 100%; }
-.kb-app { --kb-amb: #F0A01C; --kb-vidro: #121117; --kb-kw: 420px; display: flex; flex-direction: column; height: 100%; gap: 8px; min-height: 0; position: relative; }
+.kb-app { --kb-amb: #F0A01C; --kb-vidro: #121117; --kb-kw: minmax(0, 1fr); display: flex; flex-direction: column; height: 100%; gap: 8px; min-height: 0; position: relative; }
 .kb-app [hidden] { display: none !important; }
 
 /* barra de cima */
@@ -18,7 +18,7 @@ html[data-ferramenta="plugin-kanibrowser"] { --primary: #F0A01C; --primary-hover
 .kb-corpo { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 8px var(--kb-kw); min-height: 0; }
 .sem-kani .kb-corpo { grid-template-columns: minmax(0, 1fr) 0 0; }
 .sem-kani .kb-kani, .sem-kani .kb-div { display: none; }
-.kb-div { cursor: col-resize; position: relative; }
+.kb-div { cursor: col-resize; position: relative; }   /* duplo clique: meio a meio */
 .kb-div::after { content: ''; position: absolute; left: 3px; top: 50%; width: 2px; height: 36px; margin-top: -18px; border-radius: 2px; background: var(--line-2); }
 .kb-div:hover::after { background: var(--kb-amb); }
 

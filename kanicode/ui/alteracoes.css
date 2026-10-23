@@ -2,3 +2,17 @@
 .codigo-alteracao summary { cursor: pointer; padding: 10px 12px; overflow-wrap: anywhere; color: var(--texto); }
 .codigo-alteracao p { padding: 0 12px; color: var(--fraco); }
 .codigo-alteracao pre { max-height: 360px; overflow: auto; margin: 0; padding: 12px; font: 12px/1.5 Consolas, monospace; white-space: pre; border-top: 1px solid var(--borda); }
+.sintaxe-texto { color: #CEAA78; }
+.sintaxe-comentario { color: #7F9587; }
+.sintaxe-numero { color: #AFCF9A; }
+.sintaxe-palavra { color: #BAA1E8; }
+.atv .cab b { display: flex; gap: 8px; }
+.atv .cab b button { background: none; border: 0; color: var(--fraco); cursor: pointer; padding: 4px 0; font: inherit; }
+.atv .cab b button[aria-pressed="true"] { color: var(--lima); border-bottom: 2px solid var(--lima); }
+.codigo-painel { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 10px; box-sizing: border-box; }
+.codigo-painel[hidden], .atv .rolo[hidden] { display: none; }
+.codigo-painel label { font-size: 12px; color: var(--fraco); }
+.codigo-painel select { display: block; width: 100%; margin-top: 6px; background: var(--fundo); color: var(--texto); border: 1px solid var(--borda); padding: 6px; }
+.codigo-resumo { color: var(--lima); font: 12px var(--mono); }
+.codigo-nota { font-size: 11px; color: var(--fraco); overflow-wrap: anywhere; }
+.codigo-painel pre { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 8px; background: var(--fundo); font: 12px/1.6 var(--mono); tab-size: 4; white-space: pre; }

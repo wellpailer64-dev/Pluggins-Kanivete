@@ -73,11 +73,24 @@ window.KCResposta = (() => {
     }
     return html + texto(t.slice(inicio));
   }
+  function colorir(codigo, idioma = '') {
+    const python = /^(py|python)$/i.test(idioma);
+    const re = /("""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$)|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|\#[^\n]*)|\b(\d+(?:\.\d+)?)\b|\b([A-Za-z_$][\w$]*)\b/g;
+    const palavras = new Set('async await break case catch class const continue def del do elif else except export extends false False finally for from function if import in interface is lambda let new None null of pass raise return static super switch this throw true True try typeof undefined var void while with yield'.split(' '));
+    let html = '', inicio = 0;
+    for (const m of String(codigo).matchAll(re)) {
+      html += esc(codigo.slice(inicio, m.index));
+      const tipo = m[1] ? 'texto' : m[2] && (!m[2].startsWith('#') || python || /sh|bash|shell|powershell|ps1/i.test(idioma)) ? 'comentario' : m[3] ? 'numero' : palavras.has(m[4]) ? 'palavra' : '';
+      html += tipo ? `<span class="sintaxe-${tipo}">${esc(m[0])}</span>` : esc(m[0]);
+      inicio = m.index + m[0].length;
+    }
+    return html + esc(codigo.slice(inicio));
+  }
   function md(src) {
     const out = [], L = String(src || '').replace(/\r\n?/g, '\n').split('\n');
     let i = 0;
     const comeco = l => /^\s{0,3}(?:`{3,}|~{3,})/.test(l);
-    const bloco = (codigo, idioma = 'código') => `<section class="codigo"><div class="codigo-topo"><span>${esc(idioma)}</span><button type="button" data-copiar-codigo aria-label="Copiar código">⧉ Copiar</button></div><pre><code>${esc(codigo)}</code></pre></section>`;
+    const bloco = (codigo, idioma = 'código') => `<section class="codigo"><div class="codigo-topo"><span>${esc(idioma)}</span><button type="button" data-copiar-codigo aria-label="Copiar código">⧉ Copiar</button></div><pre><code>${colorir(codigo, idioma)}</code></pre></section>`;
     while (i < L.length) {
       const l = L[i], cerca = l.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
       if (cerca) {
@@ -114,5 +127,5 @@ window.KCResposta = (() => {
     }
     return out.join('');
   }
-  return {md, linha, web, esc};
+  return {md, linha, web, esc, colorir};
 })();

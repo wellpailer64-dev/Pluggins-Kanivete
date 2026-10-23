@@ -4,6 +4,7 @@ O navegador é aberto por ESTE processo (canal privado por pipe, como no KANIVET
 KaniCode; os logins ficam no perfil (D:\\Kanivete\\KaniBrowser\\perfil). Quem manda é o kb.py, pelo canal de controle do
 KaniCode (127.0.0.1:47613) com a chave de DADOS/kb_chave.txt: "kb <chave> {"f": função da ponte, "a": {argumentos}}".
 """
+RECARREGAVEL = True   # kanicode._quente: recarrega este módulo sem reiniciar o KaniCode
 import json, os, secrets, sys
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
@@ -37,8 +38,31 @@ def _ponte(projeto):
     return sys.modules["kb_ponte"]
 
 
-def chamar(linha, dados, projeto):
-    """linha = '<chave> <json>' → resposta JSON {"ok", "r"|"e"}"""
+PAINEL_CMDS = ("estado", "mostrar", "nova", "ir", "fechar_aba", "acao", "aparelho")
+
+
+def _painel():
+    """o painel 🌐 vivo (navegador_painel.Painel), achado pelo ouvinte que ele registrou no KaniBrowser"""
+    kb = sys.modules.get("kanibrowser")
+    for f in getattr(kb, "_ouvintes", []):
+        p = getattr(f, "__self__", None)
+        if type(p).__name__ == "Painel":
+            return p
+    return None
+
+
+def painel_cmd(o, a=None):
+    """comanda o painel como o Pailer (abas dele, endereço, voltar/avançar, modo de aparelho): kb.py painel <o> [arg]"""
+    if o not in PAINEL_CMDS:
+        raise ValueError("comando do painel: " + ", ".join(PAINEL_CMDS))
+    p = _painel()
+    if not (p and p.aberto):
+        raise RuntimeError("o painel 🌐 do KaniCode está fechado")
+    return getattr(p, o)(a) if a is not None else getattr(p, o)()
+
+
+def chamar(linha, dados, projeto, extra=None):
+    """linha = '<chave> <json>' → resposta JSON {"ok", "r"|"e"}; extra = funções do próprio KaniCode (ex.: "painel")"""
     ch, _, resto = linha.partition(" ")
     if not secrets.compare_digest(ch, chave(dados)):
         return {"ok": 0, "e": "chave errada"}
@@ -46,6 +70,10 @@ def chamar(linha, dados, projeto):
         p = json.loads(resto)
         mod = _ponte(projeto)
         f = p.get("f")
+        if f == "painel_cmd":
+            return {"ok": 1, "r": painel_cmd(**(p.get("a") or {}))}
+        if extra and f in extra:
+            return {"ok": 1, "r": extra[f](**(p.get("a") or {}))}
         if f not in mod.API_KANIVETE:
             return {"ok": 0, "e": f"função desconhecida: {f}"}
         return {"ok": 1, "r": getattr(mod, f)(**(p.get("a") or {}))}

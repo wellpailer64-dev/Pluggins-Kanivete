@@ -1,7 +1,8 @@
 """Depois de mexer no código do KaniCode: aplica no KaniCode aberto (sem o Pailer fechar e abrir).
 
-Só a janela mudou (ui/, .css/.js) = recarrega a página; algum .py mudou = reinicia o processo (volta aberto, na mesma
-conversa). No meio de uma resposta, espera ela terminar. Rodar: py -3.13 recarregar.py [--recarregar | --reiniciar]
+Sem reiniciar sempre que der (2026-10-23, kanicode._quente): .css = troca na página na hora; .js/.html = recarrega só a
+página (a tarefa em andamento continua); .py de módulo com RECARREGAVEL = True = recarregado dentro do processo. Outro
+.py (ex.: kanicode.py) = reinicia o processo (volta aberto, na mesma conversa), esperando a resposta terminar. Rodar: py -3.13 recarregar.py [--recarregar | --reiniciar]
 """
 import sys
 

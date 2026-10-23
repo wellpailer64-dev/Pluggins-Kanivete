@@ -16,7 +16,8 @@ import time
 import unicodedata
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-DADOS = os.path.join(os.path.splitdrive(AQUI)[0] + os.sep, "Kanivete", "KaniCode")   # o mesmo de kani_modo
+from dados_app import pasta_dados
+DADOS = str(pasta_dados())   # o mesmo de kani_modo
 ARQ = os.path.join(DADOS, "habilidades.json")
 EXTRA = os.path.join(AQUI, "habilidades_extra.json")
 VALIDADE = 3 * 86400

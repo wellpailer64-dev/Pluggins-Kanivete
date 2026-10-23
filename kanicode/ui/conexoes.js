@@ -34,7 +34,7 @@
     const card = document.createElement('button');
     card.type = 'button'; card.className = 'conexao-card'; card.dataset.conexao = app.id;
     card.style.setProperty('--conexao-cor', app.cor);
-    card.innerHTML = `<span class="conexao-card-topo"><span class="conexao-icone">${svg(app.id)}</span><span class="conexao-seta" aria-hidden="true">↗</span></span><strong>${app.nome}</strong><span class="conexao-descricao">${app.descricao}</span><span class="conexao-situacao">${['calendar', 'drive'].includes(app.id) ? 'Verificando…' : 'Sugestão · em breve'}</span>`;
+    card.innerHTML = `<span class="conexao-card-topo"><span class="conexao-icone">${svg(app.id)}</span><span class="conexao-seta" aria-hidden="true">↗</span></span><strong>${app.nome}</strong><span class="conexao-descricao">${app.descricao}</span><span class="conexao-situacao">${['calendar', 'drive', 'gmail'].includes(app.id) ? 'Verificando…' : 'Sugestão · em breve'}</span>`;
     card.addEventListener('click', () => abrirApp(app.id));
     cards.set(app.id, card); el('conexoes-grade').append(card);
   }
@@ -44,8 +44,9 @@
     el('conexoes-nav').hidden = !id;
     el('conexao-google').hidden = id !== 'calendar';
     el('conexao-drive').hidden = id !== 'drive';
-    el('conexao-sugestao').hidden = !id || ['calendar', 'drive'].includes(id);
-    if (id && !['calendar', 'drive'].includes(id)) {
+    el('conexao-gmail').hidden = id !== 'gmail';
+    el('conexao-sugestao').hidden = !id || ['calendar', 'drive', 'gmail'].includes(id);
+    if (id && !['calendar', 'drive', 'gmail'].includes(id)) {
       const app = apps.find(a => a.id === id);
       el('sugestao-titulo').textContent = app.nome;
       el('sugestao-descricao').textContent = app.descricao;
@@ -55,7 +56,7 @@
       }));
     }
     dialog.scrollTop = 0;
-    if (id) el(id === 'calendar' ? 'google-titulo' : id === 'drive' ? 'drive-titulo' : 'sugestao-titulo').focus();
+    if (id) el(id === 'calendar' ? 'google-titulo' : id === 'drive' ? 'drive-titulo' : id === 'gmail' ? 'gmail-titulo' : 'sugestao-titulo').focus();
   }
   el('conexoes-voltar').addEventListener('click', () => {
     const anterior = selecionado; abrirApp(null); cards.get(anterior)?.focus();
@@ -114,6 +115,7 @@
       el('conexoes-erro').hidden = false; el('conexoes-repetir').hidden = false;
     }
     await window.kaniDriveAtualizar?.();
+    await window.kaniGmailAtualizar?.();
   }
   async function executar(nome, args = []) {
     if (ocupado) return;
@@ -132,7 +134,7 @@
   }
   window.kaniConfiguracoesAbrir = async () => {
     abrirApp(null);
-    el('ferramentas-menu').hidden = true;
+    window.kaniConfiguracoesMenu?.(false);
     if (!dialog.open) dialog.showModal();
     await atualizar();
   };

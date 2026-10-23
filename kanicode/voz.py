@@ -84,6 +84,7 @@ class Voz:
         self._seguir = 0.0     # > 0: ouvir o próximo pedido sem "Ei Kani" (esperando até este tanto de segundos)
         self._uma = False      # botão do microfone com o Ei Kani desligado: ouve um pedido e desliga
         self._cortar = False   # clicou no microfone de novo: terminou de falar
+        self._cancelar = False # clicou no ✕: descarta o que gravou
         self.ultimo = {}
 
     def seguir(self, segundos=SEGUIR_S):
@@ -102,6 +103,10 @@ class Voz:
     def terminar(self):
         """clicou de novo no microfone durante o pedido: manda o que já falou"""
         self._cortar = True
+
+    def cancelar(self):
+        """clicou no ✕ durante o pedido: para de gravar e não manda nada"""
+        self._cancelar = self._cortar = True
 
     # ── ligar/desligar ──
     def ligar(self, uma=False, espera=ESPERA_S):
@@ -207,7 +212,7 @@ class Voz:
             except Exception:
                 pass
         vad.zerar()
-        self._cortar = False
+        self._cortar = self._cancelar = False
         blocos, falou, quieto, t0, longa, conferiu = [], False, 0.0, time.time(), False, False
         while self._ligada and not self._cortar:
             try:
@@ -231,6 +236,12 @@ class Voz:
             if (falou and quieto >= (SILENCIO_LONGO_S if longa else SILENCIO_S) and conferiu)                     or (not falou and dur >= espera) or dur >= MAX_S:
                 break
         self._bipe(False)
+        if self._cancelar:
+            self._cancelar = False
+            self._estado("cancelado")
+            if not self._uma:
+                self._estado("escutando")
+            return
         if not falou:
             self._estado("escutando")
             return

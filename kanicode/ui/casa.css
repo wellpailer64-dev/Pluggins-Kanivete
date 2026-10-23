@@ -1,0 +1,33 @@
+/* Aba Casa no painel da direita (casa.js). */
+#casa-trilho { border-top: 1px solid var(--borda); }
+.atv.casa-visivel > .det:not(#casa-painel), .atv:not(.casa-visivel) > #casa-painel { display: none; }
+#casa-painel .cab { height: 42px; }
+#casa-painel .ca-rolo { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 13px 20px; width: 270px; }
+.ca-resumo { margin: 0 0 12px; color: var(--fraco); font-size: 11px; }
+.ca-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.ca-ap { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 12px 4px 9px; border: 1px solid var(--borda);
+         border-radius: 12px; background: #1A201D; color: var(--texto); cursor: pointer; font: 11px var(--sans); text-align: center; transition: background .15s, border-color .15s; }
+.ca-ap:hover:not(:disabled) { border-color: var(--lima); }
+.ca-ap b { font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.ca-ap small { color: var(--fraco); font-size: 10px; }
+.ca-ic { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #222A26; }
+.ca-ic svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ca-ap.on .ca-ic { color: var(--lima); }
+.ca-ap.on.lig .ca-ic { color: #1B1B12; background: #F5D76E; box-shadow: 0 0 14px rgba(245, 215, 110, .55); }
+.ca-ap.on.lig small { color: #F5D76E; }
+.ca-ap.off { opacity: .38; cursor: default; filter: grayscale(1); }
+.ca-ap.esp { opacity: .6; pointer-events: none; }
+.ca-nota { margin: 14px 0 0; color: var(--fraco); font-size: 10.5px; line-height: 1.5; }
+.ca-nota.erro { color: var(--erro); }
+html.movel #casa-painel .ca-rolo { width: 100%; }
+html.movel .ca-grade { grid-template-columns: repeat(3, 1fr); }
+.ca-conf { margin-bottom: 12px; padding: 10px; border: 1px solid #F5D76E; border-radius: 10px; background: #1F1E15; font-size: 12px; }
+.ca-conf p { margin: 0 0 8px; }
+.ca-qtd { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.ca-qtd button, .ca-bts button { padding: 4px 10px; border: 1px solid var(--borda); border-radius: 7px; background: #222A26; color: var(--texto); cursor: pointer; font: 12px var(--sans); }
+.ca-qtd b { min-width: 18px; text-align: center; }
+.ca-qtd small { color: var(--fraco); }
+.ca-bts { display: flex; gap: 6px; justify-content: flex-end; }
+.ca-bts .sim { background: #F5D76E; color: #1B1B12; border-color: #F5D76E; font-weight: 600; }
+.ca-conf .ca-msg { margin: 6px 0 0; color: var(--fraco); }
+.ca-conf .ca-msg:empty { display: none; }

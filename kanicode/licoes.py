@@ -7,8 +7,10 @@
 <projeto> = nome da pasta do projeto em minúsculas, sem espaços.
 """
 import json, os, re, time, unicodedata
+import organizacao_pailer
 
-DADOS = os.path.join(os.path.splitdrive(os.path.abspath(__file__))[0] + os.sep, "Kanivete", "KaniCode")
+from dados_app import pasta_dados
+DADOS = str(pasta_dados())
 _PALAVRA = re.compile(r"[a-z0-9_./-]{4,}")
 _VAZIAS = {"para", "como", "isso", "esta", "este", "essa", "esse", "deve", "pode", "fazer", "quando", "sempre", "nunca",
            "antes", "depois", "arquivo", "arquivos", "teste", "tarefa", "codigo", "sobre", "entre", "mais", "menos", "tudo"}
@@ -74,4 +76,7 @@ def anexo(pasta, tarefa):
     ls = relevantes(pasta, tarefa)
     if ls:
         partes.append("ARMADILHAS JÁ CONHECIDAS (lições de tarefas anteriores; evite repetir):\n" + "\n".join("- " + l["texto"] for l in ls))
+    preferencia = organizacao_pailer.contexto(tarefa)
+    if preferencia:
+        partes.append(preferencia.strip())
     return "\n\n".join(partes)

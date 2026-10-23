@@ -1,23 +1,41 @@
-/* KaniCode — painéis laterais que se abrem PARA FORA da janela (ela cresce, a conversa não aperta):
-   • direita: Atividades — o que está rodando agora, o que roda em segundo plano (shell, monitor, agente) com a última
+/* KaniCode — painel direito regulável, com espaço inicial na janela; contas à esquerda por cima da conversa:
+   • direita: Ferramentas e atividade da conversa — o que roda em segundo plano (shell, monitor, agente) com a última
      linha da saída ao vivo, e tudo o que já foi feito nesta conversa (clique leva ao passo na conversa);
    • esquerda: Contas do Claude em detalhe (e-mail, plano, cotas 5h/semana) no lugar do popup;
    • diferenças de código (verde = entrou, vermelho = saiu) nos passos Edit/Write e nos cartões de permissão.
    Carregado depois do script principal: troca passo/passoFim/cartao/carregar/contasAbrir e embrulha kcEv. */
 (() => {
-  const LADO_EXTRA = 200, ATV_EXTRA = 270;   // quanto a janela cresce ao abrir cada coluna (pixels da interface)
-  const PAINEL = { esq: false, dir: false, dirAuto: false };
+  const PAINEL = { esq: false, dir: false, dirAuto: false, secao: "atividades" };
 
-  // ── janela cresce/encolhe para fora ──
-  async function crescer(esq, dir) { try { await api().crescer(esq, dir); } catch (e) { /* janela antiga: só a coluna */ } }
-  window.kcExtra = () => (PAINEL.esq ? LADO_EXTRA : 0) + (PAINEL.dir ? ATV_EXTRA : 0);
+  // A largura escolhida é da divisória; a janela continua livre para esticar pelas bordas.
+  window.kcExtra = () => 0;
+  let larguraPreferida = 270;
+  try { larguraPreferida = Math.max(270, Math.min(1600, Number(localStorage.getItem('kanicode-painel-largura')) || 270)); } catch (_) {}
 
-  async function abrirDir(on, auto = false) {
-    if (on === PAINEL.dir) return;
+  async function abrirDir(on, auto = false, secao = 'atividades') {
+    PAINEL.secao = secao;
+    $('atv').classList.toggle('todo-visivel', secao === 'todo');
+    const ferramentasVisiveis = on && secao === 'atividades';
+    $('atv-trilho').setAttribute('aria-expanded', String(ferramentasVisiveis));
+    $('ferramentas-menu').hidden = !ferramentasVisiveis;
+    $('painel-ajuste').hidden = !ferramentasVisiveis;
+    $('todo-trilho')?.setAttribute('aria-expanded', String(on && secao === 'todo'));
+    $('atv').classList.toggle('consumo-visivel', secao === 'consumo');
+    $('consumo-trilho')?.setAttribute('aria-expanded', String(on && secao === 'consumo'));
+    $('atv').classList.toggle('casa-visivel', secao === 'casa');
+    $('atv').classList.toggle('projeto-visivel', secao === 'projeto');
+    $('proj-trilho')?.setAttribute('aria-expanded', String(on && secao === 'projeto'));
+    $('casa-trilho')?.setAttribute('aria-expanded', String(on && secao === 'casa'));
+    // Trocar de seção também confere o espaço das ferramentas.
     PAINEL.dir = on; PAINEL.dirAuto = on && auto;
-    $('atv-trilho').setAttribute('aria-expanded', String(on));
-    if (on) { await crescer(0, ATV_EXTRA); $('atv').classList.add('aberto'); desenhar(); }
-    else { $('atv').classList.remove('aberto'); await crescer(0, -ATV_EXTRA); }
+    if (on) {
+      $('atv').classList.add('aberto'); desenhar(); ajustarLargura();
+      if (!document.documentElement.classList.contains('movel')) {
+        try { await api().painel_espaco(larguraPreferida); ajustarLargura(); }
+        catch (e) { console.warn('Não foi possível abrir espaço para o painel:', e); }
+      }
+    }
+    else $('atv').classList.remove('aberto');
   }
   async function abrirEsq(on) {
     if (on === PAINEL.esq) return;
@@ -25,13 +43,11 @@
     const lado = $('lado'), p = $('contas');
     if (on) {
       $('dica-ct')?.remove();
-      await crescer(LADO_EXTRA, 0);
       lado.classList.add('aberto'); lado.appendChild(p); p.hidden = false;
       CT.dados = await api().contas_listar(); contasDesenhar();
       CT.dados = await api().conta_atualizar(); contasDesenhar(); contaBotao(); cotasDaConta();
     } else {
       p.hidden = true; lado.classList.remove('aberto'); document.body.appendChild(p);
-      await crescer(-LADO_EXTRA, 0);
     }
   }
   window.contasAbrir = () => abrirEsq(!PAINEL.esq);
@@ -45,20 +61,78 @@
     }
   };
   // com a coluna aberta, clicar fora não fecha as contas (o popup antigo fechava)
-  document.addEventListener('mousedown', () => { if (PAINEL.esq) setTimeout(() => { $('contas').hidden = false; }); });
+  document.addEventListener('mousedown', ev => {
+    if (!PAINEL.esq) return;
+    if (!$('lado').contains(ev.target) && !ev.target.closest('.caixa, #contas-bt')) { abrirEsq(false); return; }   // por cima: clicar fora recolhe
+    setTimeout(() => { $('contas').hidden = false; });
+  });
 
-  // ── coluna das Atividades ──
+  // ── coluna das Ferramentas ──
   const corpo = document.querySelector('.corpo');
   corpo.insertAdjacentHTML('beforeend', `<div class="atv" id="atv">
+    <div id="painel-ajuste" class="painel-ajuste" role="separator" tabindex="0" aria-label="Largura do painel Ferramentas" aria-orientation="vertical" aria-controls="ferramentas-painel" aria-valuemin="270" aria-valuemax="270" aria-valuenow="270" title="Arraste para dividir o espaço · duplo clique: largura inicial" hidden></div>
     <div class="trilho-coluna">
-      <button class="ferramentas-bt" id="ferramentas-bt" title="Ferramentas e ajustes" aria-label="Ferramentas e ajustes" aria-expanded="false" aria-controls="ferramentas-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-1 3-3 1-3-1-1 4 3 2v2l-2 2 2 3 3-1 3 1 1 3 4-1v-3l2-2 3-1-1-4-3 1-2-2V3z"/><circle cx="12" cy="12" r="3"/></svg></button>
-      <button class="trilho" id="atv-trilho" title="Atividades: o que está rodando e o que já foi feito" aria-label="Atividades" aria-expanded="false" aria-controls="atv-lista">
-        <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 11h6l-1 9 9-13h-6z"/></svg></span><span class="cont" id="atv-cont" hidden></span><span class="vert">ATIVIDADES</span></button>
+      <button class="ferramentas-bt" id="ferramentas-bt" title="Configurações" aria-label="Configurações" aria-expanded="false" aria-controls="config-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-1 3-3 1-3-1-1 4 3 2v2l-2 2 2 3 3-1 3 1 1 3 4-1v-3l2-2 3-1-1-4-3 1-2-2V3z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button class="trilho" id="atv-trilho" title="Ferramentas do KaniCode" aria-label="Ferramentas" aria-expanded="false" aria-controls="ferramentas-conteudo">
+        <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 11h6l-1 9 9-13h-6z"/></svg></span><span class="cont" id="atv-cont" hidden></span><span class="vert">FERRAMENTAS</span></button>
     </div>
-    <div class="det"><div class="cab"><b>Atividades</b><span class="esp"></span><button class="bt" id="atv-fechar" title="Recolher">»</button></div>
-      <div class="rolo" id="atv-lista"></div></div></div>`);
-  $('atv-trilho').addEventListener('click', () => abrirDir(!PAINEL.dir));
+    <div class="det" id="ferramentas-painel"><div class="cab"><b>Ferramentas</b><span class="esp"></span><button class="bt" id="atv-fechar" title="Recolher">»</button></div>
+      <div class="ferramentas-conteudo" id="ferramentas-conteudo">
+        <details class="ferramentas-historico"><summary>Atividade da conversa</summary><div class="rolo" id="atv-lista"></div></details>
+      </div></div></div>`);
+  $('ferramentas-conteudo').prepend($('ferramentas-menu'));
+  // o painel da direita desce até o fim da janela, ao lado da barra de digitar: corpo + status/anexos/entrada/rodapé
+  // numa coluna (.principal) e o painel ao lado dela; aberto, empurra o chat inteiro, a entrada junto (no celular o
+  // painel é gaveta por cima: fica como está)
+  if (!document.documentElement.classList.contains('movel')) {
+    const linha = document.createElement('div'), principal = document.createElement('div');
+    linha.className = 'area-linha'; principal.className = 'principal';
+    corpo.before(linha); linha.append(principal, $('atv'));
+    principal.append(corpo);
+    for (const s of ['#planoFixo', '#status', '#anexos', 'body > .entrada', 'body > .rodape']) { const n = document.querySelector(s); if (n) principal.append(n); }
+  }
+  window.kaniPainelDireito = (on, secao = 'atividades') => abrirDir(on, false, secao);
+  $('atv-trilho').addEventListener('click', () => abrirDir(!PAINEL.dir || PAINEL.secao !== 'atividades'));
   $('atv-fechar').addEventListener('click', () => abrirDir(false));
+
+  const ajuste = $('painel-ajuste');
+  function larguraMaxima() { return Math.max(270, (corpo.closest('.area-linha') || corpo).clientWidth - 420); }
+  function ajustarLargura(valor = larguraPreferida, guardar = false) {
+    const largura = Math.round(Math.max(270, Math.min(larguraMaxima(), valor)));
+    $('atv').style.setProperty('--painel-largura', largura + 'px');
+    ajuste.setAttribute('aria-valuemax', String(larguraMaxima()));
+    ajuste.setAttribute('aria-valuenow', String(largura));
+    if (guardar) {
+      larguraPreferida = largura;
+      try { localStorage.setItem('kanicode-painel-largura', String(largura)); } catch (_) {}
+    }
+  }
+  let arraste = null;
+  ajuste.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); ajuste.focus(); ajuste.setPointerCapture(e.pointerId);
+    arraste = { x: e.clientX, largura: Number(ajuste.getAttribute('aria-valuenow')) };
+    $('atv').classList.add('ajustando');
+  });
+  ajuste.addEventListener('pointermove', e => {
+    if (arraste) ajustarLargura(arraste.largura + arraste.x - e.clientX);
+  });
+  const soltarPainel = () => {
+    if (!arraste) return;
+    arraste = null; $('atv').classList.remove('ajustando');
+    ajustarLargura(Number(ajuste.getAttribute('aria-valuenow')), true);
+  };
+  ajuste.addEventListener('pointerup', soltarPainel);
+  ajuste.addEventListener('pointercancel', soltarPainel);
+  ajuste.addEventListener('lostpointercapture', soltarPainel);
+  ajuste.addEventListener('dblclick', () => ajustarLargura(270, true));
+  ajuste.addEventListener('keydown', e => {
+    const atual = Number(ajuste.getAttribute('aria-valuenow'));
+    const valores = { ArrowLeft: atual + 20, ArrowRight: atual - 20, Home: 270, End: larguraMaxima() };
+    if (e.key in valores) { e.preventDefault(); ajustarLargura(valores[e.key], true); }
+  });
+  addEventListener('resize', () => ajustarLargura());
+  ajustarLargura();
 
   const A = { itens: new Map(), ordem: [] };   // id → {id, nome, tit, cmd, t0, t1, ok, bg, arq, tarefa, tail, cod}
   const ehBg = (nome, e) => !!(e && e.run_in_background) || nome === 'Monitor';

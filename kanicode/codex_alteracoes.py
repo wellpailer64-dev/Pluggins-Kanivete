@@ -73,9 +73,15 @@ class Captura:
                 rotulo = "Sem fotografia anterior: mostrando o conteúdo atual, não um diff da tarefa."
             if not diff:
                 return None
+            adicionadas = removidas = None
+            if antes is not None:
+                operacoes = difflib.SequenceMatcher(None, antes.splitlines(), depois.splitlines()).get_opcodes()
+                adicionadas = sum(j2 - j1 for op, i1, i2, j1, j2 in operacoes if op in ("insert", "replace"))
+                removidas = sum(i2 - i1 for op, i1, i2, j1, j2 in operacoes if op in ("delete", "replace"))
             if len(diff) > 60000:
                 diff = diff[:60000] + "\n… visualização limitada a 60 mil caracteres."
-            ev = {"t":"codex_alteracao", "arquivo":relativo.as_posix(), "diff":diff, "rotulo":rotulo}
+            ev = {"t":"codex_alteracao", "arquivo":relativo.as_posix(), "diff":diff, "rotulo":rotulo,
+                  "conteudo": depois, "adicionadas": adicionadas, "removidas": removidas}
             self.alteracoes[relativo.as_posix()] = ev
             return ev
         except (OSError, UnicodeError):

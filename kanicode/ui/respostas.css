@@ -1,6 +1,8 @@
 /* Ações junto do conteúdo; o texto copiado vem apenas de <code>. */
 .msg .codigo, .md .codigo { min-width: 0; max-width: 100%; margin: 9px 0; overflow: hidden;
   border: 1px solid #303C35; border-radius: 8px; background: #0B100D; }
+.codigo-topo > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.codigo-topo [data-copiar-codigo] { flex: none; min-width: 58px; min-height: 28px; white-space: nowrap; }
 .codigo-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 5px 9px; background: #19211C; border-bottom: 1px solid #29362E; color: #83998A; font: 10px var(--mono); }
 .codigo button, .codigo-inline button, .abrir-caminho, .visor-barra button { border: 0; background: transparent; color: #A5B9AC; cursor: pointer; font: 11px var(--sans); }

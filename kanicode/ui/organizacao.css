@@ -24,6 +24,9 @@ body { position: relative; }
   padding: 0 5px; border: 0; background: none; color: #A4B2A8; font: 10.5px var(--mono); cursor: pointer; text-align: left; }
 .pasta [data-pasta-nome] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pastas-nav .pasta:hover { color: var(--lima); }
+.pasta-remover { flex: none; width: 16px; height: 18px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--fraco); font: 14px var(--sans); cursor: pointer; }
+.pasta-remover[hidden] { display: none; }
+.pasta-remover:hover, .pasta-remover:focus-visible { color: var(--lima); background: #26302B; }
 .pasta-icone { display: inline-block; flex: none; width: 12px; height: 9px; border: 1px solid currentColor; border-radius: 2px; position: relative; opacity: .8; }
 .pasta-icone::before { content: ''; position: absolute; left: 0; top: -4px; width: 5px; height: 3px; border: 1px solid currentColor; border-bottom: 0; border-radius: 2px 2px 0 0; }
 .pastas-ativas { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #26302B transparent; }
@@ -71,8 +74,20 @@ textarea { min-width: 0; }
 .atv .trilho .ic { font: 20px var(--sans); line-height: 20px; }
 .atv .trilho .ic svg { width: 16px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
 .atv .trilho .vert { font-size: 9px; letter-spacing: 2.2px; }
-.ferramentas-menu { position: absolute; top: 73px; right: 39px; z-index: 30; width: 236px; max-width: calc(100% - 48px);
-  padding: 6px; border: 1px solid #344239; border-radius: 10px; background: #171E19; box-shadow: 0 12px 35px #0008; }
+.atv { position: relative; }
+.atv.aberto > #ferramentas-painel { width: var(--painel-largura, 270px); }
+.atv.ajustando > #ferramentas-painel { transition: none; }
+.painel-ajuste { position: absolute; z-index: 4; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; touch-action: none; }
+.painel-ajuste:hover, .painel-ajuste:focus-visible, .atv.ajustando .painel-ajuste { background: #B6F23444; outline: none; }
+.ferramentas-conteudo { flex: 1; min-height: 0; overflow-y: auto; min-width: 0; width: 100%; }
+.ferramentas-menu.config-menu { position: fixed; z-index: 40; width: 244px; max-width: calc(100% - 16px); overflow-y: auto;
+  background: #171E19; border: 1px solid #344239; border-radius: 10px; box-shadow: 0 12px 35px #0008; }
+.ferramentas-menu { position: static; width: 100%; max-width: none; padding: 6px; box-sizing: border-box; }
+.ferramentas-grupo + .ferramentas-grupo { border-top: 1px solid var(--borda); margin-top: 6px; padding-top: 4px; }
+.ferramentas-grupo h3 { margin: 0; font-weight: 400; }
+.ferramentas-historico { border-top: 1px solid var(--borda); margin: 4px 6px 12px; }
+.ferramentas-historico summary { padding: 12px 9px; color: var(--fraco); font-size: 11px; cursor: pointer; }
+.atv .ferramentas-historico .rolo { min-width: 0; padding: 0 4px 6px; }
 .menu-titulo { padding: 8px 9px; font: 9px var(--mono); color: #73857A; letter-spacing: 1.4px; }
 .ferramentas-menu .bt { display: flex; width: 100%; justify-content: flex-start; gap: 10px; height: 34px; padding: 0 9px; font-size: 12px; text-align: left; }
 .ferramentas-menu .bt .icone { display: grid; place-items: center; width: 18px; font: 18px var(--sans); color: #99AC9F; }
@@ -169,8 +184,15 @@ html.movel .seletor { min-height: 36px; }
 .msg.eu.mensagem-urgente { border-color: var(--aviso); }
 .mensagem-fila-nota { display: block; margin-top: 5px; color: var(--fraco); font-size: 10px; line-height: 1.4; }
 .msg.eu.mensagem-pendente { cursor: pointer; }
+.msg.eu[data-mensagem-id] { position: relative; }
+.mensagem-cancelar { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--fraco); font-size: 11px; line-height: 20px; cursor: pointer; }
+.mensagem-cancelar:hover { color: var(--texto); background: rgba(255,255,255,.1); }
+.msg.eu:has(.mensagem-cancelar) { padding-right: 26px; }
 .janela-reiniciar { display:grid; place-items:center; width:16px; height:16px; padding:0; border:0; background:transparent; color:var(--fraco); opacity:.45; cursor:pointer; }
 .janela-reiniciar svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
 .janela-reiniciar:hover, .janela-reiniciar:focus-visible { opacity:1; color:var(--texto); }
 .janela-reiniciar:focus-visible { outline:1px solid var(--texto); outline-offset:4px; border-radius:3px; }
 .janela-reiniciar:disabled { cursor:wait; opacity:.3; }
+/* texto das mensagens selecionável (text_select=True na janela); botões e trilhos não */
+button, .trilho, .topo { user-select: none; }

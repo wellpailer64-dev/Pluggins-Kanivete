@@ -77,7 +77,7 @@ def _codex_cota(thread_id):
         return None
 
 
-CODEX_PRAZO = 600  # s: passou disso, o KaniCode encerra o Codex e devolve o que tiver (nunca esperar sem fim)
+CODEX_PRAZO = 1200  # s (20 min): passou disso, o KaniCode encerra o Codex e devolve o que tiver
 
 
 def _conversa(tarefa):
@@ -182,7 +182,8 @@ def codex(tarefa, pasta, editar=False, ao_evento=_nada, parar=None, retomar=None
                         avisar("passo", "editou " + os.path.basename(caminho))
             if tipo != "agent_message":
                 avisar("passo", "pensando", id=it.get("id"), operacao="fim",
-                       ok=it.get("exit_code") in (None, 0) and it.get("status") != "failed")
+                       ok=it.get("exit_code") in (None, 0) and it.get("status") != "failed",
+                       saida=str(it.get("aggregated_output") or "")[-3000:] if tipo == "command_execution" else "")
         elif d.get("type") == "turn.completed":
             completo = True
             u = d.get("usage") or {}

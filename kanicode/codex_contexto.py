@@ -7,6 +7,7 @@ import re
 import unicodedata
 
 import licoes
+import organizacao_pailer
 
 RAIZ = os.path.dirname(os.path.realpath(__file__))
 
@@ -40,7 +41,7 @@ def preparar(tarefa, pasta, editar, retomar):
              "Se a investigação demorar, atualize em cerca de 30–60 segundos quando houver informação útil. "
              "Não exponha raciocínio privado, não invente progresso e não espere o fim para informar bloqueios.")
     if retomar:
-        return tarefa + modo
+        return tarefa + modo + organizacao_pailer.contexto(tarefa)
     partes = [tarefa + modo,
               "CONTEXTO DO KANICODE (orientação inicial; não é uma tarefa extra):\n"
               "Responda em pt-BR, curto. Cumprimento/pergunta sem necessidade de código: responda sem ferramentas. "
@@ -55,6 +56,9 @@ def preparar(tarefa, pasta, editar, retomar):
               "não repita a mesma tentativa. Python deste PC: py -3.13; PowerShell: caminhos com espaços entre aspas.\n"
               f"KaniCode é um PLUGIN, separado do Kanivete. Código do KaniCode: {RAIZ}\n"
               f"Mapa curto: {os.path.join(RAIZ, 'MAPA.md')}\n"
+              f'Mapa vivo do disco D (arquivos de clientes e pastas): py -3.13 "{os.path.join(RAIZ, "mapa_d.py")}" buscar "nome do cliente" --ext pdf --limite 20\n'
+              "Use o mapa antes de varrer o disco. Ele indexa nomes e caminhos; parcial=true não prova ausência. "
+              "Confirme o caminho antes de usar; status informa a saúde do monitor.\n"
               f'Busca com linhas atuais: py -3.13 "{os.path.join(RAIZ, "mapa_codigo.py")}" --busca termo\n'
               "Nesse plugin: janela/estilo/eventos = ui/janela.html; ponte Python = kanicode.py; "
               "motor Codex = ajudantes.py; orientação = codex_contexto.py; equipe MCP = mcp_equipe.py. "
@@ -69,4 +73,7 @@ def preparar(tarefa, pasta, editar, retomar):
         extra = licoes.anexo(pasta, tarefa)
         if extra:
             partes.append(extra)
+    preferencia = organizacao_pailer.contexto(tarefa)
+    if preferencia and not any("PREFERÊNCIAS DE ORGANIZAÇÃO DO PAILER" in parte for parte in partes):
+        partes.append(preferencia.strip())
     return "\n\n".join(partes)

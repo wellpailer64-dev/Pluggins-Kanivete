@@ -61,7 +61,8 @@ def gerar(destino):
 
 # sons da KaniBall gravados pelo Pailer (2026-10-21): ação → arquivos tocados juntos (o swoosh acompanha o voo)
 SONS = {"entrada": ("Swoosh intro e outro.mp3", "Hello.mp3"), "saida": ("Swoosh intro e outro.mp3", "Bye.mp3"),
-        "erro": ("Ops.mp3",), "entrada_chat": ("inter chat.wav",), "saida_chat": ("out chat.wav",)}
+        "erro": ("Ops.mp3",), "entrada_chat": ("inter chat.wav",), "saida_chat": ("out chat.wav",),
+        "git_push": ("Gitpush.mp3",)}
 _abertos = []   # apelidos do MCI tocando agora
 
 
