@@ -98,14 +98,30 @@ def previsao_tempo(cidade, dias=3):
     locais = exatas or cidades
     if not locais:
         raise ValueError('Cidade não encontrada. Peça cidade e estado ou país.')
+    resto = [normal(p) for p in str(cidade).split(',')[1:] if p.strip()]
+    if resto:   # "São Paulo, SP" / "Itu, Brasil"
+        filtro = [l for l in locais if any(r in (normal(l.get('admin1') or ''), normal(l.get('country') or ''), normal(l.get('country_code') or '')) for r in resto)]
+        locais = filtro or locais
+    if len(locais) > 1 and len([l for l in locais if l.get('country_code') == 'BR']) == 1:
+        locais = [l for l in locais if l.get('country_code') == 'BR']   # 2026-10-25: o Pailer mora no Brasil (São Paulo ≠ Cabo Verde)
     if len(locais) > 1:
         return {'escolher_local': [{'cidade': l['name'], 'estado': l.get('admin1'), 'pais': l.get('country')} for l in locais],
                 'aviso': 'Mais de uma cidade encontrada. Pergunte qual estado/país e consulte novamente com cidade, estado ou país.'}
     local = locais[0]
     dados = _json('https://api.open-meteo.com/v1/forecast', {'latitude': local['latitude'], 'longitude': local['longitude'],
         'daily': 'temperature_2m_max,temperature_2m_min,precipitation_probability_max', 'timezone': 'auto',
-        'forecast_days': max(1, min(7, int(dias)))})
-    return {'local': {'cidade': local['name'], 'estado': local.get('admin1'), 'pais': local.get('country')},
-            'previsao': dados.get('daily'), 'unidades': dados.get('daily_units'), 'fuso': dados.get('timezone'),
+        'forecast_days': max(3, min(7, int(dias)))})
+    # o 4B errava "amanhã" lendo listas paralelas: um item por dia, já com o nome do dia
+    d, dias_pt = dados.get('daily') or {}, ('segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo')
+    hoje = time.strftime('%Y-%m-%d')
+    por_dia = []
+    for i, data in enumerate(d.get('time') or []):
+        t = time.strptime(data, '%Y-%m-%d')
+        quando = {0: 'hoje', 1: 'amanhã', 2: 'depois de amanhã'}.get((time.mktime(t) - time.mktime(time.strptime(hoje, '%Y-%m-%d'))) // 86400)
+        por_dia.append({'dia': quando or dias_pt[t.tm_wday], 'data': time.strftime('%d/%m', t) + ' (' + dias_pt[t.tm_wday] + ')',
+                        'max_c': (d.get('temperature_2m_max') or [None] * 9)[i], 'min_c': (d.get('temperature_2m_min') or [None] * 9)[i],
+                        'chance_chuva_%': (d.get('precipitation_probability_max') or [None] * 9)[i]})
+    return {'local': {'cidade': local['name'], 'estado': local.get('admin1'), 'pais': local.get('country')}, 'dias': por_dia,
+            'fuso': dados.get('timezone'),
             'consultado_em': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'fonte': 'https://open-meteo.com/',
             'aviso': 'Previsão, não certeza. Use as datas e unidades retornadas.'}

@@ -31,3 +31,45 @@ html.movel .ca-grade { grid-template-columns: repeat(3, 1fr); }
 .ca-bts .sim { background: #F5D76E; color: #1B1B12; border-color: #F5D76E; font-weight: 600; }
 .ca-conf .ca-msg { margin: 6px 0 0; color: var(--fraco); }
 .ca-conf .ca-msg:empty { display: none; }
+
+/* Casa › Cenas (casa-cenas.js) */
+.ca-abas { display: flex; gap: 4px; margin: -4px 0 12px; }
+.ca-abas button { flex: 1; padding: 5px 0; border: 1px solid var(--borda); border-radius: 8px; background: transparent; color: var(--fraco); cursor: pointer; font: 11.5px var(--sans); }
+.ca-abas button.sel { border-color: var(--lima); color: var(--texto); background: #1A201D; }
+#casa-cenas { font-size: 11.5px; }
+.cn-card { margin-bottom: 8px; padding: 9px 10px; border: 1px solid var(--borda); border-radius: 11px; background: #1A201D; }
+.cn-card.off { opacity: .5; }
+.cn-card small { display: block; margin: 3px 0 7px; color: var(--fraco); font-size: 10.5px; line-height: 1.4; }
+.cn-l1, .cn-l2 { display: flex; align-items: center; gap: 6px; }
+.cn-l1 .esp, .ca-bts .esp { flex: 1; }
+.cn-l2 button, .cn-mod button, .cn-add button { padding: 3px 9px; border: 1px solid var(--borda); border-radius: 7px; background: #222A26; color: var(--texto); cursor: pointer; font: 11px var(--sans); }
+.cn-l2 button:hover, .cn-mod button:hover, .cn-add button:hover { border-color: var(--lima); }
+.cn-msg { color: var(--fraco); font-size: 10.5px; }
+.cn-sw input { display: none; }
+.cn-sw i { display: block; width: 28px; height: 15px; border-radius: 8px; background: #333C37; position: relative; cursor: pointer; }
+.cn-sw i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--fraco); transition: transform .15s; }
+.cn-sw input:checked + i { background: var(--lima); }
+.cn-sw input:checked + i::after { transform: translateX(13px); background: #10140F; }
+.cn-mod { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
+.cn-nova { width: 100%; padding: 7px; margin-top: 4px; border: 1px dashed var(--lima); border-radius: 9px; background: transparent; color: var(--lima); cursor: pointer; font: 600 11.5px var(--sans); }
+.cn-ed h4 { margin: 12px 0 6px; color: var(--fraco); font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .05em; }
+.cn-ed input, .cn-ed select { min-width: 0; padding: 4px 6px; border: 1px solid var(--borda); border-radius: 6px; background: #111614; color: var(--texto); font: 11.5px var(--sans); }
+.cn-ed input[type=number] { width: 52px; }
+.cn-nome { width: 100%; box-sizing: border-box; font-size: 13px !important; font-weight: 600; }
+.cn-item { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 5px; padding: 6px; border: 1px solid var(--borda); border-radius: 8px; background: #1A201D; }
+.cn-item > input:not([type=number]):not([type=time]), .cn-item > select:first-of-type { flex: 1; min-width: 90px; }
+.cn-t { width: 18px; text-align: center; }
+.cn-fixo { color: var(--fraco); }
+.cn-x, .cn-ord button { padding: 0 5px; border: 0; background: none; color: var(--fraco); cursor: pointer; font: 13px var(--sans); }
+.cn-x:hover { color: var(--erro); }
+.cn-ord button:disabled { opacity: .25; cursor: default; }
+.cn-dias { display: flex; gap: 2px; }
+.cn-dias button { width: 19px; height: 19px; padding: 0; border: 1px solid var(--borda); border-radius: 50%; background: none; color: var(--fraco); cursor: pointer; font: 9.5px var(--sans); }
+.cn-dias button.sel { background: var(--lima); border-color: var(--lima); color: #10140F; font-weight: 700; }
+.cn-ck { display: flex; align-items: center; gap: 3px; color: var(--fraco); }
+.cn-add { display: flex; flex-wrap: wrap; gap: 4px; }
+.cn-addac { width: 100%; margin-top: 2px; }
+.cn-ed .ca-bts { margin-top: 14px; align-items: center; }
+.cn-apagar { color: var(--erro) !important; }
+.cn-res { margin-top: 8px; color: var(--fraco); line-height: 1.4; overflow-wrap: anywhere; }
+.cn-res:empty { display: none; }

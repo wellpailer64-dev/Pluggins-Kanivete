@@ -19,7 +19,7 @@ PORTA = 47614
 LIBERADOS = {"progresso_listar", "todo_agente_listar", "todo_agente_contexto", "todo_agente_concluir", "mapa_d_status", "mapa_d_buscar", "mapa_d_listar", "todo_listar", "todo_salvar", "todo_concluir", "todo_agenda", "todo_lembrar", "todo_alarmes", "todo_alarme_salvar", "todo_alarme_apagar", "info", "abas", "aba_nova", "aba_ativar", "aba_fechar", "aba_assunto", "aba_renomear", "aba_ajudante", "aba_parar", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
              "mensagem_enviar", "mensagem_urgente", "mensagem_cancelar", "mensagens_fila",
              "nova", "quem", "ajudante", "habilidades", "miniatura", "tarefas_ler", "contas_listar", "conta_atualizar",
-             "conta_usar", "pendentes", "casa_estado", "casa_alternar", "casa_alimentar", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
+             "conta_usar", "pendentes", "casa_estado", "casa_alternar", "casa_alimentar", "cenas_listar", "cenas_salvar", "cenas_apagar", "cenas_rodar", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
 NADA = {"esconder", "fixar", "expandir", "crescer", "tam_inicio", "tam_mudar", "tam_fim", "tam_padrao", "abrir_imagem",
         "escolher_pasta", "definir_pasta", "sair", "voz", "ouvir", "conta_adicionar", "conta_entrar_de_novo", "conta_renomear", "conta_remover"}
 _TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",

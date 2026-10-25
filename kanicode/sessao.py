@@ -126,7 +126,8 @@ class Sessao:
                    "command": sys.executable.replace("pythonw.exe", "python.exe"),
                    "args": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_equipe.py"), self.pasta,
                             str(self.registro.pasta)]}}}),
-               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani", "mcp__equipe__licao", "mcp__equipe__missao", "mcp__equipe__cerebro", "mcp__equipe__tarefa_agente"]
+               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani", "mcp__equipe__licao", "mcp__equipe__missao", "mcp__equipe__cerebro", "mcp__equipe__tarefa_agente", "mcp__equipe__chat",
+               *("mcp__equipe__brain_" + f for f in ("search", "get", "expand", "timeline", "context", "remember", "update", "proposals", "status"))]
         if self.modelo:
             cmd += ["--model", self.modelo]
         if self.sessao_id:

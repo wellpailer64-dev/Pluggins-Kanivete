@@ -7,7 +7,7 @@ Uma instância só: o canal de controle (127.0.0.1:PORTA, só aceita "ping", "mo
 
 Rodar à mão: pyw -3.13 kanicode.py   (ferramentas do navegador: --console; testes por CDP: --agente[=9350])
 """
-import json, os, re, shutil, socket, sys, threading, time
+import json, os, re, shutil, socket, sys, threading, time, uuid
 from collections import deque
 from mensagens import Fila
 
@@ -127,6 +127,8 @@ class App:
 
     def __init__(self):
         self._local = threading.local()   # .aba = id da aba da tarefa que roda nesta thread
+        import fios
+        fios.APP = self   # a Kani (kani_modo) chama os fios por aqui, na aba da tarefa dela
         e = _ler_estado()
         if e.get("pickle_modelo"):   # modelo grátis escolhido para o Big Pickle (MiniMax, DeepSeek...)
             import opencode_mvp
@@ -264,13 +266,28 @@ class App:
 
     def cerebro_consultar(self, tema, ambito=None):
         import perfil_cerebro
-        return perfil_cerebro.consultar(tema, 10, marcar=False, ambito=ambito)   # o Pailer olhando não conta como uso
+        if os.environ.get("CEREBRO_MOTOR") != "v1":
+            try:   # a mesma busca das IAs (palavra + sentido + ligações); o Pailer olhando não conta como uso
+                import cerebro_motor
+                return cerebro_motor.buscar(tema, 10, agente="pailer", ambito=ambito, marcar=False)
+            except Exception as e:
+                print("cérebro (motor):", e)
+        return perfil_cerebro.consultar(tema, 10, marcar=False, ambito=ambito)
 
     def cerebro_painel(self):
         import perfil_cerebro
         return {"atividade": perfil_cerebro.atividade(25), "revisar": perfil_cerebro.revisar(6),
                 "faxina": perfil_cerebro._jler(perfil_cerebro.ARQ_FAXINA, {}),
-                "pendencias": len(perfil_cerebro._jler(perfil_cerebro.ARQ_PEND, []))}
+                "pendencias": len(perfil_cerebro._jler(perfil_cerebro.ARQ_PEND, [])), "motor": self._cerebro_motor()}
+
+    def _cerebro_motor(self):
+        try:
+            import cerebro_motor
+            e = cerebro_motor.estado()
+            e["propostas"] = len(cerebro_motor.propostas())
+            return e
+        except Exception as e:
+            return {"motor": "v1", "erro": str(e)[:120]}
 
     def cerebro_faxina(self):
         import perfil_cerebro
@@ -335,6 +352,47 @@ class App:
         with contextlib.redirect_stdout(buf):
             rc = casa.alimentar(int(porcoes or 1), True)
         return {"ok": rc == 0, "texto": buf.getvalue().strip()}
+
+    # ── Casa › Cenas (cenas.py: gatilhos + ações em sequência) ──
+    def cenas_listar(self):
+        import cenas, casa
+        try:
+            try:
+                aps = [{"nome": d["name"], "cat": d.get("category")} for d in casa.aparelhos()]
+            except Exception:
+                aps = []
+            return {"ok": True, "cenas": cenas.listar(), "aparelhos": aps,
+                    "comodos": list(casa._ler("casa.json", casa.PADRAO)["comodos"])}
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
+
+    def cenas_salvar(self, cena):
+        import cenas
+        try:
+            return {"ok": True, "cena": cenas.salvar(cena)}
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
+
+    def cenas_apagar(self, id_):
+        import cenas
+        cenas.apagar(str(id_))
+        return {"ok": True}
+
+    def cenas_rodar(self, id_):
+        import cenas
+        c = cenas.achar(str(id_))
+        return cenas.rodar(c, "manual") if c else {"ok": False, "linhas": ["cena não encontrada"]}
+
+    def _cenas_iniciar(self):
+        import cenas
+
+        def falar(t):
+            try:
+                f = self._fala_obj()
+                f.novo(); f.pedaco(t); f.terminar()
+            except Exception:
+                pass
+        cenas.iniciar(avisar=lambda t: self._para_janela({"t": "local", "acao": "aviso", "texto": t}), falar=falar)
 
     # ── aba Saúde do PC (saude_pc.py lê o hardware; manutencao.py roda elevado e grava o andamento) ──
     def saude_ler(self):
@@ -617,6 +675,17 @@ class App:
                 pass
         threading.Thread(target=faxina_cerebro, daemon=True).start()
 
+        def cerebro_universal():
+            """API HTTP do cérebro (127.0.0.1:47620) + índice em dia; o modelo de sentido fica só neste processo"""
+            try:
+                import cerebro_http, cerebro_motor
+                cerebro_http.iniciar()
+                time.sleep(20)
+                cerebro_motor.indexar(esperar_modelo=True)
+            except Exception as e:
+                print('cérebro universal:', e)
+        threading.Thread(target=cerebro_universal, daemon=True).start()
+
     def compromissos(self):
         """próximos compromissos com aviso falado (compromissos.py preparar grava a cada 30 min), para o selo da janela"""
         try:
@@ -668,7 +737,107 @@ class App:
         if self._aba_ativa == aba:
             self._aba_ativa = ids[max(0, ids.index(aba) - 1)] if ids[0] != aba else ids[1]
         self._abas_gravar()
+        self._fios_gravar([f for f in self.fios() if aba not in (f["de"], f["para"])])   # fios da aba fechada somem
         return self.abas()
+
+    # ── fios entre chats (visão Board, 2026-10-25; lógica em fios.py) ──
+    def aba_previa(self, aba, n=6):
+        """últimas falas de uma aba (cartão do Board que não está aberto)"""
+        import fios as F
+        aba = str(aba)
+        if aba not in self._abas:
+            return []
+        try:
+            h = self._na_aba(aba, self.historico)()
+        except Exception:
+            return []
+        return [dict(m, texto=m["texto"][:400]) for m in F.mensagens(h, int(n or 6), self._abas[aba].quem)]
+
+    def fios(self):
+        import fios as F
+        return F.normalizar(_ler_estado().get("fios"), set(self._abas))
+
+    def _fios_gravar(self, lista):
+        import fios as F
+        lista = F.normalizar(lista, set(self._abas))
+        _gravar_estado(fios=lista)
+        self._para_janela({"t": "fios", "lista": lista})
+        return lista
+
+    def fio_criar(self, de, para, modo="leitura"):
+        import fios as F
+        if str(de) not in self._abas or str(para) not in self._abas:
+            raise ValueError("aba não existe")
+        lista, novo = F.criar(self.fios(), de, para, modo)
+        self._fios_gravar(lista)
+        return novo
+
+    def fio_mudar(self, id, modo):
+        import fios as F
+        if modo not in F.MODOS:
+            raise ValueError("modo do fio: leitura ou comando")
+        return self._fios_gravar([dict(f, modo=modo) if f["id"] == id else f for f in self.fios()])
+
+    def fio_apagar(self, id):
+        return self._fios_gravar([f for f in self.fios() if f["id"] != id])
+
+    def _fios_contexto(self):
+        import fios as F
+        info = {a.id: {"nome": (a.manual and a.nome) or a.assunto or a.nome, "quem": a.quem} for a in self._abas.values()}
+        return F.contexto(self._ctx().id, self.fios(), info)
+
+    def fio_chamar(self, de, para, acao, texto="", n=10):
+        """um chat lê ou manda no outro pelo fio (MCP "chat" do Claude, ferramenta da Kani). Devolve texto."""
+        import fios as F
+        de, para = str(de), str(para)
+        if para not in self._abas:
+            return "ERRO: a aba " + para + " não existe (ou foi fechada)."
+        fio = F.achar(self.fios(), de, para, "comando" if acao == "enviar" else "leitura")
+        if not fio:
+            return ("ERRO: não há fio de " + ("comando" if acao == "enviar" else "leitura") + f" da aba {de} para a aba {para}. "
+                    "O Pailer liga os chats no Board.")
+        alvo = self._abas[para]
+        if acao == "ler":
+            falas = self.aba_previa(para, max(1, min(40, int(n or 10))))
+            if not falas:
+                return "A conversa da aba " + para + " está vazia."
+            estado = "trabalhando agora" if alvo.ocupada() else "parada"
+            return F.limpar_texto(f"Aba {para} ({alvo.quem}, {estado}):\n" + "\n\n".join(
+                f"[{m['quem']}] {m['texto']}" for m in falas), 9000)
+        if acao != "enviar":
+            return "ERRO: acao = ler ou enviar."
+        if not str(texto or "").strip():
+            return "ERRO: faltou o texto do pedido."
+        if alvo.ocupada():
+            return f"ERRO: a aba {para} está trabalhando agora; espere ela terminar (leia com acao=ler) e mande de novo."
+        self._fio_envios = getattr(self, "_fio_envios", {})
+        if not F.pode_enviar(self._fio_envios, fio["id"]):
+            return "ERRO: limite de pedidos por este fio (10 a cada 15 min) — evita dois chats conversando sem fim."
+        self._fio_envios[fio["id"]].append(time.time())
+        origem = self._abas.get(de)
+        nome = (origem and ((origem.manual and origem.nome) or origem.assunto or origem.nome)) or "Aba " + de
+        marca = uuid.uuid4().hex[:6]
+        msg = F.pedido(nome, de, texto, marca)
+        self._para_janela({"t": "fio_ativo", "id": fio["id"], "on": True})
+        try:
+            if alvo.quem == "claude":
+                ok = self._na_aba(para, self.enviar)(msg, _de="fio")
+            else:
+                ok = self._na_aba(para, self.ajudante)(alvo.quem, msg, _de="fio")
+            if ok is False:
+                return "ERRO: o outro chat não aceitou o pedido agora."
+            t0 = time.time()
+            while time.time() - t0 < 4 and not alvo.ocupada():   # começar pode levar um instante
+                time.sleep(0.2)
+            while alvo.ocupada() and time.time() - t0 < 1800:
+                time.sleep(1)
+            if alvo.ocupada():
+                return f"Ainda trabalhando depois de 30 min; leia depois com acao=ler (aba {para})."
+            time.sleep(0.5)   # o histórico grava a resposta no fim
+            r = F.resposta_apos(self._na_aba(para, self.historico)(), marca)
+            return F.limpar_texto(r) or f"A aba {para} terminou sem texto de resposta (confira com acao=ler)."
+        finally:
+            self._para_janela({"t": "fio_ativo", "id": fio["id"], "on": False})
 
     # ── js_api ──
     def mostrar(self):
@@ -974,7 +1143,7 @@ class App:
                 from voz import Voz
                 self._voz = Voz(self._voz_acordou, self._voz_texto, self._voz_estado)
             self._microfone_fala(True)
-            if self._voz.escutar() is False:
+            if self._voz.escutar(manual=True) is False:   # pelo botão: grava até o 2º clique
                 self._microfone_fala(False)
                 return {"ok": False, "erro": "Não foi possível abrir o microfone."}
             return {"ok": True}
@@ -1400,8 +1569,16 @@ class App:
         if texto.strip().startswith("/"):
             return False
         try:
-            import casa
-            r = casa.rapido(texto)
+            import casa, cenas, energia
+            c = cenas.por_frase(texto)
+            r = None if c else energia.rapido(texto)   # "suspende o pc daqui 30 min": marca e confere no Windows
+            if r:
+                pass
+            elif c:
+                cenas.rodar_fundo(c, "voz")
+                r = f"Rodando a cena {c['nome']}."
+            else:
+                r = casa.rapido(texto)
         except Exception:
             return False
         if not r:
@@ -1873,6 +2050,9 @@ class App:
         if not texto.startswith('/'):
             from tarefas_agente import contexto as contexto_tarefas
             contexto += '\n\n' + contexto_tarefas(pasta,texto)
+            fios_txt = self._fios_contexto()
+            if fios_txt:
+                contexto += '\n\n' + fios_txt
         self._ctx().pedido_turno = "" if texto.startswith("/") else texto
         if not texto.startswith("/"):
             self._prontidao_agendar()
@@ -2072,6 +2252,22 @@ class App:
         if not isinstance(destino, str):
             destino = destino[0]
         return recursos.salvar_imagem(dados, info, destino)
+
+    def resposta_video(self, origem):
+        """link/caminho de vídeo na resposta → player do chat (link da web é baixado para <dados>/videos)"""
+        import videos_resposta as videos
+        return videos.preparar(origem, self._pasta(), os.path.join(DADOS, "videos"))
+
+    def resposta_salvar_video(self, caminho):
+        import videos_resposta as videos
+        nome = os.path.basename(caminho)
+        destino = self._janela.create_file_dialog(webview.FileDialog.SAVE, save_filename=nome,
+                                                 file_types=(f'Vídeo (*{os.path.splitext(nome)[1]})', 'Todos os arquivos (*.*)'))
+        if not destino:
+            return False
+        if not isinstance(destino, str):
+            destino = destino[0]
+        return videos.salvar_como(caminho, destino)
 
     def modo(self, modo):
         """botão Planejar: 'plan' = o Claude só planeja e pede aprovação; 'auto' = trabalha normal"""
@@ -2679,6 +2875,14 @@ class App:
                 if cmd.startswith("kb "):
                     self._kb(c, cmd[3:])
                     return
+                if cmd.startswith("fio "):   # ferramenta "chat" do MCP equipe: um chat lê/manda no outro (pode demorar)
+                    try:
+                        d = json.loads(cmd[4:])
+                        r = self.fio_chamar(d.get("de"), d.get("para"), d.get("acao"), d.get("texto", ""), d.get("n", 10))
+                    except Exception as e:
+                        r = "ERRO: " + str(e)
+                    c.sendall((json.dumps({"texto": r}, ensure_ascii=False) + "\n").encode("utf-8"))
+                    return
                 if cmd.startswith("evento "):
                     with self._canal_eventos:   # início/fim das ferramentas continuam na mesma ordem
                         c.sendall(b"ok\n")
@@ -2803,6 +3007,11 @@ def main():
             movel.iniciar(app, DADOS)
         except Exception:
             pass
+
+    try:
+        app._cenas_iniciar()   # agenda das cenas da Casa (horários, ao abrir)
+    except Exception:
+        pass
 
     def comecar():
         def icone():   # a janela nasce escondida: tenta até ela existir

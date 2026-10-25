@@ -43,11 +43,17 @@
       const marca = espera ? 'pergunta' : trab ? 'trab' : on ? '' : e.aviso;
       const q = EQUIPE[a.quem] || EQUIPE.claude, mod = modeloCurto(a);
       const icone = marca === 'trab' ? '<span class="aba-trab" aria-label="trabalhando"><i></i><i></i><i></i></span>' : `<span class="aba-ponto ${marca}"></span>`;
-      const dica = `${titulo(a)} · ${mod}${espera ? ' · esperando você' : trab ? ' · trabalhando' : ''} (duplo clique renomeia)`;
+      const fs = window.KC_BOARD ? KC_BOARD.fiosDa(a.id) : [], sai = fs.filter(f => f.de === a.id), entra = fs.filter(f => f.para === a.id);
+      const nomeF = id => window.KC_BOARD ? KC_BOARD.nomeAba(id) : 'Aba ' + id;
+      const marcaFio = (sai.length ? `<span class="aba-fio" title="Ligada a: ${esc(sai.map(f => nomeF(f.para) + (f.modo === 'comando' ? ' (manda)' : ' (lê)')).join(', '))}">${sai.some(f => f.modo === 'comando') ? '⚡' : '👁'}${sai.length > 1 ? sai.length : ''}</span>` : '') +
+        (entra.length ? `<span class="aba-fio obedece" title="Recebe de: ${esc(entra.map(f => nomeF(f.de) + (f.modo === 'comando' ? ' (obedece)' : ' (é lida)')).join(', '))}">⇠${entra.length > 1 ? entra.length : ''}</span>` : '');
+      const dica = `${titulo(a)} · ${mod}${espera ? ' · esperando você' : trab ? ' · trabalhando' : ''}${fs.length ? ' · ligada por fio' : ''} (duplo clique renomeia)`;
       return `<div class="aba-chat${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-aba="${a.id}" title="${esc(dica)}" style="--cor:${q.cor}">
-        ${icone}<span class="aba-txt"><span class="aba-nome">${esc(titulo(a))}</span><span class="aba-mod">${esc(mod)}</span></span>
+        ${icone}<span class="aba-txt"><span class="aba-nome">${esc(titulo(a))}</span><span class="aba-mod">${esc(mod)}</span></span>${marcaFio}
         ${A.lista.length > 1 ? '<button class="aba-x" title="Fechar aba (Ctrl+W)" aria-label="Fechar aba">×</button>' : ''}</div>`;
-    }).join('') + '<button class="aba-mais" title="Nova aba (Ctrl+N)" aria-label="Nova aba">＋</button>';
+    }).join('') + '<button class="aba-mais" title="Nova aba (Ctrl+N)" aria-label="Nova aba">＋</button>' +
+      (window.KC_MOVEL ? '' : `<button class="aba-board${document.body.classList.contains('board') ? ' on' : ''}" title="Board: chats soltos num quadro, ligados por fios (Ctrl+B)" aria-label="Alternar visão Board" aria-pressed="${document.body.classList.contains('board')}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/><path d="M11 8c4 0 2 8 6 8"/></svg></button>`);
+    if (window.KC_BOARD) KC_BOARD.abasMudaram();
   }
 
   function guardar() {   // a aba que sai: conversa, estado e plano fixo ficam guardados
@@ -146,11 +152,19 @@
 
   faixa.addEventListener('click', e => {
     if (e.target.closest('.aba-mais')) return nova();
+    if (e.target.closest('.aba-board')) return window.KC_BOARD && KC_BOARD.alternar();
     const d = e.target.closest('[data-aba]');
     if (!d) return;
     if (e.target.closest('.aba-x')) return fechar(d.dataset.aba);
     trocar(d.dataset.aba);
   });
+  // passar o mouse numa aba ligada acende as abas do outro lado do fio
+  faixa.addEventListener('mouseover', e => {
+    const d = e.target.closest('[data-aba]'), id = d && d.dataset.aba;
+    const pares = id && window.KC_BOARD ? KC_BOARD.fiosDa(id).map(f => f.de === id ? f.para : f.de) : [];
+    faixa.querySelectorAll('.aba-chat').forEach(x => x.classList.toggle('fio-par', pares.includes(x.dataset.aba)));
+  });
+  faixa.addEventListener('mouseleave', () => faixa.querySelectorAll('.fio-par').forEach(x => x.classList.remove('fio-par')));
   faixa.addEventListener('auxclick', e => { const d = e.target.closest('[data-aba]'); if (d && e.button === 1 && A.lista.length > 1) fechar(d.dataset.aba); });
   faixa.addEventListener('dblclick', e => { const d = e.target.closest('[data-aba]'); if (d && !e.target.closest('.aba-x')) renomear(d.dataset.aba); });
   document.addEventListener('keydown', e => {
@@ -249,5 +263,6 @@
     Object.keys(A.est).forEach(id => { if (id !== A.ativa) Object.assign(A.est[id], { visto: false, frag: null, fila: [] }); });
     try { await sincronizar(await api().abas()); } catch (e) {}
   };
+  Object.assign(A, { trocar, nova, fechar, renomear, titulo, modeloCurto, estDe: est, desenhar });   // o Board (board.js) usa
   window.KC_ABAS = A;
 })();

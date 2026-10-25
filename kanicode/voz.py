@@ -16,6 +16,7 @@ SR, BLOCO = 16000, 1280              # 80 ms: o passo do openWakeWord
 LIMIAR = 0.5
 SILENCIO_S, SILENCIO_LONGO_S, ESPERA_S, MAX_S = 1.3, 2.6, 5.0, 60.0
 FALA_P = 0.4                         # voz baixa também conta como fala
+MANUAL_ESPERA_S, MANUAL_MAX_S = 20.0, 180.0   # botão 🎤: sem falar nada desiste; falando, até 3 min
 SEGUIR_S = 6.0                       # depois da resposta falada: ouve de novo sem precisar do "Ei Kani"
 # frase que termina numa palavra de ligação ainda não acabou: espera a pausa longa
 LIGACAO = {"e", "que", "porque", "mas", "então", "entao", "pra", "para", "de", "do", "da", "o", "a", "os", "as", "um", "uma",
@@ -85,6 +86,7 @@ class Voz:
         self._uma = False      # botão do microfone com o Ei Kani desligado: ouve um pedido e desliga
         self._cortar = False   # clicou no microfone de novo: terminou de falar
         self._cancelar = False # clicou no ✕: descarta o que gravou
+        self._manual = False   # pedido pelo botão 🎤: só termina no 2º clique (pausa para pensar não corta)
         self.ultimo = {}
 
     def seguir(self, segundos=SEGUIR_S):
@@ -92,9 +94,10 @@ class Voz:
         if self._ligada:
             self._seguir = segundos
 
-    def escutar(self, espera=ESPERA_S):
+    def escutar(self, espera=ESPERA_S, manual=False):
         """botão do microfone (ou fim da resposta falada): ouve um pedido agora, sem 'Ei Kani'
-        (com o Ei Kani desligado, desliga depois)"""
+        (com o Ei Kani desligado, desliga depois). manual=True (botão 🎤): grava até o 2º clique."""
+        self._manual = manual
         if self._ligada:
             self._seguir = espera
             return True
@@ -213,6 +216,7 @@ class Voz:
         self._bipe(True)
         vad.zerar()
         self._cortar = self._cancelar = False
+        manual, self._manual = self._manual, False
         blocos, falou, quieto, t0, longa, conferiu = [], False, 0.0, time.time(), False, False
         while self._ligada and not self._cortar:
             try:
@@ -225,6 +229,10 @@ class Voz:
             else:
                 quieto += BLOCO / SR
             dur = time.time() - t0
+            if manual:   # botão 🎤: pausa não corta; só o 2º clique, o ✕, 20 s sem falar nada ou o teto
+                if (not falou and dur >= MANUAL_ESPERA_S) or dur >= MANUAL_MAX_S:
+                    break
+                continue
             if falou and quieto >= SILENCIO_S and not conferiu:
                 conferiu = True
                 try:

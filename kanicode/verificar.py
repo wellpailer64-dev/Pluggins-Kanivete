@@ -17,6 +17,7 @@ AREAS = {
     "mensagens": ("mensagens.py", "kanicode.py", "sessao.py", "ui/mensagens.js", "ui/janela.html", "tests/test_mensagens.py"),
     "voz": ("fala.py", "voz.py", "radio.py", "kanicode.py", "ui/abas.js", "ui/cerebro.js", "ui/janela.html", "tests/test_fala_tom.py", "tests/test_fala_microfone.py", "tests/test_codex_prontidao.py", "tests/test_codex_voz.py", "tests/test_cerebro_classificacao_ui.py"),
     "claude": ("sessao.py", "continuidade.py", "mcp_equipe.py", "ui/janela.html", "tests/test_continuidade.py", "tests/test_equipe_revisao.py"),
+    "board": ("fios.py", "kanicode.py", "mcp_equipe.py", "ui/board.js", "ui/board.css", "ui/abas.js", "ui/janela.html", "tests/test_fios.py", "tests/test_board_ui.py", "tests/test_abas_ui.py"),
     "kani": ("kani_modo.py", "kani_estado.py", "kani_orquestracao.py", "kani_etapas.py", "kani_codigo_etapas.py", "benchmark_kani_orquestracao.py", "kanicode.py", "ajudantes.py", "ui/kani_execucoes.js", "ui/janela.html", "tests/test_kani_*.py", "tests/test_modelo_ferramenta.py"),
     "pickle": ("bigpickle_modo.py", "pickle_agente.py", "codigo_agente.py", "ui/codigo_agente.js", "pickle_controle.py", "opencode_mvp.py", "kani_modo.py", "kanicode.py", "bolinha.py", "ui/janela.html", "ui/movel.js", "tests/test_bigpickle_*.py", "tests/test_pickle_agente.py", "tests/test_opencode_mvp.py", "tests/test_kani_historico.py"),
     "codex": ("ajudantes.py", "codex_contexto.py", "codex_processo.py", "codex_conta.py", "codex_alteracoes.py", "ui/alteracoes.js", "ui/codex_uso.js", "ui/janela.html", "tests/test_codex_*.py"),

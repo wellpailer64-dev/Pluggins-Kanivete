@@ -87,8 +87,10 @@
       let s = 0; for (let i = 0; i < x.length; i += 4) s += x[i] * x[i];
       const alto = Math.sqrt(s / (x.length / 4)) > 0.02, dt = x.length / g.sr;
       if (alto) { g.falou += dt; g.silencio = 0; } else g.silencio += dt;
-      // para sozinho: 1,4 s de silêncio depois de falar; sem falar nada: 3 s quando reabriu sozinho, 8 s no toque; 60 s no máximo
-      if ((g.falou > 0.3 && g.silencio > 1.4) || (!g.falou && Date.now() - g.inicio > (g.auto ? 3000 : 8000)) || Date.now() - g.inicio > 60000) micParar();
+      // reaberto sozinho (conversa): para com 1,4 s de silêncio depois de falar. No toque no 🎤: pausa para pensar não
+      // corta — só o 2º toque, 20 s sem falar nada ou 3 min (antes cortava na 1ª pausa e o resto da fala se perdia)
+      if ((g.auto && g.falou > 0.3 && g.silencio > 1.4) || (!g.falou && Date.now() - g.inicio > (g.auto ? 3000 : 20000))
+          || Date.now() - g.inicio > (g.auto ? 60000 : 180000)) micParar();
     };
     fonte.connect(proc); proc.connect(ctx.destination);
     V.gravando = g; micVisual(true); vozEv({ fase: 'ouvindo' });

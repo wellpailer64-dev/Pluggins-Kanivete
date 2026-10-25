@@ -52,14 +52,14 @@ class ConsultasTest(unittest.TestCase):
         cidade = dict(name='Sorocaba',latitude=1,longitude=2,feature_code='PPLA2')
         aeroporto = dict(name='Aeroporto de Sorocaba',feature_code='AIRP')
         with patch.object(consultas, '_json', side_effect=[{'results':[cidade,aeroporto]}, {'daily':{}}]):
-            self.assertIn('previsao', consultas.previsao_tempo('Sorocaba, São Paulo'))
+            self.assertIn('dias', consultas.previsao_tempo('Sorocaba, São Paulo'))
 
     def test_previsao_traz_datas_e_fonte(self):
         with patch.object(consultas, '_json', side_effect=[{'results':[dict(name='Cidade',latitude=1,longitude=2)]},
                        {'daily': {'time':['2026-10-23'],'temperature_2m_max':[27]}, 'daily_units':{'temperature_2m_max':'°C'}, 'timezone':'America/Sao_Paulo'}]) as rede:
             r = consultas.previsao_tempo('Cidade',99)
             self.assertEqual(rede.call_args.args[1]['forecast_days'],7)
-            self.assertEqual(r['previsao']['time'],['2026-10-23'])
+            self.assertEqual(r['dias'][0]['data'][:5],'23/10'); self.assertEqual(r['dias'][0]['max_c'],27)
             self.assertIn('open-meteo.com',r['fonte'])
 
     def test_gmail_so_consulta_e_le(self):

@@ -52,8 +52,44 @@
       });
     }
   }
-  new MutationObserver(rs => rs.forEach(r => r.addedNodes.forEach(imagensNo))).observe(conversa, {childList:true,subtree:true});
-  imagensNo(conversa);
+  // vídeos: o Python baixa o link (Runway) para o disco D e entrega por 127.0.0.1; o mesmo vídeo não baixa duas vezes
+  const videosProntos = new Map();
+  function videosNo(no) {
+    if (no.nodeType !== 1) return;
+    const lista = [...no.querySelectorAll('.resposta-video')];
+    if (no.matches('.resposta-video')) lista.push(no);
+    for (const el of lista) {
+      if (el.dataset.carregado) continue;
+      el.dataset.carregado = '1';
+      const alvo = el.dataset.video, v = el.querySelector('video'), estado = el.querySelector('.video-estado');
+      if (window.KC_MOVEL) { v.src = alvo; v.hidden = false; estado.remove(); continue; }
+      if (!videosProntos.has(alvo)) videosProntos.set(alvo, api().resposta_video(alvo));
+      videosProntos.get(alvo).then(d => {
+        if (!el.isConnected) return;
+        el.dataset.caminho = d.caminho;
+        v.src = d.url; v.hidden = false; estado.remove();
+        el.querySelectorAll('[data-video-acao="pasta"], [data-video-acao="salvar"]').forEach(b => { b.disabled = false; });
+        if (d.baixado) el.querySelector('[data-video-acao="pasta"]').title = 'Salvo em ' + d.caminho;
+      }).catch(e => {
+        videosProntos.delete(alvo);
+        if (!el.isConnected) return;
+        estado.textContent = 'Não deu para abrir o vídeo: ' + ((e && e.message) || e);
+        el.classList.add('erro');
+      });
+    }
+  }
+  conversa.addEventListener('click', e => {
+    const b = e.target.closest('[data-video-acao]');
+    if (!b) return;
+    e.preventDefault();
+    const el = b.closest('.resposta-video'), v = el.querySelector('video'), acao = b.dataset.videoAcao;
+    if (acao === 'repetir') { v.loop = !v.loop; b.setAttribute('aria-pressed', String(v.loop)); b.classList.toggle('on', v.loop); }
+    else if (acao === 'pasta' && el.dataset.caminho) api().resposta_abrir_caminho(el.dataset.caminho).catch(erro);
+    else if (acao === 'salvar' && el.dataset.caminho) api().resposta_salvar_video(el.dataset.caminho).catch(erro);
+  });
+  const novos = no => { imagensNo(no); videosNo(no); };
+  new MutationObserver(rs => rs.forEach(r => r.addedNodes.forEach(novos))).observe(conversa, {childList:true,subtree:true});
+  novos(conversa);
 
   const dialog = document.createElement('dialog');
   dialog.className = 'imagem-visor'; dialog.setAttribute('aria-label', 'Visualizador de imagem');

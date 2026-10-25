@@ -30,6 +30,10 @@ FERRAMENTAS = {
     "todo_alarmes": "Lista os alarmes/lembretes marcados (com id, data, hora, dias). args: {}",
     "todo_alarme_editar": "Muda um alarme existente pelo id (de todo_alarmes). args: {id, titulo, inicio: AAAA-MM-DDTHH:MM, antes: 10}",
     "todo_alarme_apagar": "Apaga um alarme pelo id (de todo_alarmes), só a pedido do Pailer. args: {id}",
+    "pc_energia": "Suspende, hiberna, desliga ou reinicia ESTE PC agora ou numa hora (tarefa do Windows, a hora sai do pedido); "
+                  "cancelar = desmarca. Só diga que marcou se ESTA ferramenta deu certo. "
+                  "args: {acao: suspender|hibernar|desligar|reiniciar|cancelar, quando: 'daqui 30 min'|'às 23h'|'agora'}",
+    "pc_energia_listar": "Lista suspensão/hibernação/desligamento/reinício do PC já marcados. args: {}",
     "agenda_google": "Consulta eventos dos próximos 7 dias nos calendários Google conectados em Configurações > Conexões. Somente leitura. args: {}",
     "drive_buscar": "Busca arquivos/pastas pelo nome. Retorna IDs e links. pasta vazia busca em tudo; root = Meu Drive; lixeira=true consulta excluídos recuperáveis. args: {busca, proxima: token opcional, pasta: ID opcional, lixeira: false}",
     "drive_criar_pasta": "Cria pasta no Drive, somente se solicitada pelo usuário. args: {nome, pasta: ID da pasta destino ou root}",
@@ -67,6 +71,8 @@ FERRAMENTAS = {
                       "Photo com photo:colocar imagem do arquivo). args: {busca: o assunto, ex. 'pizza margherita', qual: 1 = a 1ª}",
     "imagens_kani": "Lista as imagens grandes da página do SEU navegador (endereço e tamanho) para escolher e baixar com baixar_arquivo. args: {}",
     "baixar_arquivo": "Baixa um arquivo pelo endereço (PDF, imagem, documento) para a pasta de downloads do KaniBrowser. args: {url}",
+    "chat_ler": "Lê as últimas falas de OUTRO chat (aba) do KaniCode ligado a este por um fio no Board. args: {para: número da aba, n: quantas}",
+    "chat_enviar": "Manda um pedido a OUTRO chat (aba) ligado por fio de comando e espera a resposta dele. args: {para: número da aba, texto}",
     "whatsapp_conversas": "Lista as conversas e grupos do WhatsApp do Pailer (filtra por parte do nome). args: {busca}",
     "whatsapp_ler": "Lê as últimas mensagens de uma conversa ou grupo do WhatsApp. args: {conversa: parte do nome, n: quantas}",
     "whatsapp_enviar": "Manda uma mensagem de texto numa conversa ou grupo do WhatsApp (abre a conversa certa, confere o nome e envia). "
@@ -117,9 +123,9 @@ FERRAMENTAS = {
 FERRAMENTAS.update(codigo_agente.FERRAMENTAS)
 # só para o agente forte (Big Pickle): a Kani local (4B) fica com as ferramentas guiadas
 PODER = ("rodar_comando", "rodar_js_kanivete", "escrever_arquivo", "plano")
-SOMENTE_LEITURA = {"tarefa_agente", "mapa_d", "buscar_arquivos", "previsao_tempo", "gmail_buscar", "gmail_ler", "drive_buscar", "responder", "passar_para_claude", "espaco_disco", "listar_pasta", "ler_arquivo",
+SOMENTE_LEITURA = {"tarefa_agente", "pc_energia_listar", "mapa_d", "buscar_arquivos", "previsao_tempo", "gmail_buscar", "gmail_ler", "drive_buscar", "responder", "passar_para_claude", "espaco_disco", "listar_pasta", "ler_arquivo",
                    "procurar_no_codigo", "buscar_no_mapa", "demandas_panda", "git_resumo", "consultar_receita",
-                   "ver_kanivete", "ver_kanibrowser", "programas_abertos", "ler_kani", "ler_site", "whatsapp_conversas", "whatsapp_ler", "imagens_kani"}
+                   "ver_kanivete", "ver_kanibrowser", "programas_abertos", "ler_kani", "ler_site", "whatsapp_conversas", "whatsapp_ler", "imagens_kani", "chat_ler"}
 
 # nomes que o modelo usa → id da ferramenta no KANIVETE (data-tool da barra lateral)
 _FERR_IDS = {"video": "video-cutter", "vídeo": "video-cutter", "editor": "video-cutter", "photo": "editor-imagem", "foto": "editor-imagem",
@@ -202,6 +208,8 @@ REGRAS:
 - Reiniciar ou reabrir o KANIVETE = reiniciar_kanivete; fechar o KANIVETE (o app, o programa) = fechar_kanivete, nunca fechar_aba
   nem pedir_ao_kanivete. "Não há abas" NÃO quer dizer que o KANIVETE está fechado.
 - O que está aberto no computador, se um programa está aberto = programas_abertos.
+- Suspender, hibernar, desligar ou reiniciar o PC (agora ou "daqui X", "às HH") = pc_energia. Alarme, "me acorda", "me lembra" = todo_lembrar.
+  Nunca diga "será às..." sem o resultado da ferramenta: conte a hora que ELA devolveu.
 - Fechar programa ou janela FORA do KANIVETE (Chrome, WhatsApp no navegador, Bloco de notas) = fechar_programa; fechar_aba
   NUNCA serve para isso. Apagar um arquivo que você criou = apagar_arquivo (ele já fecha a janela do arquivo).
 - Uma ação deu ERRO ou NÃO FEITO? Não repita a mesma: troque de ferramenta ou responda. Use só ferramentas ligadas ao pedido.
@@ -385,6 +393,29 @@ def _executar(acao, a, pasta):
             return json.dumps(operacoes[acao](), ensure_ascii=False)
         except (ValueError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as e:
             return "NÃO FEITO: " + str(e) + (" Confira a agenda antes de repetir: o lembrete pode ter sido salvo, mas o aviso falhou." if acao == "todo_lembrar" else "")
+    if acao == "pc_energia_listar":
+        import energia
+        return json.dumps(energia.listar(), ensure_ascii=False)
+    if acao == "pc_energia":
+        import energia
+        op = str(a.get("acao") or "").lower().strip()
+        try:
+            if op == "listar": return json.dumps(energia.listar(), ensure_ascii=False)   # (antigo; agora pc_energia_listar)
+            if op == "cancelar":
+                if not re.search(r"cancel|desmarc|tir[ae]|n[aã]o (?:precisa|quero)|para\b", pedido_atual[0], re.I):
+                    return "NÃO FEITO: o Pailer não pediu para cancelar."
+                return json.dumps(energia.cancelar(next((k for k in energia.ACOES if k[:6] in pedido_atual[0].lower()), "")), ensure_ascii=False)
+            # 2026-10-25: "o que tem marcado pra suspender?" virou suspender AGORA. Só faz se o pedido manda ESSA ação no PC.
+            raiz = {"suspender": r"suspend|suspens|dorm", "hibernar": r"hibern", "desligar": r"deslig", "reiniciar": r"reinici|rein[ií]cio"}.get(op)
+            p = pedido_atual[0]
+            if not raiz or not re.search(r"(?i)\b(?:" + raiz + r")", p) or not re.search(r"(?i)\b(?:pc|computador|m[aá]quina|note)\b", p) \
+                    or re.search(r"(?i)\?|\b(?:o que|qual|quais|quando|tem (?:algo|alguma|algum)|est[aá] marcad)", p):
+                return "NÃO FEITO: o Pailer não mandou " + op + " o PC (pergunta ou outra ação). Para ver o que está marcado use pc_energia_listar."
+            # a hora vem do PEDIDO (o modelo dizia 03:09 e não marcava nada); sem hora no pedido, a do modelo
+            pedido = pedido_atual[0] if energia.quando(pedido_atual[0]) else str(a.get("quando") or "")
+            return json.dumps(energia.agendar(op, pedido), ensure_ascii=False)
+        except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as e:
+            return "NÃO FEITO: " + str(e)
     if acao == "agenda_google":
         import google_calendar
         try:
@@ -503,6 +534,12 @@ def _executar(acao, a, pasta):
                 raise ValueError("diga o texto do botão")
             o = {"f": "js_kani", "a": {"codigo": _JS_CLIQUE_TEXTO.replace("TEXTO_AQUI", json.dumps(t))}}
         return _kanivete_js(_JS_KB_KANI, o)
+    if acao in ("chat_ler", "chat_enviar"):   # fios do Board (fios.py): a aba desta tarefa é a que manda
+        import fios
+        if not fios.APP:
+            return "NÃO FEITO: o KaniCode não está aberto."
+        return fios.APP.fio_chamar(fios.APP._ctx().id, str(a.get("para") or a.get("aba") or ""),
+                                   "ler" if acao == "chat_ler" else "enviar", str(a.get("texto") or ""), a.get("n") or 10)
     if acao in ("whatsapp_conversas", "whatsapp_ler", "whatsapp_enviar"):
         cmd = [sys.executable.replace("pythonw", "python"), WA, acao.split("_")[1], "--porta", str(PORTA_KANIVETE)]
         if acao == "whatsapp_conversas":
@@ -1327,7 +1364,7 @@ def compactar(msgs, limite=16000, manter=2):
 
 
 def _chamar(msgs, porta, schema=None, com_uso=False):
-    corpo = {"messages": msgs, "temperature": 0.3, "max_tokens": 1600, "stream": False,
+    corpo = {"messages": msgs, "temperature": 0.1 if com_uso else 0.3, "max_tokens": 1600, "stream": False,   # orquestração: escolha estável
              "chat_template_kwargs": {"enable_thinking": False}, "response_format": {"type": "json_object", "schema": schema or _SCHEMA}}
     req = urllib.request.Request(f"http://127.0.0.1:{porta}/v1/chat/completions", json.dumps(corpo).encode("utf-8"),
                                  {"Content-Type": "application/json"})

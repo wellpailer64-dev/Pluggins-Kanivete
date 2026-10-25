@@ -12,6 +12,13 @@ window.KCResposta = (() => {
     if (!remoto && !data && !local(alvo)) return esc(rotulo);
     return `<span class="resposta-imagem"><button type="button" class="imagem-abrir" data-imagem="${esc(alvo)}" title="Ampliar imagem" aria-label="Ampliar imagem: ${esc(rotulo || 'Imagem')}"><img ${remoto || data ? `src="${esc(alvo)}"` : `data-imagem-local="${esc(alvo)}"`} alt="${esc(rotulo || 'Imagem')}" loading="lazy" referrerpolicy="no-referrer"></button>${rotulo ? `<span class="imagem-legenda">${esc(rotulo)}</span>` : ''}</span>`;
   }
+  // vídeo (link da Runway, arquivo do disco): player no chat; respostas.js pede o arquivo ao Python (baixa o link) e liga o src
+  const VIDEO = /\.(?:mp4|m4v|webm|mov)(?:[?#].*)?$/i;
+  function video(alvo, rotulo) {
+    if (!web(alvo) && !local(alvo)) return esc(rotulo || alvo);
+    return `<span class="resposta-video" data-video="${esc(alvo)}"><span class="video-tela"><video controls playsinline preload="metadata" hidden></video><span class="video-estado">${web(alvo) ? 'Baixando o vídeo…' : 'Carregando o vídeo…'}</span></span>
+      <span class="video-acoes">${rotulo ? `<span class="video-legenda">${esc(rotulo)}</span>` : ''}<button type="button" data-video-acao="repetir" title="Repetir sem parar" aria-pressed="false">⟲ Repetir</button><button type="button" data-video-acao="pasta" title="Mostrar o arquivo na pasta" disabled>📁 Na pasta</button><button type="button" data-video-acao="salvar" title="Salvar uma cópia" disabled>⤓ Salvar</button></span></span>`;
+  }
   function texto(t) {
     // Caminhos com espaços devem preferir crases ou links Markdown para delimitar o fim exato.
     const re = /https?:\/\/[^\s<>"`]+|www\.[^\s<>"`]+|(?:[a-z]:[\\/]|\\\\[^\\/\s]+[\\/])[^<>"'\r\n`|,;!?]+/gi;
@@ -23,7 +30,7 @@ window.KCResposta = (() => {
       }
       html += formato(t.slice(inicio, m.index));
       const url = alvo.startsWith('www.') ? 'https://' + alvo : alvo;
-      html += web(url) ? link(url, alvo) : absoluto(alvo) ? abrir(alvo, alvo) : esc(alvo);
+      html += VIDEO.test(alvo) && (web(url) || absoluto(alvo)) ? video(url, '') : web(url) ? link(url, alvo) : absoluto(alvo) ? abrir(alvo, alvo) : esc(alvo);
       html += formato(m[0].slice(alvo.length));
       inicio = m.index + m[0].length;
     }
@@ -55,7 +62,7 @@ window.KCResposta = (() => {
         if (fim >= 0) {
           const codigo = t.slice(i + marca.length, fim);
           html += texto(t.slice(inicio, i));
-          html += absoluto(codigo) ? abrir(codigo, codigo) : `<span class="codigo-inline"><code>${esc(codigo)}</code><button type="button" data-copiar-inline title="Copiar código" aria-label="Copiar código">⧉</button></span>`;
+          html += absoluto(codigo) && VIDEO.test(codigo) ? video(codigo, '') : absoluto(codigo) ? abrir(codigo, codigo) : `<span class="codigo-inline"><code>${esc(codigo)}</code><button type="button" data-copiar-inline title="Copiar código" aria-label="Copiar código">⧉</button></span>`;
           i = fim + marca.length; inicio = i; continue;
         }
       }
@@ -64,7 +71,7 @@ window.KCResposta = (() => {
         if (l) {
           html += texto(t.slice(inicio, i));
           const foto = l.foto || /\.(?:png|jpe?g|webp|gif|bmp)(?:[?#].*)?$/i.test(l.alvo);
-          html += foto ? imagem(l.alvo, l.rotulo) : web(l.alvo) ? link(l.alvo, l.rotulo)
+          html += VIDEO.test(l.alvo) ? video(l.alvo, l.rotulo) : foto ? imagem(l.alvo, l.rotulo) : web(l.alvo) ? link(l.alvo, l.rotulo)
             : local(l.alvo) ? abrir(l.alvo, l.rotulo) : esc(l.rotulo);
           i = l.fim; inicio = i; continue;
         }

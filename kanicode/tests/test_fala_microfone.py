@@ -117,7 +117,7 @@ class AppMicrofoneTest(unittest.TestCase):
         ordem.attach_mock(self.app._fala.pausar, 'pausar')
         ordem.attach_mock(self.app._voz.escutar, 'escutar')
         self.assertTrue(self.app.ouvir()['ok'])
-        self.assertEqual(ordem.mock_calls[:2], [call.pausar(True), call.escutar()])
+        self.assertEqual(ordem.mock_calls[:2], [call.pausar(True), call.escutar(manual=True)])
         self.app._voz_acordou()
         self.app._fala.parar.assert_not_called()
         self.assertTrue(self.app._microfone_prioritario)

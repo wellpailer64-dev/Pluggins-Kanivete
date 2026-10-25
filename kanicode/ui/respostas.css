@@ -48,3 +48,15 @@ html.movel .navegador-links { display: none; }
 .visor-conteudo img { position: absolute; max-width: none; max-height: none; user-select: none; -webkit-user-drag: none; }
 .visor-estado { flex: none; min-height: 27px; padding: 5px 12px; color: #90AA99; background: #101712; font: 10px var(--sans); }
 @media (max-width: 420px) { .visor-nome { flex-basis: 100%; } .visor-barra { gap: 1px; } }
+/* vídeo na resposta (link da Runway ou arquivo do disco) */
+.resposta-video { display: block; margin: 9px 0; max-width: 100%; }
+.video-tela { display: grid; place-items: center; min-height: 60px; border: 1px solid #2B3A30; border-radius: 8px; overflow: hidden; background: #0B100D; }
+.video-tela video { display: block; width: 100%; max-height: 420px; background: #000; }
+.video-estado { padding: 18px 12px; font: 11px var(--sans); color: #82988A; }
+.resposta-video.erro .video-estado { color: #E9A0A0; }
+.video-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+.video-legenda { flex: 1; min-width: 0; font: 10px var(--mono); color: #809588; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-acoes button { padding: 3px 8px; border: 1px solid #2B3A30; border-radius: 5px; background: #101712; color: #B4C6BA; font: 11px var(--sans); cursor: pointer; }
+.video-acoes button:hover:not(:disabled) { border-color: var(--lima); color: var(--texto); }
+.video-acoes button:disabled { opacity: .45; cursor: default; }
+.video-acoes button.on { border-color: var(--lima); color: var(--lima); }

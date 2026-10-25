@@ -101,6 +101,7 @@
     let linhas = q.quadros && q.quadros.length ? q.quadros[Math.floor(t * q.fps) % q.quadros.length] : null;
     if (!linhas) return null;
     linhas = linhas.slice();
+    if (linhas.length < 16) return linhas;   // quadro incompleto: sem mexer nos olhos
     const [dx, dy] = olho;
     if ((dx || dy) && ['neutro', 'feliz', 'pergunta', 'dormindo'].includes(expr)) {   // os olhos seguem o mouse
       const olhos = linhas.slice(3, 9).map(l => dx > 0 ? '.'.repeat(dx) + l.slice(0, 16 - dx) : dx < 0 ? l.slice(-dx) + '.'.repeat(-dx) : l);
@@ -122,14 +123,39 @@
     return linhas;
   }
 
-  function desenhar(t, mira = false) {
-    const k = window.devicePixelRatio || 1, P = Math.round(L * k);
-    if (cv.width !== P) { cv.width = cv.height = P; cv.style.width = cv.style.height = L + 'px'; }
+  // pinta a bola (corpo, cara, arco, anel da voz, ponto da pergunta) num canvas P×P; o Board (board-bola.js) usa a mesma
+  function pintar(g, P, t, f) {
+    const k = f.k || 1;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, P, P);
     const gr = g.createRadialGradient(P * .32, P * .28, 0, P * .32, P * .28, P * .78);
     gr.addColorStop(0, '#D8FF7A'); gr.addColorStop(.35, '#C4F64E'); gr.addColorStop(1, '#7FB51A');
     g.fillStyle = gr; g.beginPath(); g.arc(P / 2, P / 2, P / 2 - .5, 0, Math.PI * 2); g.fill();
+    const linhas = grade(f.expr, t, f.olho || [0, 0], f.lingua, f.pisca);
+    if (linhas) {
+      const cel = Math.max(2, Math.floor(P * .8 / 16)), x0 = Math.floor(P / 2 - 8 * cel), y0 = Math.floor(P / 2 - 8 * cel + cel * .5);
+      linhas.forEach((l, y) => { for (let x = 0; x < 16; x++) { const c = CORES[l[x]]; if (c) { g.fillStyle = c; g.fillRect(x0 + x * cel, y0 + y * cel, cel, cel); } } });
+    }
+    if (f.trab) {   // o arco que gira, como na bolinha nativa
+      const d = P * .07;
+      g.strokeStyle = 'rgba(14,17,16,.9)'; g.lineWidth = Math.max(2, P * .06); g.lineCap = 'round';
+      const a = (t * 3 % 1) * Math.PI * 2;
+      g.beginPath(); g.arc(P / 2, P / 2, P / 2 - d, a, a + Math.PI / 2); g.stroke();
+    }
+    if (f.ouvindo) {
+      const s = .5 + .5 * Math.sin(t * 8);
+      g.strokeStyle = `rgba(14,17,16,${(.47 + .43 * s).toFixed(2)})`; g.lineWidth = P * (.05 + .04 * s);
+      g.beginPath(); g.arc(P / 2, P / 2, P * .46, 0, Math.PI * 2); g.stroke();
+    }
+    if (f.pergunta) {
+      const r = P * .11;
+      g.fillStyle = '#0E1110'; g.beginPath(); g.arc(P - r * 1.2, r * 1.2, r + 1.5 * k, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#FF5A5F'; g.beginPath(); g.arc(P - r * 1.2, r * 1.2, r - k, 0, Math.PI * 2); g.fill();
+    }
+  }
+  function desenhar(t, mira = false) {
+    const k = window.devicePixelRatio || 1, P = Math.round(L * k);
+    if (cv.width !== P) { cv.width = cv.height = P; cv.style.width = cv.style.height = L + 'px'; }
     let o = { y: 0, rot: 0, sx: 1, sy: 1, olho: B.olho, expr: null, lingua: false, pisca: false, fx: null };
     const trab = !mira && B.estado === 'trabalhando';
     if (B.truque) {
@@ -139,31 +165,13 @@
     let expr = B.expr;
     if (o.expr && expr === 'neutro') expr = o.expr;
     if (B.dorme && expr === 'neutro' && !B.truque) expr = 'dormindo';
-    const linhas = grade(mira ? 'neutro' : expr, t, mira ? [0, -1] : o.olho || [0, 0], mira || o.lingua, mira || o.pisca);
-    if (linhas) {
-      const cel = Math.max(2, Math.floor(P * .8 / 16)), x0 = Math.floor(P / 2 - 8 * cel), y0 = Math.floor(P / 2 - 8 * cel + cel * .5);
-      linhas.forEach((l, y) => { for (let x = 0; x < 16; x++) { const c = CORES[l[x]]; if (c) { g.fillStyle = c; g.fillRect(x0 + x * cel, y0 + y * cel, cel, cel); } } });
-    }
-    if (trab) {   // o arco que gira, como na bolinha nativa
-      const d = P * .07;
-      g.strokeStyle = 'rgba(14,17,16,.9)'; g.lineWidth = Math.max(2, P * .06); g.lineCap = 'round';
-      const a = (t * 3 % 1) * Math.PI * 2;
-      g.beginPath(); g.arc(P / 2, P / 2, P / 2 - d, a, a + Math.PI / 2); g.stroke();
-    }
-    if (B.voz === 'ouvindo') {
-      const s = .5 + .5 * Math.sin(t * 8);
-      g.strokeStyle = `rgba(14,17,16,${(.47 + .43 * s).toFixed(2)})`; g.lineWidth = P * (.05 + .04 * s);
-      g.beginPath(); g.arc(P / 2, P / 2, P * .46, 0, Math.PI * 2); g.stroke();
-    }
-    if (!mira && (B.estado === 'pergunta' || expr === 'pergunta')) {
-      const r = P * .11;
-      g.fillStyle = '#0E1110'; g.beginPath(); g.arc(P - r * 1.2, r * 1.2, r + 1.5 * k, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#FF5A5F'; g.beginPath(); g.arc(P - r * 1.2, r * 1.2, r - k, 0, Math.PI * 2); g.fill();
-    }
+    pintar(g, P, t, { k, expr: mira ? 'neutro' : expr, olho: mira ? [0, -1] : o.olho || [0, 0], lingua: mira || o.lingua, pisca: mira || o.pisca,
+                      trab, ouvindo: B.voz === 'ouvindo', pergunta: !mira && (B.estado === 'pergunta' || expr === 'pergunta') });
     return o;
   }
 
   function quadro() {
+    if (document.body.classList.contains('board')) return;   // no Board quem aparece é a bola do quadro (board-bola.js)
     const t = performance.now() / 1000;
     if (B.humorAte && t > B.humorAte) B.humorAte = 0;
     const parada = B.expr === 'neutro' && !B.estado;
@@ -243,6 +251,10 @@
   caixa.addEventListener('mouseenter', () => { B.perto = true; });
   caixa.addEventListener('mouseleave', () => { B.perto = false; });
   caixa.addEventListener('click', () => { if (B.on && api() && api().bola_clique) api().bola_clique(); });
+
+  // para a bola do Board: mesma cara, mesmas palhaçadas e o estado que o kanicode.py manda
+  window.KB_ROSTO = { pintar, quadros, TRUQUES, TODOS, ESPIA,
+    estado: () => ({ on: B.on, expr: B.expr, estado: B.estado, voz: B.voz, ativa: B.ativa }) };
 
   // ── chamado pelo kanicode.py ──
   window.kbDocaAlvo = () => {   // onde a bola fica inteira, logo acima da faixa (antes de afundar)
