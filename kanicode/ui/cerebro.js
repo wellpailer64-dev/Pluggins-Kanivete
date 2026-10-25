@@ -314,6 +314,9 @@
         ${p.atividade.length ? p.atividade.slice(0, 8).map(a => `<div class="cer-at"><span>${ICO[a.acao] || '•'}</span><span>${esc(a.acao)}: ${esc(a.texto)}</span>
           <small>${new Date(a.t * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</small></div>`).join('') : '<div class="cer-at"><span></span><span>Nada ainda: começa quando eu consultar ou guardar.</span></div>'}
         <div class="cer-pend">${pend.length ? 'Para cuidar: ' + pend.join(' · ') : 'Nada para cuidar agora.'}</div>
+        <div class="cer-pend" title="Mesma busca para Kani, Claude, Codex e qualquer IA (MCP, HTTP 127.0.0.1:47620 e Python)">🧠 Motor universal: ${p.motor && p.motor.motor === 'v2'
+          ? `${p.motor.trechos} trechos · ${p.motor.semantica ? 'palavra + sentido' : 'só palavra (sentido preparando)'}${p.motor.propostas ? ` · ${p.motor.propostas} proposta(s) na fila` : ''}`
+          : 'busca antiga (v1)'}</div>
         <div class="cer-fax"><span>🧹 Faxina ${dfx == null ? 'ainda não rodou' : dfx === 0 ? 'hoje' : dfx === 1 ? 'ontem' : `há ${dfx} dias`}${fx.quando
           ? `: ${fx.analisados} julgados, ${fx.descartados.length} descartados` : ''}${p.pendencias ? ` · ${p.pendencias} memória(s) para o Claude corrigir` : ''}</span>
           <button data-c="faxina" title="A Kani julga o que está velho e descarta o obsoleto (roda sozinha 1× por dia)">Faxina agora</button></div>

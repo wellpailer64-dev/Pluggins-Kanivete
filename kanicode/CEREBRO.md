@@ -122,3 +122,57 @@ Mantido pelo juiz não volta a ser julgado por 30 dias. Botão "Faxina agora" no
 ## Ponto de partida comum (todas as IAs partem do mesmo cérebro, sem peso)
 `ponto_de_partida(tarefa, quem)`: Claude = 1 linha de aviso (+ pendências da faxina); Codex (licoes.anexo), Kani e
 Pickle (kani_modo) = só acertos fortes da tarefa (máx. 2) ou nada. Agente novo no portal = chamar `ponto_de_partida`.
+
+## Motor universal (2026-10-25) — o KaniCode é o dono do conhecimento, as IAs só consultam
+Uma busca só para Kani local, Pickle, Claude, Codex e qualquer IA futura: `cerebro_motor.py`. As fontes continuam as de
+cima (nada migrado); por cima fica um índice DERIVADO (`cerebro/indice.sqlite`, só cache dos vetores: apagar = refaz sozinho).
+- Busca: palavra (FTS5/BM25 em memória, título e chave pesam mais, chave/arquivo exato vai ao topo, sinônimos da casa em
+  `SINONIMOS` + `cerebro/sinonimos.json`) + sentido (multilingual-e5-base ONNX, só CPU, 2 threads; régua relativa com
+  `ANCORAS`) → fusão RRF → vizinhos do grafo → vida → filtros (área, âmbito, projeto, fonte, tipo, natureza, desde) e
+  permissões. Sem acerto forte volta vazio. Cada resultado traz `forca`, `veio_por` (exato/palavra/sentido/ligado a) e `procedencia`.
+- Modelo: ~280 MB baixado sozinho para `D:/Kanivete/KaniCode/modelos/multilingual-e5-base`; ~540 MB de RAM carregado,
+  SÓ no processo do KaniCode (os outros pedem pelo HTTP: `cerebro_motor.usar`), solto após 10 min parado. 1ª indexação
+  ~2,5 min em segundo plano (até lá responde só por palavra); depois só o que mudou.
+- Dois modos: automático (Kani/Pickle/Codex recebem `brain_context` no prompt via `ponto_de_partida`, sem saber que existe)
+  e agêntico (Claude/Codex chamam as ferramentas).
+- Perfis (`PERFIS`): kani/pickle 600 tokens, 3 itens, sem metadados; codex 1500; agente 4000 com citações. Qualquer cliente
+  pode declarar `orcamento_tokens`, `k`, `profundidade`, `detalhe` (curto/normal/completo), `citacoes`, `projeto`, `tarefa`.
+- Escrita: `brain_remember` → `propor()`: exige origem; duplicata (força ≥ 0,9 ou mesmo título) é recusada; parecido
+  (≥ 0,6), hipótese, sem certeza ou agente que só propõe → fila `cerebro/propostas.json` (`brain_proposals` aceita/recusa).
+  Naturezas: fato, hipotese, preferencia, decisao, temporario (`validade_dias` → vira obsoleto), obsoleto (fora da busca).
+  Toda escrita (porta nova e a ação `cerebro` antiga) fica em `cerebro/versoes.jsonl` → `brain_timeline`.
+- Permissões: `cerebro/agentes.json` (criado na 1ª vez, com chave HTTP aleatória por agente). Padrão: pailer/claude leem e
+  gravam tudo; kani/pickle leem tudo e só propõem; codex não vê `eu` e só vê memória cujo ASSUNTO (título/resumo) cita um cliente quando o `projeto` é daquele cliente (nomes: lobo clientes + `cerebro/clientes.json`);
+  visitante só kanivete/kanicode. Quem é vem da conexão (MCP `--agente`, chave HTTP), nunca do pedido.
+
+### Contratos (iguais nas três portas — `cerebro_motor.chamar(nome, args, agente)`)
+| Ferramenta | Campos | Devolve |
+|---|---|---|
+| brain_search | pergunta, k, modo (hibrido/lexical/semantica), projeto, area, ambito, fonte, tipo, natureza, desde, profundidade | lista de neurônios |
+| brain_get | ref | neurônio completo |
+| brain_expand | ref, profundidade | ligações (forte/assunto, passos) |
+| brain_timeline | ref ou tema, limite | versões + atividade |
+| brain_context | pergunta, perfil ou orçamento/k/… | {texto, tokens, itens} |
+| brain_remember | titulo, texto, origem, certeza, natureza, tipo, area, tags, projeto, ligar, validade_dias | guardado / proposto / parecido |
+| brain_update | ref, texto, titulo, natureza, … | ok (versão guardada) |
+| brain_proposals | (id, aceitar) | fila / decisão |
+| brain_status | — | estado do índice |
+- **Python**: `import cerebro_motor as cm; cm.buscar(...)`, `cm.contexto(...)`, `cm.propor(...)`.
+- **MCP**: no servidor `equipe` (Claude do KaniCode) e no `mcp_cerebro.py` (servidor `kanicode-brain`; registro do Codex no docstring).
+- **HTTP**: `cerebro_http.py`, `127.0.0.1:47620`, `POST /v1/<ferramenta>` com `Authorization: Bearer <chave>`; `GET /v1/status`, `/v1/tools`.
+
+### Voltar atrás
+`CEREBRO_MOTOR=v1` (variável de ambiente) volta à busca TF-IDF antiga em todas as portas antigas; se o motor falhar, a
+Kani cai sozinha na antiga. Apagar `indice.sqlite` só custa refazer os vetores.
+
+### Bancada (`py -3.13 tests/bancada_cerebro.py --modo todos [--validacao] [--contexto]`, só leitura)
+50 perguntas reais de calibragem + 15 de validação escritas depois (limites não ajustados para elas):
+| | calibragem @5 | validação @5 | falso+ |
+|---|---|---|---|
+| v1 (TF-IDF antigo) | 62% | 47% | 0 |
+| só palavra (FTS5) | 66% | 60% | 0 |
+| só sentido (e5-base) | 72% | 53% | 0–1 |
+| híbrido + grafo | 96% | 80% | 0 |
+Contexto: Kani recebe o neurônio certo em 96% (157 tokens em média); agente 96% (~1100). Consulta ~60 ms. (e5-small
+ficou em 86% na calibragem: trocado pelo base.) Testes: `py -3.13 tests/test_cerebro_motor.py` (as três portas iguais,
+isolamento, fila, versões, perfis).

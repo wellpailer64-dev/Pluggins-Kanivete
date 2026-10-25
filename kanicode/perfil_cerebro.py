@@ -297,7 +297,9 @@ def _fonte_proprios():
                "desc": n.get("texto", "")[:220], "texto": n.get("texto", "") + ("\nfonte: " + n["origem"] if n.get("origem") else ""),
                "projeto": n.get("projeto") or "Geral", "criado": n.get("criado") or time.time(), "links": n.get("ligar") or [],
                "area": n.get("area"), "tags": n.get("tags") or [], "certeza": n.get("certeza") or "pailer",
-               "ficha": n.get("ficha"), "atualizado": n.get("atualizado")}
+               "ficha": n.get("ficha"), "atualizado": n.get("atualizado"), "origem": n.get("origem"),
+               "natureza": ("obsoleto" if n.get("expira") and n["expira"] < time.time() else n.get("natureza") or "fato"),
+               "expira": n.get("expira")}
 
 
 _PC_CACHE = {"base": None, "quando": 0, "pastas": []}
@@ -808,14 +810,24 @@ def ponto_de_partida(tarefa="", limite=1200, quem="claude"):
     ferramenta): no máximo 2 neurônios com acerto FORTE para a tarefa; sem acerto, nada."""
     linhas = []
     if quem == "claude":
-        linhas.append("Cérebro do Pailer (ferramenta cerebro): use SÓ quando faltar uma informação dele (cliente, estilo, "
-                      "processo, preferência): acao=mapa (títulos) e depois consultar/ler. Sem acerto, siga sem ele. "
+        linhas.append("Cérebro do Pailer (brain_search/brain_context; ou cerebro acao=mapa): use SÓ quando faltar uma "
+                      "informação dele (cliente, estilo, processo, preferência). Sem acerto, siga sem ele. "
+                      "Memória nova: brain_remember (com origem e certeza). "
                       "Trabalho em curso: acao=projeto guarda/atualiza ficha curta só com mudanças confirmadas já disponíveis.")
         pend = _jler(os.path.join(PASTA, "pendencias.json"), [])
         if pend:
             linhas.append("Faxina pede corrigir/apagar memórias .md suas (depois cerebro acao=resolvida): "
                           + "; ".join(f"{p['titulo']} ({p['motivo'][:80]})" for p in pend[:3]))
+    elif tarefa.strip() and os.environ.get("CEREBRO_MOTOR") != "v1" and not quem.endswith("|v1"):
+        try:   # motor universal: contexto compacto pelo perfil de quem pede (Kani/Pickle 600 tokens, Codex 1500)
+            import cerebro_motor
+            perfil = quem if quem in cerebro_motor.PERFIS else "kani"
+            agente = quem if quem in cerebro_motor.agentes() else "kani"
+            return cerebro_motor.usar("brain_context", {"pergunta": tarefa, "perfil": perfil}, agente)["texto"][:limite]
+        except Exception:
+            return ponto_de_partida(tarefa, limite, quem + "|v1")   # motor fora do ar: a busca antiga
     elif tarefa.strip():
+        quem = quem.replace("|v1", "")
         rel = [r for r in consultar(tarefa, 2, marcar=True, quem=quem) if r["veio_por"] == "assunto" and r["forca"] >= .22]
         if rel:
             linhas.append("Do cérebro do Pailer (certeza; só o que bate com esta tarefa):")
@@ -928,11 +940,31 @@ def faxina_diaria():
     return faxina()
 
 
+def _com_versao(acao_feita, r, depois):
+    """toda escrita fica na linha do tempo do neurônio (cerebro/versoes.jsonl), venha da porta antiga ou da nova"""
+    if isinstance(r, dict) and (r.get("guardado") or r.get("ok")) and r.get("chave") and r.get("alterado") is not False:
+        try:
+            import cerebro_motor
+            cerebro_motor.versao(acao_feita, r["chave"], "claude", depois=depois)
+        except Exception:
+            pass
+    return r
+
+
 def acao(args):
     """porta única da ferramenta 'cerebro' (equipe)"""
     a = (args.get("acao") or "consultar").strip()
     if a == "consultar":
-        r = consultar(args.get("tema", ""), int(args.get("quantos") or 4), ambito=args.get("ambito"))
+        r = None
+        if os.environ.get("CEREBRO_MOTOR") != "v1":   # motor universal (palavra + sentido + grafo); v1 = TF-IDF antigo
+            try:
+                import cerebro_motor
+                r = cerebro_motor.usar("brain_search", {"pergunta": args.get("tema", ""), "k": int(args.get("quantos") or 4),
+                                                        "ambito": args.get("ambito")}, "claude")
+            except Exception:
+                r = None
+        if r is None:
+            r = consultar(args.get("tema", ""), int(args.get("quantos") or 4), ambito=args.get("ambito"))
         return r or {"nada": "o cérebro não tem isso com certeza — siga sem ele (ou pergunte ao Pailer)"}
     if a == "mapa":
         return mapa(args.get("area"), args.get("ambito"))
@@ -940,15 +972,18 @@ def acao(args):
         return classificar(args.get("ref"), args.get("ambitos"), args.get("finalidade"), args.get("origem"),
                            args.get("certeza"), args.get("agente"))
     if a == "projeto":
-        return projeto_em_andamento(args.get("projeto"), args.get("ficha"), args.get("origem"), args.get("certeza"),
-                                    args.get("ref"), args.get("area"), args.get("ligar"))
+        return _com_versao("projeto", projeto_em_andamento(args.get("projeto"), args.get("ficha"), args.get("origem"), args.get("certeza"),
+                                    args.get("ref"), args.get("area"), args.get("ligar")),
+                           {"ficha": args.get("ficha")} if (args.get("ficha") or {}) else {})
     if a == "ler":
         return ler_neuronio(args.get("ref"))
     if a == "guardar":
-        return guardar(args.get("titulo"), args.get("texto"), args.get("tipo") or "fato", args.get("area"), args.get("tags"),
-                       args.get("projeto"), args.get("origem"), args.get("ligar"), bool(args.get("forcar")), args.get("certeza"))
+        return _com_versao("guardou", guardar(args.get("titulo"), args.get("texto"), args.get("tipo") or "fato", args.get("area"), args.get("tags"),
+                       args.get("projeto"), args.get("origem"), args.get("ligar"), bool(args.get("forcar")), args.get("certeza")),
+                           {"titulo": args.get("titulo"), "texto": (args.get("texto") or "")[:2000]})
     if a == "atualizar":
-        return atualizar(args.get("ref"), args.get("texto"), args.get("titulo"), args.get("tipo"), args.get("area"), args.get("tags"))
+        return _com_versao("atualizou", atualizar(args.get("ref"), args.get("texto"), args.get("titulo"), args.get("tipo"),
+                                                  args.get("area"), args.get("tags")), {"texto": (args.get("texto") or "")[:2000]})
     if a in ("reforcar", "enfraquecer"):
         return reforcar(args.get("ref"), a == "reforcar")
     if a == "descartar":
