@@ -34,6 +34,78 @@
     <div class="todo-pe" id="todo-pe"><form id="todo-form"><label for="todo-titulo" id="todo-form-titulo">O que precisa ser feito?</label><input id="todo-titulo" required maxlength="300" placeholder="Adicionar uma tarefa…" autocomplete="off">   <div class="todo-campos"><label>Prazo · opcional<input type="date" id="todo-prazo"></label><button class="todo-botao" id="todo-salvar">Adicionar</button><button type="button" class="todo-editar" id="todo-cancelar" hidden>Cancelar</button></div></form></div>`;
   el('atv').append(painel); painel.inert = true; painel.setAttribute('aria-hidden', 'true');
   let aberto = false, aba = 'tarefas', editando = '', ocupado = false, timer = null, itens = [], rodada = 0;
+  const agenteTab=document.createElement('button'); agenteTab.id='todo-tab-agente'; agenteTab.textContent='Agente';
+  agenteTab.setAttribute('role','tab'); agenteTab.setAttribute('aria-selected','false'); agenteTab.setAttribute('aria-controls','todo-agente'); agenteTab.tabIndex=-1;
+  el('todo-tab-tarefas').after(agenteTab);
+  const agenteSec=document.createElement('section'); agenteSec.id='todo-agente'; agenteSec.hidden=true;
+  agenteSec.setAttribute('role','tabpanel'); agenteSec.setAttribute('aria-labelledby','todo-tab-agente');
+  agenteSec.innerHTML='<p class="todo-intro">Pedidos da fila e pendências combinadas com os agentes, ligados à mensagem original.</p><div id="todo-agente-lista"></div><details id="todo-agente-concluidas" hidden><summary id="todo-agente-total"></summary><div id="todo-agente-feitas"></div></details><div id="todo-agente-contexto" hidden></div>';
+  el('todo-tarefas').after(agenteSec);
+  let agenteContexto='';
+  const espelho=document.createElement('nav');espelho.id='todo-agente-espelho';espelho.hidden=true;
+  espelho.setAttribute('aria-label','Tarefas abertas do agente');el('status').before(espelho);
+  let agenteRodada=0;
+  async function agenteAbrir(id='') {
+    await window.kaniPainelDireito(true,'todo');navegar('agente',true);
+    if(id)agentePedido(id);
+  }
+  function agenteEspelhar(lista) {
+    el('status').before(espelho);
+    const abertas=lista.filter(i=>!i.concluida&&i.estado!=='cancelada');
+    espelho.replaceChildren();espelho.hidden=false;espelho.removeAttribute('title');
+    const total=document.createElement('button');total.className='todo-agente-contagem';
+    total.textContent='Agente · '+abertas.length;total.title='Abrir To-do do agente';total.onclick=()=>agenteAbrir();
+    const tags=document.createElement('div');tags.className='todo-agente-tags';
+    for(const i of abertas){
+      const tag=document.createElement('button');tag.className='todo-agente-tag';tag.dataset.tarefaAgente=i.id;
+      const titulo=String(i.titulo||'Tarefa').replace(/\s+/g,' ').trim();
+      tag.textContent=titulo.length>48?titulo.slice(0,47)+'…':titulo;tag.title=titulo;
+      tag.onclick=()=>agenteAbrir(i.id);tags.append(tag);
+    }
+    espelho.append(total,tags);
+  }
+  async function agenteCarregar() {
+    const numero=++agenteRodada;
+    try {
+      const lista=await api().todo_agente_listar();
+      if(numero!==agenteRodada||!Array.isArray(lista))return;
+      agenteEspelhar(lista);
+      if(aberto&&aba==='agente')agenteDesenhar(lista);
+    } catch(e) {espelho.title='Não foi possível atualizar as tarefas do agente.';}
+  }
+  async function agentePedido(id) {
+    agenteContexto=id;
+    try {
+      const i=await api().todo_agente_contexto(id);
+      if(agenteContexto!==id) return;
+      const caixa=el('todo-agente-contexto');caixa.replaceChildren();caixa.hidden=false;
+      const cab=document.createElement('b');cab.textContent='Pedido original · conversa '+i.aba;
+      const texto=document.createElement('pre');texto.textContent=i.texto;
+      const ir=document.createElement('button');ir.className='todo-editar';ir.textContent='Localizar na conversa';
+      ir.onclick=async()=>{const ok=await window.mensagemLocalizar?.(i);if(!ok)status('O pedido original está preservado acima. A mensagem não está carregada nesta conversa.');};
+      caixa.append(cab,texto,ir);
+    } catch(e) {status(String(e.message||e),true);}
+  }
+  function agenteDesenhar(lista) {
+    el('todo-agente-lista').replaceChildren();el('todo-agente-feitas').replaceChildren();
+    const estados={pendente:'Na fila',em_andamento:'Em andamento',a_conferir:'Conclusão a confirmar',adiada:'Para depois',falha:'Precisa retomar',concluida:'Concluída',cancelada:'Cancelada'};
+    const abertas=lista.filter(i=>!i.concluida&&i.estado!=='cancelada');
+    if(!abertas.length){const p=document.createElement('p');p.className='todo-vazio';p.textContent='Nenhuma pendência do agente.';el('todo-agente-lista').append(p);}
+    for(const i of lista){
+      const linha=document.createElement('div');linha.className='todo-linha'+(i.concluida?' feita':'');linha.dataset.tarefaAgente=i.id;
+      const check=document.createElement('input');check.type='checkbox';check.className='todo-check';check.checked=i.concluida;
+      check.setAttribute('aria-label',(i.concluida?'Reabrir ':'Concluir ')+i.titulo);
+      check.onchange=()=>executar(async()=>{await api().todo_agente_concluir(i.id,check.checked);await atualizar();});
+      const corpo=document.createElement('div');corpo.className='todo-textos';
+      const titulo=document.createElement('b');titulo.textContent=i.titulo;
+      const nota=document.createElement('small');nota.textContent=(estados[i.estado]||i.estado)+' · '+(i.agente||'agente')+' · conversa '+i.aba;
+      const origem=document.createElement('button');origem.className='todo-editar';origem.textContent='Ver pedido';origem.onclick=()=>agentePedido(i.id);
+      corpo.append(titulo,nota,origem);if(i.motivo&&!i.concluida){const motivo=document.createElement('small');motivo.textContent=i.motivo;corpo.append(motivo);}
+      linha.append(check,corpo);(i.concluida||i.estado==='cancelada'?el('todo-agente-feitas'):el('todo-agente-lista')).append(linha);
+    }
+    const feitas=lista.filter(i=>i.concluida||i.estado==='cancelada');
+    el('todo-agente-concluidas').hidden=!feitas.length;el('todo-agente-total').textContent='Finalizadas · '+feitas.length;
+  }
   const hoje = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const dataCurta = data => new Date(data + 'T12:00:00').toLocaleDateString('pt-BR', {day:'numeric', month:'short'});
   function status(texto = '', erro = false) { el('todo-status').textContent = texto; el('todo-status').classList.toggle('erro', erro); }
@@ -170,6 +242,7 @@
     const numero = ++rodada;
     try {
       if (aba === 'tarefas') { const r = await api().todo_listar(); if (numero === rodada) { itens = r; desenhar(); } }
+      else if (aba === 'agente') { await agenteCarregar(); }
       else if (aba === 'alarmes') { const r = await api().todo_alarmes(); if (numero === rodada) { alarmesItens = r; alarmesDesenhar(); } }
       else { const r = await api().todo_agenda(sync); if (numero === rodada) agenda(r); }
     } catch (e) { status(String(e.message || e), true); }
@@ -182,7 +255,7 @@
   }
   function navegar(nome, foco = false) {
     aba = nome; status();
-    for (const id of ['tarefas','agenda','alarmes']) { const b = el('todo-tab-' + id); b.setAttribute('aria-selected', String(id === nome)); b.tabIndex = id === nome ? 0 : -1; el('todo-' + id).hidden = id !== nome; } el('todo-pe').hidden = nome !== 'tarefas'; excluir = '';
+    for (const id of ['tarefas','agente','agenda','alarmes']) { const b = el('todo-tab-' + id); b.setAttribute('aria-selected', String(id === nome)); b.tabIndex = id === nome ? 0 : -1; el('todo-' + id).hidden = id !== nome; } el('todo-pe').hidden = nome !== 'tarefas'; excluir = '';
     if (foco) el('todo-tab-' + nome).focus(); atualizar();
   }
   painel.querySelectorAll('.todo-vista button').forEach(b => b.addEventListener('click', () => {
@@ -196,6 +269,7 @@
     if (aberto) timer = setInterval(() => { if (!ocupado && !document.hidden) atualizar(); }, 15000);
   }).observe(trilho, {attributes:true, attributeFilter:['aria-expanded']});
   el('todo-tab-tarefas').addEventListener('click', () => navegar('tarefas'));
+  agenteTab.addEventListener('click',()=>navegar('agente'));
   el('todo-tab-agenda').addEventListener('click', () => navegar('agenda'));
   el('todo-tab-alarmes').addEventListener('click', () => navegar('alarmes'));
   painel.querySelectorAll('.todo-dias button').forEach(b => b.addEventListener('click', () => {
@@ -206,8 +280,8 @@
   }));
   el('todo-lembrete-cancelar').addEventListener('click', alarmeCancelar);
   painel.querySelector('.todo-nav').addEventListener('keydown', e => {
-    const abas = ['tarefas','agenda','alarmes'], i = abas.indexOf(aba);
-    if (['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) { e.preventDefault(); navegar(e.key === 'Home' ? abas[0] : e.key === 'End' ? abas[2] : abas[(i + (e.key === 'ArrowRight' ? 1 : 2)) % 3], true); }
+    const abas = ['tarefas','agente','agenda','alarmes'], i = abas.indexOf(aba);
+    if (['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) { e.preventDefault(); navegar(e.key === 'Home' ? abas[0] : e.key === 'End' ? abas.at(-1) : abas[(i + (e.key === 'ArrowRight' ? 1 : abas.length-1)) % abas.length], true); }
   });
   el('todo-form').addEventListener('submit', e => { e.preventDefault(); executar(async () => { await api().todo_salvar(el('todo-titulo').value, el('todo-prazo').value, editando); cancelar(); await atualizar(); el('todo-titulo').focus(); }); });
   el('todo-cancelar').addEventListener('click', cancelar);
@@ -219,4 +293,10 @@
     alarmeCancelar(); el('todo-lembrete').open = false; await atualizar(); status(ed ? 'Alarme alterado.' : 'Lembrete salvo. Avisos pelo agendador da Kani.');
   }); });
   painel.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); window.kaniPainelDireito(false, 'todo'); trilho.focus(); } });
+  const eventoAntes=window.kcEv;
+  window.kcEv=ev=>{if(ev?.t==='todo_agente'){agenteCarregar();return;}return eventoAntes(ev);};
+  setInterval(()=>{if(!document.hidden&&!(aberto&&aba==='agente'))agenteCarregar();},15000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)agenteCarregar();});
+  window.addEventListener('pywebviewready',agenteCarregar);
+  if(window.pywebview?.api)agenteCarregar();
 })();

@@ -102,6 +102,48 @@ class AbasUiTest(unittest.TestCase):
         self.assertIn("Flyer montado", self.texto_conversa())
         self.assertEqual(self.erros, [])
 
+    def test_outro_aparelho_cria_renomeia_e_fecha(self):
+        """o evento "abas" do servidor: o que o celular faz aparece no PC na hora (e vice-versa)"""
+        p = self.page
+        lista = lambda *ids: [{"id": i, "quem": "claude", "nome": "", "ocupada": False} for i in ids]
+        # o celular criou a aba 2 (a do PC continua a 1)
+        p.evaluate("ABAS_T.lista.push({id: '2', quem: 'claude', nome: '', ocupada: false})")
+        self.ev({"t": "abas", "ativa": "1", "lista": lista("1", "2"), "aba": "1"})
+        p.wait_for_function("document.querySelectorAll('.aba-chat').length === 2 && KC_ABAS.ativa === '1'")
+        # mensagem enviada do celular na aba 2: o PC marca a aba como trabalhando, sem misturar na conversa
+        self.ev({"t": "eco_eu", "texto": "pedido do celular", "de": "movel-x", "aba": "2"})
+        self.ev({"t": "inicio", "aba": "2"})
+        p.wait_for_selector('.aba-chat[data-aba="2"] .aba-trab')
+        self.assertNotIn("pedido do celular", self.texto_conversa())
+        # renomeada lá
+        l = lista("1", "2"); l[1].update(nome="Do celular", manual=True)
+        self.ev({"t": "abas", "ativa": "1", "lista": l, "aba": "1"})
+        p.wait_for_function("document.querySelector('.aba-chat[data-aba=\"2\"] .aba-nome').textContent === 'Do celular'")
+        # trocar para a 2 mostra o que veio do celular (aba nunca aberta aqui: vem do disco)
+        p.evaluate("HIST['2'] = [{t: 'eu', texto: 'pedido do celular'}]")
+        p.click('.aba-chat[data-aba="2"] .aba-nome')
+        p.wait_for_function("KC_ABAS.ativa === '2'")
+        self.assertIn("pedido do celular", self.texto_conversa())
+        # o celular fechou a aba aberta aqui: o PC vai para a que o servidor escolheu
+        p.evaluate("ABAS_T.lista = ABAS_T.lista.filter(a => a.id !== '2'); ABAS_T.ativa = '1'")
+        self.ev({"t": "abas", "ativa": "1", "lista": lista("1"), "aba": "1"})
+        p.wait_for_function("KC_ABAS.ativa === '1' && document.querySelectorAll('.aba-chat').length === 1")
+        self.assertIn("pedido da aba um", self.texto_conversa())
+        self.assertNotIn("pedido do celular", self.texto_conversa())
+        self.assertEqual(self.erros, [])
+
+    def test_evento_abas_durante_troca_espera(self):
+        p = self.page
+        p.click(".aba-mais")   # o próprio aba_nova manda o evento no meio da troca
+        p.evaluate("KC_ABAS.mudando = true")
+        self.ev({"t": "abas", "ativa": "2", "lista": [{"id": "1", "quem": "pickle", "nome": "", "ocupada": False},
+                                                      {"id": "2", "quem": "pickle", "nome": "", "ocupada": False},
+                                                      {"id": "3", "quem": "claude", "nome": "", "ocupada": False}], "aba": "1"})
+        self.assertEqual(p.locator(".aba-chat").count(), 2)
+        p.evaluate("KC_ABAS.mudando = false; KC_ABAS.reconectou()")
+        p.wait_for_function("document.querySelectorAll('.aba-chat').length === 2")   # lista real do servidor vence
+        self.assertEqual(self.erros, [])
+
     def test_atalhos_e_renomear(self):
         p = self.page
         p.keyboard.press("Control+n")

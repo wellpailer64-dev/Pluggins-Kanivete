@@ -44,6 +44,9 @@
     } catch (e) { if (minha === versao) itens.textContent = 'Não foi possível consultar o mapa: ' + (e.message || e); }
   }
   botao.onclick = () => { painel.hidden = !painel.hidden; if (!painel.hidden) carregarMapa(); };
+  window.KCMapaD = { abrir: (local = 'D:/') => {
+    pasta = local; busca.value = ''; painel.hidden = false; carregarMapa();
+  } };
   painel.querySelector('header button').onclick = () => { painel.hidden = true; versao++; };
   painel.querySelector('form').onsubmit = e => { e.preventDefault(); carregarMapa(); };
   painel.querySelector('nav button').onclick = () => {

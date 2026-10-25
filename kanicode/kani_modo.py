@@ -22,6 +22,7 @@ FERRAMENTAS = {
     "responder": "Responde ao Pailer e TERMINA. args: {mensagem}",
     "passar_para_claude": "Passa ao Claude e TERMINA quando faltar ferramenta ou a tarefa for complexa demais. Código pode ser feito por codigo_ na cópia. args: {motivo}",
     "todo_listar": "Consulta a lista pessoal de tarefas do Pailer. args: {}",
+    "tarefa_agente": "To-do do agente, separado do pessoal. Use a ref do turno para anotar pendência (ref,titulo), adiar o pedido incompleto (ref,motivo), concluir tarefa conferida (ref,motivo), listar ou ler(ref). args: {acao: listar|ler|anotar|adiar|concluir|reabrir, ref, titulo, motivo}",
     "todo_salvar": "Salva uma tarefa pessoal quando pedida ou combinada com o Pailer; nunca anota etapas internas do seu trabalho. Para editar use o ID existente. Prazo opcional AAAA-MM-DD. args: {titulo, prazo: opcional, id: opcional}",
     "todo_concluir": "Conclui ou reabre tarefa pessoal quando o Pailer pedir. args: {id, concluida: true ou false}",
     "todo_agenda": "Consulta lembretes locais e eventos dos calendários conectados nos próximos sete dias. args: {}",
@@ -69,7 +70,8 @@ FERRAMENTAS = {
     "whatsapp_conversas": "Lista as conversas e grupos do WhatsApp do Pailer (filtra por parte do nome). args: {busca}",
     "whatsapp_ler": "Lê as últimas mensagens de uma conversa ou grupo do WhatsApp. args: {conversa: parte do nome, n: quantas}",
     "whatsapp_enviar": "Manda uma mensagem de texto numa conversa ou grupo do WhatsApp (abre a conversa certa, confere o nome e envia). "
-                       "SÓ quando o Pailer pediu para mandar. args: {conversa: parte do nome, texto}",
+                       "SÓ quando o Pailer pediu para mandar. Para mandar um arquivo (foto, PDF, vídeo), ponha o caminho em arquivo. "
+                       "args: {conversa: parte do nome, texto, arquivo: caminho opcional}",
     "rodar_comando": "Roda um comando do PowerShell no computador do Pailer (py -3.13 ..., git status, listar, copiar, ffmpeg...). "
                      "Devolve a saída. args: {comando, pasta: onde rodar (padrão: a pasta do projeto)}",
     "rodar_js_kanivete": "Roda JavaScript DENTRO do app KANIVETE aberto (KNV = Photo, VKN = Vetor, SDK = Slider, SKN = Sound, "
@@ -115,7 +117,7 @@ FERRAMENTAS = {
 FERRAMENTAS.update(codigo_agente.FERRAMENTAS)
 # só para o agente forte (Big Pickle): a Kani local (4B) fica com as ferramentas guiadas
 PODER = ("rodar_comando", "rodar_js_kanivete", "escrever_arquivo", "plano")
-SOMENTE_LEITURA = {"mapa_d", "buscar_arquivos", "previsao_tempo", "gmail_buscar", "gmail_ler", "drive_buscar", "responder", "passar_para_claude", "espaco_disco", "listar_pasta", "ler_arquivo",
+SOMENTE_LEITURA = {"tarefa_agente", "mapa_d", "buscar_arquivos", "previsao_tempo", "gmail_buscar", "gmail_ler", "drive_buscar", "responder", "passar_para_claude", "espaco_disco", "listar_pasta", "ler_arquivo",
                    "procurar_no_codigo", "buscar_no_mapa", "demandas_panda", "git_resumo", "consultar_receita",
                    "ver_kanivete", "ver_kanibrowser", "programas_abertos", "ler_kani", "ler_site", "whatsapp_conversas", "whatsapp_ler", "imagens_kani"}
 
@@ -362,6 +364,10 @@ def _executar(acao, a, pasta):
             return json.dumps(operacoes[acao](), ensure_ascii=False)
         except (google_drive.FalhaDrive, OSError, ValueError, TypeError) as e:
             return 'NÃO FEITO: ' + str(e)
+    if acao == 'tarefa_agente':
+        import tarefas_agente
+        try: return json.dumps(tarefas_agente.acao(a),ensure_ascii=False)
+        except (ValueError, OSError) as e: return 'NÃO FEITO: '+str(e)
     if acao in ("todo_listar", "todo_salvar", "todo_concluir", "todo_agenda", "todo_lembrar", "todo_alarmes", "todo_alarme_editar", "todo_alarme_apagar"):
         import tarefas
         operacoes = {
@@ -510,11 +516,14 @@ def _executar(acao, a, pasta):
                 cmd += ["--n", str(int(a.get("n") or 15))]
             else:
                 texto = str(a.get("texto") or a.get("mensagem") or "").strip()
-                if not texto:
+                anexo = str(a.get("arquivo") or "").strip()
+                if not texto and not anexo:
                     raise ValueError("faltou o texto da mensagem")
+                if anexo and not os.path.isfile(anexo):
+                    return "NÃO FEITO: arquivo não existe: " + anexo
                 if not _PODE_ENVIAR.search(pedido_atual[0]):
                     return "NÃO FEITO: o Pailer não pediu para mandar mensagem. Pergunte antes (com responder)."
-                cmd += ["--texto", texto.replace(chr(10), "\n")]
+                cmd += ["--texto", texto.replace(chr(10), "\n")] + (["--arquivo", anexo] if anexo else [])
         r = _rodar(cmd, cwd=os.path.dirname(WA), prazo=120).strip()
         return (r[:3000] or "nada") if not r.startswith("ERRO") else r[:800]
     if acao == "escrever_kani":
@@ -1317,7 +1326,7 @@ def compactar(msgs, limite=16000, manter=2):
     return msgs
 
 
-def _chamar(msgs, porta, schema=None):
+def _chamar(msgs, porta, schema=None, com_uso=False):
     corpo = {"messages": msgs, "temperature": 0.3, "max_tokens": 1600, "stream": False,
              "chat_template_kwargs": {"enable_thinking": False}, "response_format": {"type": "json_object", "schema": schema or _SCHEMA}}
     req = urllib.request.Request(f"http://127.0.0.1:{porta}/v1/chat/completions", json.dumps(corpo).encode("utf-8"),
@@ -1326,6 +1335,8 @@ def _chamar(msgs, porta, schema=None):
         d = json.loads(r.read().decode("utf-8"))
     out = d["choices"][0]["message"]["content"]
     tok = (d.get("usage") or {}).get("total_tokens") or 0
+    if com_uso:   # orquestração: JSON estrito e contagem separada, sem extrair trechos de texto
+        return json.loads(out), d.get("usage") or {"total_tokens": tok}
     try:
         return json.loads(out), tok
     except ValueError:
@@ -1389,11 +1400,16 @@ class _Presenca:
 
 
 def rodar(*args, **kw):
+    motor = kw.get("motor", args[6] if len(args) > 6 else None)
+    executar = _rodar_pedido
+    if motor is None:
+        import kani_etapas
+        executar = lambda *a, **k: kani_etapas.rodar(sys.modules[__name__], *a, **k)
     if os.environ.get("KANICODE_TESTE") == "1":
-        return _rodar_pedido(*args, **kw)
+        return executar(*args, **kw)
     p = _Presenca()
     try:
-        return _rodar_pedido(*args, **kw)
+        return executar(*args, **kw)
     finally:
         p.fechar()
 
@@ -1442,6 +1458,16 @@ def _rodar_pedido(pedido, pasta, ao_evento, historico=None, por_voz=False, parar
     if motor is not None:
         sis = motor.sistema(pasta, permitidas, por_voz)
     sis += organizacao_pailer.contexto(pedido)
+    try:
+        from tarefas_agente import contexto
+        sis += '\n\n' + contexto(pasta,pedido)
+    except Exception:
+        pass
+    try:
+        import perfil_cerebro
+        sis += "\n\n" + perfil_cerebro.ponto_de_partida(pedido, 1400, quem="kani" if motor is None else "pickle")
+    except Exception:
+        pass
     msgs = [{"role": "system", "content": sis}]
     for m in (historico or [])[-16:]:
         msgs.append({"role": m["role"], "content": str(m["content"])[:500]})

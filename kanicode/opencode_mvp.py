@@ -9,6 +9,18 @@ import tempfile
 import threading
 
 MODELO = "opencode/big-pickle"
+# Modelos gratuitos do OpenCode Zen que o Pailer pode escolher no seletor (id → nome curto).
+GRATIS = {"opencode/big-pickle": "Big Pickle", "opencode/minimax-m3.1-flash-free": "MiniMax",
+          "opencode/deepseek-v4.1-flash-free": "DeepSeek", "opencode/glm-5.3-flash-free": "GLM",
+          "opencode/mimo-v2.6-flash-free": "MiMo"}
+
+
+def definir_modelo(modelo):
+    """Troca o modelo usado daqui em diante; só aceita os gratuitos da lista."""
+    global MODELO
+    if modelo in GRATIS:
+        MODELO = modelo
+    return MODELO
 BASE = Path(r"D:\kanivete_testes\opencode_mvp")
 _TRAVA = threading.Lock()
 
@@ -37,7 +49,7 @@ def executavel():
 
 def info():
     pronto = bool(executavel())
-    return {"disponivel": pronto, "modelo": MODELO,
+    return {"disponivel": pronto, "modelo": MODELO, "nome": GRATIS.get(MODELO, MODELO), "gratis": GRATIS,
             "mensagem": "Cliente encontrado. Envie uma pergunta para testar." if pronto else
             "Cliente OpenCode não encontrado. Este MVP exige opencode.exe no PATH ou KANICODE_OPENCODE_EXE apontando para ele."}
 

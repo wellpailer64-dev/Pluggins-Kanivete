@@ -28,6 +28,10 @@
 .todo-textos b { display: block; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 .todo-textos small { display: block; font-size: 10px; color: var(--fraco); margin-top: 3px; }
 .todo-linha.feita b { text-decoration: line-through; color: var(--fraco); }
+#todo-agente-contexto { margin-top: 14px; padding: 10px; border: 1px solid var(--borda); border-radius: 8px; }
+#todo-agente-contexto b { font-size: 11px; }
+#todo-agente-contexto pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font: 11px/1.5 var(--sans); }
+#todo-agente .todo-editar { margin-top: 5px; }
 .todo-editar { border: 0; background: none; color: var(--fraco); cursor: pointer; padding: 0 3px; font-size: 12px; }
 .todo-grupo { margin: 18px 0 0; color: var(--fraco); font-size: 10px; font-weight: 600; letter-spacing: .7px; text-transform: uppercase; }
 .todo-vazio { color: var(--fraco); font-size: 12px; line-height: 1.6; padding: 16px 0; }
@@ -62,3 +66,11 @@ html.movel #todo-painel button { min-height: 36px; }
 .todo-dias button[aria-pressed=true] { background: #243021; color: var(--lima); border-color: var(--lima); }
 #todo-lembrete-form label { margin-top: 8px; }
 .todo-excluir.confirmar { color: #ff7b7b; }
+/* Espelho da lista do agente acima do Pronto; uma única linha também no celular. */
+#todo-agente-espelho {display:flex;align-items:center;gap:7px;height:27px;min-width:0;flex:none;padding:0 12px;border-top:1px solid var(--borda);background:var(--fundo,#101512)}
+#todo-agente-espelho[hidden] {display:none}
+#todo-agente-espelho button {font:10px var(--sans);color:var(--fraco);cursor:pointer;white-space:nowrap}
+.todo-agente-contagem {flex:none;background:none;border:0;padding:3px 0}
+.todo-agente-tags {display:flex;align-items:center;gap:5px;min-width:0;overflow-x:auto;scrollbar-width:thin}
+.todo-agente-tag {flex:none;max-width:190px;overflow:hidden;text-overflow:ellipsis;border:1px solid var(--borda);border-radius:9px;padding:2px 7px;background:#20291e}
+#todo-agente-espelho button:hover,#todo-agente-espelho button:focus-visible {color:var(--lima);border-color:var(--lima)}

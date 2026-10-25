@@ -6,7 +6,16 @@ import base64, json, os, shutil, subprocess, sys
 
 import kanicode as kc
 
-API_KANIVETE = ("estado", "abrir", "fechar", "garantir", "atalhos", "atalho", "fundo")
+API_KANIVETE = ("estado", "abrir", "fechar", "garantir", "atalhos", "atalho", "fundo", "progresso", "progresso_observador")
+
+
+def progresso(itens):
+    return kc.avisar('progresso ' + json.dumps(itens[:64], ensure_ascii=False)) == 'ok'
+
+
+def progresso_observador():
+    with open(os.path.join(kc.PASTA, 'progresso_kanivete.js'), encoding='utf-8') as f:
+        return f.read()
 
 
 def estado():

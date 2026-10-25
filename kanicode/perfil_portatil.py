@@ -15,7 +15,7 @@ from dados_app import pasta_dados
 DADOS = pasta_dados()
 LIMITE = 20 * 1024 * 1024
 CHAVES_ESTADO = {'quem', 'fixa', 'sons_bolinha'}
-PASTAS = {'regras': {'.md'}, 'licoes': {'.jsonl'}, 'preferencias': {'.json', '.md'}, 'contratos': {'.json', '.md'}}
+PASTAS = {'regras': {'.md'}, 'licoes': {'.jsonl'}, 'preferencias': {'.json', '.md'}, 'contratos': {'.json', '.md'}, 'cerebro': {'.json', '.jsonl', '.md'}}
 EXCLUIDOS = ['Credenciais e autorizações de contas', 'Conversas e sessões em andamento', 'Caminhos de projetos e dispositivos',
              'Mapa do disco, caches e modelos de IA', 'Código das ferramentas integradas (pertence à instalação)']
 
@@ -49,7 +49,7 @@ def _permitido(nome):
     if any(re.match(r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', parte, re.I) for parte in p.parts): return False
     if not isinstance(nome,str) or '\\' in nome or ':' in nome or p.is_absolute() or '..' in p.parts or p.as_posix() != nome:
         return False
-    if nome in ('estado_portatil.json','kani_notas.md','rotinas.json'): return True
+    if nome in ('estado_portatil.json','kani_notas.md','rotinas.json','perfil/usuario.json'): return True
     return len(p.parts)>1 and p.parts[0] in PASTAS and p.suffix.lower() in PASTAS[p.parts[0]] and not any(x.startswith('.') for x in p.parts)
 
 
@@ -70,6 +70,10 @@ def _validar_conteudo(nome, texto):
     if nome.endswith('.json'):
         valor = json.loads(texto)
         if not isinstance(valor,(dict,list)): raise ValueError('JSON de perfil inválido: '+nome)
+        if nome=='perfil/usuario.json':
+            from perfil_usuario import CAMPOS
+            if not isinstance(valor,dict) or set(valor)-set(CAMPOS) or any(not isinstance(v,str) or len(v)>200 for v in valor.values()):
+                raise ValueError('Cadastro do perfil inválido.')
         if nome=='estado_portatil.json':
             if not isinstance(valor,dict) or set(valor)-CHAVES_ESTADO: raise ValueError('Configuração de máquina ou conta não pode ser restaurada pelo perfil.')
             if 'quem' in valor and valor['quem'] not in ('claude','codex','kani','pickle'): raise ValueError('Agente padrão inválido.')
@@ -107,7 +111,7 @@ def coletar(dados=DADOS, app=APP):
     dados, app = Path(dados), Path(app)
     estado = _ler(dados/'estado.json', {})
     itens = {'estado_portatil.json': _json({k:v for k,v in estado.items() if k in CHAVES_ESTADO})}
-    candidatos = [dados/'kani_notas.md']
+    candidatos = [dados/'kani_notas.md', dados/'perfil/usuario.json']
     for nome, extensoes in PASTAS.items():
         base = dados/nome
         if base.exists(): candidatos += [p for p in base.rglob('*') if p.is_file() and p.suffix.lower() in extensoes]
@@ -117,6 +121,14 @@ def coletar(dados=DADOS, app=APP):
         _destino(nome,dados)
         if p.stat().st_size>2*1024*1024: raise ValueError('Arquivo grande demais: '+nome)
         itens[nome] = p.read_text(encoding='utf-8')
+    # Memórias das contas viram referências portáteis, sem levar a conta ou seus tokens.
+    for p in sorted((dados/'contas').glob('*/projects/*/memory/*.md')):
+        if p.name.upper()=='MEMORY.MD': continue
+        _destino(p.relative_to(dados).as_posix(),dados)
+        if p.stat().st_size>2*1024*1024: raise ValueError('Memória grande demais: '+p.name)
+        projeto=p.parent.parent.name
+        nome='cerebro/memorias/'+projeto+'/'+p.name
+        itens[nome]=p.read_text(encoding='utf-8')
     rotinas = {}
     for p in [app/'rotinas.json', dados/'perfil/rotinas.json']:
         obj = _ler(p,{})

@@ -49,6 +49,14 @@
   .msg.kc pre { background: #0B0E0D; border: 1px solid var(--borda); border-radius: 6px; padding: 8px; overflow-x: auto; margin: 4px 0 6px; }
   .msg.kc pre code { border: 0; padding: 0; background: none; white-space: pre; }
   .msg.kc a { color: var(--lima); }
+  .msg.kc, .msg.aju { position: relative; }
+  .msg-acoes { display: flex; gap: 4px; justify-content: flex-end; margin: 4px -4px -4px 0; opacity: 0; transition: opacity .15s; }
+  .msg:hover > .msg-acoes, .msg-acoes:focus-within, .msg-acoes .on { opacity: 1; }
+  .msg:hover > .msg-acoes .on, .msg-acoes .on { opacity: 1; }
+  .msg-acoes button { font: 12px var(--ui, inherit); background: transparent; color: var(--fraco, #8A9690); border: 1px solid transparent; border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+  .msg-acoes button:hover, .msg-acoes button:focus-visible { color: var(--lima); border-color: var(--borda); }
+  .msg-acoes button.on { color: var(--lima); }
+  @media (hover: none) { .msg-acoes { opacity: .7; } }
   .msg.kc table { border-collapse: collapse; font-size: 12.5px; margin: 4px 0; display: block; overflow-x: auto; }
   .msg.kc td, .msg.kc th { border: 1px solid var(--borda); padding: 2px 6px; }
   .msg.sis { align-self: center; color: var(--fraco); font-size: 12.5px; background: none; border: 0; text-align: center; white-space: pre-wrap; }
@@ -206,6 +214,10 @@
   .menu-quem div:hover, .menu-quem div.on { background: #1F2723; }
   .menu-quem b { font-size: 13px; display: block; }
   .menu-quem small { color: var(--fraco); font-size: 12px; }
+  .menu-quem .mods { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .menu-quem .mods button { font: 600 11px var(--mono); padding: 2px 7px; border-radius: 99px; border: 1px solid var(--borda); background: transparent; color: var(--fraco); cursor: pointer; }
+  .menu-quem .mods button:hover { color: var(--texto, #fff); border-color: var(--cor); }
+  .menu-quem .mods button.on { background: var(--cor); border-color: var(--cor); color: #0E1110; }
   .menu-quem .av { width: 26px; height: 26px; } .menu-quem .av::before { display: none; }
   .menu-quem .cl { position: absolute; inset: 3px; border-radius: 50%; background: var(--lima); color: var(--fundo); display: grid; place-items: center; font: 700 9px var(--mono); }
   /* habilidades 🧰 */
@@ -393,7 +405,7 @@
 <link rel="stylesheet" href="navegador.css">
 </head>
 <body>
-  <div class="topo pywebview-drag-region">
+  <div class="topo pywebview-drag-region" title="Duplo clique para maximizar ou restaurar a janela">
     <span class="marca">Kc</span><span class="nome">KaniCode</span>
     <span class="esp pywebview-drag-region"></span>
     <div class="janela-bolas">
@@ -409,7 +421,7 @@
     <div id="pastas-ativas" class="pastas-ativas" aria-live="polite"></div>
   </nav>
   <div class="corpo">
-    <div class="lado" id="lado" title=""><div id="lado-contas" style="display:flex;flex-direction:column;gap:22px;align-items:center"></div>
+    <div class="lado" id="lado" title=""><button class="perfil-bt" id="perfil-bt" aria-label="Meu perfil" title="Meu perfil"><span id="perfil-bt-ini">P</span></button><span class="perfil-div"></span><div id="lado-contas" style="display:flex;flex-direction:column;gap:22px;align-items:center"></div>
       <button class="mais" id="lado-mais" title="Entrar com outra conta do Claude">＋</button><span class="esp2"></span>
       <button class="mais ajustes" id="lado-aj" aria-label="Contas do Claude" title="Contas do Claude"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg></button></div>
     <div class="meio"><div class="saudacao" id="saudacao" hidden>Olá, Pailer.</div><div class="conversa" id="conversa"></div><div class="equipe" id="equipe"></div></div>
@@ -455,6 +467,7 @@
       <h3 class="menu-titulo">VOZ E SOM</h3>
     <button class="bt" id="voz" title="Ativar ou desativar Ei Kani"><span class="icone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v2a6 6 0 0 0 12 0v-2M12 19v3m-3 0h6"/></svg></span><span>Ei Kani</span></button>
     <button class="bt" id="som" title="Sons suaves das ações"><span class="icone">◖</span><span>Sons das ações</span></button>
+    <button class="bt" id="fala-sempre" title="Ligado: a bolinha lê as respostas sempre. Desligado: só com a janela minimizada" aria-pressed="false"><span class="icone">🔈</span><span>Falar sempre</span></button>
     </section>
     <section class="ferramentas-grupo" id="config-perfil" aria-label="Preferências">
       <h3 class="menu-titulo">PREFERÊNCIAS</h3>
@@ -562,6 +575,15 @@
     kani: { nome: 'Kani', cor: '#F27FB2', av: '<img src="kani.webp" alt="">', desc: 'Modo Kani: local e grátis, em etapas (disco, pastas, arquivos, demandas); passa ao Claude o que for difícil' },
     pickle: { nome: 'Big Pickle', cor: '#B8D98A', av: '<img src="pickle.webp" alt="">', desc: 'Online pelo OpenCode · consultas, navegação e código em cópia isolada. Você revisa antes de aplicar. Envia pedidos, histórico e resultados ao provedor; evite dados confidenciais. Gratuidade sujeita à disponibilidade.' },
   };
+  // modelo grátis do OpenCode usado pelo Big Pickle (MiniMax, DeepSeek...): o nome do agente acompanha a escolha
+  const PICKLE = { modelo: 'opencode/big-pickle', gratis: { 'opencode/big-pickle': 'Big Pickle' } };
+  function pickleInfo(i) {
+    if (!i) return;
+    PICKLE.modelo = i.modelo || PICKLE.modelo; PICKLE.gratis = i.gratis || PICKLE.gratis;
+    EQUIPE.pickle.nome = PICKLE.gratis[PICKLE.modelo] || 'Big Pickle';
+    if (K.quem === 'pickle') quemDefinir('pickle', false);
+  }
+  window.addEventListener('pywebviewready', () => api().pickle_modelo && api().pickle_modelo().then(pickleInfo).catch(() => {}));
   const AJ = {};   // ajudantes em ação: quem → {el, t0, tokens, timer}
   K.quem = 'claude';
   K.cotaCodex = null; K.tokCodex = 0; K.tokKani = 0;
@@ -629,6 +651,33 @@
   // ── montar a conversa ──
   const fim = () => { conversa.scrollTop = conversa.scrollHeight; };
   const perto = () => conversa.scrollHeight - conversa.scrollTop - conversa.clientHeight < 80;
+  // ⧉ copiar a mensagem inteira / 🔊 ouvir com a voz da Kani (o texto original fica guardado, não o HTML)
+  const MSG_BRUTO = new WeakMap();
+  function acoesMsg(d, bruto) {
+    MSG_BRUTO.set(d, String(bruto || ''));
+    if (d.lastElementChild && d.lastElementChild.classList.contains('msg-acoes')) return d;
+    const a = document.createElement('div'); a.className = 'msg-acoes';
+    a.innerHTML = '<button type="button" data-msg-acao="copiar" title="Copiar a mensagem inteira" aria-label="Copiar a mensagem">⧉</button>' +
+      (window.KC_MOVEL ? '' : '<button type="button" data-msg-acao="ouvir" title="Ouvir com a voz da Kani (de novo para parar)" aria-label="Ouvir a mensagem">🔊</button>');
+    d.appendChild(a);
+    return d;
+  }
+  conversa.addEventListener('click', async e => {
+    const b = e.target.closest('[data-msg-acao]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const d = b.closest('.msg'), t = MSG_BRUTO.get(d) ?? d.innerText;
+    try {
+      if (b.dataset.msgAcao === 'copiar') {
+        if (window.KC_MOVEL) await navigator.clipboard.writeText(t); else await api().resposta_copiar_texto(t);
+        b.textContent = '✓'; setTimeout(() => { if (b.isConnected) b.textContent = '⧉'; }, 1500);
+      } else {
+        const r = await api().falar_texto(t);
+        if (r && r.erro) throw Error(r.erro);
+        conversa.querySelectorAll('[data-msg-acao="ouvir"].on').forEach(x => x.classList.remove('on'));
+        b.classList.toggle('on', !!(r && r.falando));
+      }
+    } catch (err) { bolha('erro', 'Não deu: ' + (err?.message || err)); }
+  });
   function bolha(tipo, html) {
     const d = document.createElement('div');
     d.className = 'msg ' + tipo;
@@ -1064,6 +1113,7 @@
 
   // ── quem responde ──
   function quemDefinir(q, gravar = true) {
+    const antes = K.quem;
     K.quem = EQUIPE[q] ? q : 'claude';
     const e = EQUIPE[K.quem];
     $('quem-bt').style.setProperty('--cor', e.cor);
@@ -1072,16 +1122,26 @@
     texto.placeholder = K.quem === 'claude' ? 'Fale com o Claude…  ( / mostra os comandos )' : `Fale direto com ${e.nome === 'Kani' ? 'a' : 'o'} ${e.nome}…`;
     cotas();
     window.dispatchEvent(new Event('kc-agente'));
-    if (gravar) api().quem(K.quem).then(() => carregar()); else api().bola_quem(K.quem);
+    if (!gravar) { api().bola_quem(K.quem); return; }
+    // conversa em andamento: fica na tela e o novo agente recebe o fio dela no próximo pedido (passagem.py)
+    if (antes && antes !== K.quem && conversa.querySelector('.msg.eu')) {
+      api().quem(K.quem).then(() => { if (K.quem === 'claude' && !K.comandos.length) api().preparar(); }).then(() => bolha('sis', `↪ Agora com ${e.nome === 'Kani' ? 'a' : 'o'} ${e.nome}. ${e.nome === 'Kani' ? 'Ela' : 'Ele'} recebe o que foi feito nesta conversa e continua daí.`));
+      fim();
+    } else api().quem(K.quem).then(() => carregar());
   }
   function menuQuem() {
     const m = $('menu-quem');
     if (!m.hidden) { m.hidden = true; return; }
     m.innerHTML = Object.entries(EQUIPE).map(([k, e]) => `<div data-q="${k}" class="${k === K.quem ? 'on' : ''}" style="--cor:${e.cor}">
-        <span class="av">${e.av}</span><span><b>${e.nome}</b><small>${e.desc}</small></span></div>`).join('');
+        <span class="av">${e.av}</span><span><b>${e.nome}</b><small>${e.desc}</small>${k === 'pickle' ? `<span class="mods">${
+          Object.entries(PICKLE.gratis).map(([id, n]) => `<button type="button" data-mod="${esc(id)}" class="${id === PICKLE.modelo ? 'on' : ''}" title="${esc(id)} · grátis">${esc(n)}</button>`).join('')}</span>` : ''}</span></div>`).join('');
     m.hidden = false;
     $('quem-bt').setAttribute('aria-expanded', 'true');
   }
+  $('menu-quem').addEventListener('click', e => {   // chip de modelo grátis: troca o modelo e já escolhe o Big Pickle
+    const b = e.target.closest('[data-mod]');
+    if (b && !K.ocupada) api().pickle_modelo(b.dataset.mod).then(pickleInfo).catch(() => {});
+  }, true);
   $('menu-quem').addEventListener('click', e => { const d = e.target.closest('[data-q]'); if (d && !K.ocupada) { quemDefinir(d.dataset.q); $('menu-quem').hidden = true; $('quem-bt').setAttribute('aria-expanded', 'false'); } });
   function bolhaAjudante(quem, t, ok) {
     const e = EQUIPE[quem];
@@ -1089,6 +1149,7 @@
     d.className = 'msg aju';
     d.style.setProperty('--cor', ok ? e.cor : 'var(--erro)');
     d.innerHTML = `<div class="quem">${e.av.replace('class="cl"', 'class="cx"')}${e.nome}</div>` + md(t || '');
+    acoesMsg(d, t);
     conversa.appendChild(d);
     return d;
   }
@@ -1432,7 +1493,7 @@
       case 'texto':
         if (!K.bolha) { K.bolha = bolha('kc', ''); K.bruto = ''; }
         K.bruto += ev.d;
-        K.bolha.innerHTML = md(K.bruto);
+        K.bolha.innerHTML = md(K.bruto); acoesMsg(K.bolha, K.bruto);
         break;
       case 'uso':
         if (ev.novo) { K.tokFeitos += K.tokMsg; K.tokMsg = 0; }
@@ -1456,9 +1517,10 @@
         if (ev.quem === K.quem && K.quem !== 'claude' && ev.fase !== 'fim') atividade(ev.texto || 'Trabalhando');
         break;
       case 'pickle_progresso': bolha('sis', esc(ev.texto || '')); break;
-      case 'kani_pensando': atividade((K.quem === 'pickle' ? 'Big Pickle' : 'Kani') + ' pensando no próximo passo'); break;
+      case 'kani_pensando': atividade((K.quem === 'pickle' ? EQUIPE.pickle.nome : 'Kani') + ' pensando no próximo passo'); break;
       case 'kani_plano': plano(ev); break;
-      case 'kani_estado': atividade((K.quem === 'pickle' ? 'Big Pickle' : 'Kani') + ' ' + (ev.texto || 'trabalhando')); break;
+      case 'kani_checkpoint': window.KaniExecucoes?.receber(ev, conversa); break;
+      case 'kani_estado': atividade((K.quem === 'pickle' ? EQUIPE.pickle.nome : 'Kani') + ' ' + (ev.texto || 'trabalhando')); break;
       case 'licao': if (ev.nova) bolha('sis', '📌 Lição guardada para as próximas tarefas: ' + ev.texto); break;
       case 'ajudante_resposta':
         bolhaAjudante(ev.quem, ev.texto, ev.ok);
@@ -1485,6 +1547,10 @@
         if (ev.erro) { bolha('erro', 'O Claude Code fechou:\n' + ev.erro + (ev.diagnostico ? '\nDiagnóstico: ' + ev.diagnostico : '') + '\nAo continuar, o Claude receberá o registro de retomada para conferir o projeto.'); som('erro'); }
         break;
       case 'aviso': console.warn(ev.texto); bolha('sis', ev.texto); break;
+      case 'microfone_prioridade':
+        window.KC_MICROFONE_ATIVO = !!ev.ativo;
+        window.dispatchEvent(new Event('kc-microfone'));
+        break;
       case 'voz': vozEv(ev); break;
     }
     if (colar) fim();
@@ -1599,7 +1665,7 @@
       else if (ev.t === 'ajudante_resposta') { bolhaAjudante(ev.quem, ev.texto, ev.ok); window.kcEv({t:'historico_turno'}); }
       else if (['codex_progresso', 'codex_alteracao', 'codigo_alteracao', 'pickle_progresso'].includes(ev.t)) window.kcEv(ev);
       else if (ev.t === 'pergunta') cartaoPergunta(ev, escolhas[ev.id] || { '': '(sem resposta)' });
-      else if (ev.t === 'kc') bolha('kc', md(ev.texto));
+      else if (ev.t === 'kc') acoesMsg(bolha('kc', md(ev.texto)), ev.texto);
       else if (ev.t === 'ferr') passo(ev.id, ev.nome, ev.entrada);
       else if (ev.t === 'ferr_fim') passoFim(ev.id, ev.ok, ev.saida);
       else if (ev.t === 'fim') resumoMudancas();
@@ -1662,9 +1728,33 @@
     if (SOM.on) som('permitido');
   });
   somBotao();
+  // ── Falar sempre: ligado, a bolinha lê as respostas mesmo com a janela aberta ──
+  function falaSempreBotao(on) {
+    const b = $('fala-sempre'); b.classList.toggle('on', !!on); b.setAttribute('aria-pressed', !!on);
+    b.querySelector('.icone').textContent = on ? '🔊' : '🔈';
+  }
+  let falaSempreMudando = false;
+  async function falaSempreAlternar() {
+    if (falaSempreMudando) return null;
+    falaSempreMudando = true;
+    try {
+      const atual = await api().fala_sempre(null);
+      const r = await api().fala_sempre(!atual);
+      falaSempreBotao(r);
+      return r;
+    } finally { falaSempreMudando = false; }
+  }
+  $('fala-sempre').addEventListener('click', async () => {
+    try {
+      const r = await falaSempreAlternar();
+      if (r !== null) bolha('sis', r ? '🔊 Falar sempre: a Kani lê as respostas mesmo com a janela aberta.' : '🔈 A Kani só fala com a janela minimizada.');
+    } catch (e) { bolha('erro', 'Não deu para alterar o Falar sempre.'); }
+  });
+  setTimeout(() => api().fala_sempre && api().fala_sempre(null).then(falaSempreBotao).catch(() => {}), 2500);
   // ── Ei Kani (voz.py): o texto falado entra na caixa e vai como se fosse digitado ──
   function vozBotao(on) { $('voz').classList.toggle('on', !!on); }
   function vozEv(ev) {
+    if (ev.fase === 'fala_fim') { conversa.querySelectorAll('[data-msg-acao="ouvir"].on').forEach(x => x.classList.remove('on')); return; }
     $('mic').classList.toggle('on', ev.fase === 'ouvindo');
     if (ev.fase === 'ouvindo') atividade('Ouvindo… fale o pedido');
     else if (ev.fase === 'transcrevendo') atividade('Entendendo o que você falou');
@@ -1702,8 +1792,21 @@
   $('habil').addEventListener('click', habAbrir);
   $('c5').addEventListener('click', alternarUso);
   $('csem').addEventListener('click', alternarUso);
-  $('grande').addEventListener('click', async () => {
-    grandeMarcar(await api().maximizar(!document.documentElement.classList.contains('grande')));
+  let grandeMudando = false;
+  async function grandeAlternar() {
+    if (grandeMudando) return;
+    grandeMudando = true;
+    try {
+      const atual = await api().maximizada();
+      grandeMarcar(await api().maximizar(!atual));
+    } catch (e) { bolha('erro', 'Não foi possível alterar o tamanho da janela.'); }
+    finally { grandeMudando = false; }
+  }
+  $('grande').addEventListener('click', grandeAlternar);
+  document.querySelector('.topo').addEventListener('dblclick', e => {
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    e.preventDefault();
+    grandeAlternar();
   });
   // o botão acompanha a janela também quando ela maximiza/volta por Win+setas ou duplo clique do Windows
   function grandeMarcar(r) {
@@ -1785,6 +1888,8 @@
 <script src="consumo.js"></script>
 <link rel="stylesheet" href="casa.css">
 <script src="casa.js"></script>
+<link rel="stylesheet" href="saude.css">
+<script src="saude.js"></script>
 <link rel="stylesheet" href="projeto.css">
 <script src="projeto.js"></script>
 <script src="organizacao.js"></script>
@@ -1792,6 +1897,7 @@
 <script src="respostas.js"></script>
 <script src="opencode_mvp.js"></script>
 <script src="codigo_agente.js"></script>
+<script src="kani_execucoes.js"></script>
 <script src="codex_uso.js"></script>
 <link rel="stylesheet" href="alteracoes.css">
 <script src="alteracoes.js"></script>
@@ -1803,9 +1909,14 @@
 <script src="mapa_d.js"></script>
 <link rel="stylesheet" href="perfil_portatil.css">
 <script src="perfil_portatil.js"></script>
+<link rel="stylesheet" href="perfil_usuario.css">
+<script src="cerebro.js"></script>
+<script src="perfil_usuario.js"></script>
 <script src="conexoes.js"></script>
 <script src="conexoes_drive.js"></script>
 <script src="conexoes_gmail.js"></script>
+<link rel="stylesheet" href="progresso.css">
+<script src="progresso.js"></script>
 
 <script>
   // conferência da carga (2026-10-23): no reinício a página às vezes vinha sem algum script (KCResposta não definido →

@@ -52,14 +52,26 @@ html.movel #kv-bt.on { color: var(--lima); }
 .kv { position: relative; flex: none; background: #000; border-bottom: 1px solid var(--borda); display: flex; justify-content: center; }
 .kv[hidden] { display: none; }
 .kv img { display: block; width: 100%; max-height: 42dvh; object-fit: contain; min-height: 120px; }
-.kv-bts { position: absolute; top: 6px; right: 6px; display: flex; gap: 6px; }
-.kv-bts button { width: 34px; height: 34px; border: 0; border-radius: 9px; background: #000a; color: #fff; font-size: 16px; }
+.kv-area { position: relative; width: 100%; min-width: 0; align-self: center; overflow: hidden; touch-action:none; }
+.kv-area.controle { touch-action: none; user-select: none; -webkit-user-select: none; }
+.kv-area img { -webkit-user-drag: none; }
+#kv-cursor { position: absolute; width: 10px; height: auto; overflow: visible; pointer-events: none; filter: drop-shadow(0 0 1px white); }
+#kv-cursor[hidden] { display: none; }
+.kv-mouse-status { position: absolute; bottom: 5px; left: 6px; right: 6px; width: fit-content; max-width: calc(100% - 12px); background: #000b; color: white; border-radius: 4px; padding: 3px 5px; font-size: 10px; pointer-events: none; }
+.kv-bts button[aria-pressed="true"] { color: var(--lima); }
+.kv-bts { position: absolute; top: 6px; left:6px; right: 6px; display: flex; gap: 5px; }
+.kv-bts button { flex:none;width: 32px; height: 34px; border: 0; border-radius: 9px; background: #000a; color: #fff; font-size: 16px; }
+.kv-bts select {flex:1;min-width:0;max-width:240px;margin-right:auto;height:34px;border:0;border-radius:8px;background:#121a14e6;color:white;font-size:11px;padding:0 5px;}
 .kv-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
           color: var(--fraco); font-size: 13.5px; background: #0b0e0d; text-align: center; padding: 12px; }
 .kv-msg[hidden] { display: none; }
 .kv-msg button { height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--lima); color: var(--fundo); font-weight: 600; }
 .kv:fullscreen { align-items: center; border: 0; }
 .kv:fullscreen img { max-height: 100vh; height: 100vh; }
+.kv.kv-grande { position: fixed; inset: 0; z-index: 1000; width: 100%; height: 100dvh; align-items: center; border: 0; }
+.kv.kv-grande img { max-height: 100dvh; height: 100dvh; min-height: 0; }
+.kv.kv-grande .kv-bts { top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); }
+html.kv-ampliada, html.kv-ampliada body { overflow: hidden; }
 
 /* Conversa ocupa a tela; opções ficam abaixo do texto, sem apertar o campo. */
 html.movel body { height: var(--movel-altura, 100dvh); }

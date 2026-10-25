@@ -13,15 +13,16 @@ from dados_app import pasta_dados
 DADOS = pasta_dados()
 
 class Tarefas:
-    def __init__(self, dados=DADOS):
+    def __init__(self, dados=DADOS, arquivo="tarefas.json"):
         self.dados = Path(dados)
+        self.arquivo = arquivo
         self.mutex = threading.RLock()
     @contextlib.contextmanager
     def _lock(self):
         import msvcrt
         with self.mutex:
             self.dados.mkdir(parents=True, exist_ok=True)
-            with (self.dados / "tarefas.lock").open("a+b") as f:
+            with (self.dados / Path(self.arquivo).with_suffix('.lock')).open("a+b") as f:
                 f.seek(0, 2)
                 if not f.tell(): f.write(b"0"); f.flush()
                 limite = time.monotonic() + 10
@@ -37,16 +38,16 @@ class Tarefas:
                     f.seek(0); msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
     def _ler(self):
         try:
-            r = json.loads((self.dados / "tarefas.json").read_text(encoding="utf-8"))
+            r = json.loads((self.dados / self.arquivo).read_text(encoding="utf-8"))
             if not isinstance(r, list) or any(not isinstance(i, dict) or not i.get("id") for i in r): raise ValueError()
             return r
         except FileNotFoundError: return []
         except (ValueError, TypeError):
             raise ValueError("Não foi possível ler as tarefas. A lista foi preservada no disco.") from None
     def _salvar(self, itens):
-        tmp = self.dados / "tarefas.json.tmp"
+        tmp = self.dados / (self.arquivo + ".tmp")
         tmp.write_text(json.dumps(itens, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, self.dados / "tarefas.json")
+        os.replace(tmp, self.dados / self.arquivo)
     def listar(self):
         with self._lock(): return self._ler()
     def salvar(self, titulo, prazo="", id="", origem="manual"):

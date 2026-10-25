@@ -62,24 +62,49 @@ def _guardar_ip(id_, ip):
         json.dump(s, f, indent=1)
 
 
-def _dev(d):
+_procura = {"rodando": False, "ultima": 0.0}
+
+
+def _procurar_fundo(faltam):
+    """procura na rede (~18 s) os aparelhos sem IP, em segundo plano e no máximo a cada 2 min: a aba não espera"""
+    import threading, time
+    if _procura["rodando"] or time.time() - _procura["ultima"] < 120:
+        return
+    _procura["rodando"] = True
+
+    def rodar():
+        import tinytuya
+        try:
+            for d in faltam:
+                ip = ((_tentar(tinytuya.find_device, d["id"])) or {}).get("ip")
+                if ip:
+                    _guardar_ip(d["id"], ip)
+        finally:
+            _procura["rodando"], _procura["ultima"] = False, time.time()
+    threading.Thread(target=rodar, daemon=True).start()
+
+
+def _dev(d, procurar=True, espera=3):
     import tinytuya
     ip = d["ip"]
     if not ip:
+        if not procurar:
+            return None
         achado = tinytuya.find_device(d["id"])   # procura na rede (alguns segundos)
         ip = (achado or {}).get("ip")
         if not ip:
             return None
         _guardar_ip(d["id"], ip)
     cls = tinytuya.BulbDevice if d.get("category") == "dj" else tinytuya.Device
-    dev = cls(d["id"], ip, d["key"], version=float(d.get("version") or 3.3))
-    dev.set_socketTimeout(3)
+    dev = cls(d["id"], ip, d["key"], version=float(d.get("version") or 3.3), connection_timeout=espera,
+              connection_retry_limit=1)
+    dev.set_socketTimeout(espera)
     dev.set_socketRetryLimit(1)
     return dev
 
 
-def _status(d):
-    dev = _dev(d)
+def _status(d, procurar=True, espera=3):
+    dev = _dev(d, procurar, espera)
     if not dev:
         return None
     st = dev.status()
@@ -111,10 +136,14 @@ def _ligado(d, dps):
 
 
 def estado():
-    """para a aba Casa: [{nome, tipo, cat, comodo, online, ligado, info}] (status em paralelo, ~3 s no pior caso)"""
+    """para a aba Casa: [{nome, tipo, cat, comodo, online, ligado, info}] (status em paralelo, ~1,5 s no pior caso;
+    sem IP não procura aqui: a procura roda em segundo plano e o aparelho aparece na próxima atualização)"""
     todos = aparelhos()
+    faltam = [d for d in todos if not d["ip"]]
+    if faltam:
+        _procurar_fundo(faltam)
     with ThreadPoolExecutor(8) as ex:
-        sts = list(ex.map(lambda d: _tentar(_status, d), todos))
+        sts = list(ex.map(lambda d: _tentar(_status, d, False, 1.5), todos))
     out = []
     for d, dps in zip(todos, sts):
         cat, info, lig = d.get("category"), "", None

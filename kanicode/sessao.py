@@ -79,6 +79,14 @@ def sempre(dados, add=None, tirar=None):
 _APAGAR = re.compile(r"^\s*(rm|rmdir|del|rd|Remove-Item)\b", re.I)
 
 
+def _partida_cerebro():
+    try:
+        import perfil_cerebro
+        return "\n\n" + perfil_cerebro.ponto_de_partida("", 2500, quem="claude")
+    except Exception:
+        return ""
+
+
 class Sessao:
     def __init__(self, pasta, dados, ao_evento, sessao_id=None):
         self.pasta, self.dados, self.ao_evento = pasta, dados, ao_evento
@@ -105,19 +113,20 @@ class Sessao:
 
     # ── processo ──
     def _abrir(self):
+        """abre o claude -p; o cérebro do Pailer entra no prompt (o mesmo ponto de partida dos outros agentes)"""
         exe = shutil.which("claude")
         if not exe:
             raise RuntimeError("não achei o Claude Code (comando claude) neste PC")
         cmd = [exe, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--include-partial-messages",
                "--verbose", "--permission-mode", self.modo, "--permission-prompt-tool", "stdio",
                *(["--settings", json.dumps({"permissions": {"ask": REGRAS_PERGUNTAR}})] if REGRAS_PERGUNTAR else []),
-               "--append-system-prompt", PROMPT_KANICODE,
+               "--append-system-prompt", PROMPT_KANICODE + _partida_cerebro(),
                # ajudantes (mcp_equipe.py): Codex e Kani como ferramentas, liberadas sem cartão
                "--mcp-config", json.dumps({"mcpServers": {"equipe": {
                    "command": sys.executable.replace("pythonw.exe", "python.exe"),
                    "args": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_equipe.py"), self.pasta,
                             str(self.registro.pasta)]}}}),
-               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani", "mcp__equipe__licao", "mcp__equipe__missao"]
+               "--allowedTools", "mcp__equipe__codex", "mcp__equipe__kani", "mcp__equipe__licao", "mcp__equipe__missao", "mcp__equipe__cerebro", "mcp__equipe__tarefa_agente"]
         if self.modelo:
             cmd += ["--model", self.modelo]
         if self.sessao_id:

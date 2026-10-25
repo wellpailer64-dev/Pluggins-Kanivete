@@ -126,6 +126,8 @@ class OperacoesDriveTest(unittest.TestCase):
             r = self.d.baixar('a', pasta)
         alvo = Path(r['caminho']); self.assertEqual(alvo.read_bytes(), b'abc')
         self.assertEqual(r['bytes'], 3)
+        import progresso
+        self.assertTrue(any(i['id'] == 'drive:a' and i['estado'] == 'concluido' for i in progresso.listar()))
         with patch.object(self.d, '_arquivo', return_value={'id':'a','name':'arquivo.txt','mimeType':'text/plain','size':'4'}), patch.object(ops, '_abrir') as abrir:
             with self.assertRaisesRegex(gc.FalhaCalendar, 'Já existe'):
                 self.d.baixar('a', pasta)
@@ -140,6 +142,8 @@ class OperacoesDriveTest(unittest.TestCase):
             with self.assertRaisesRegex(gc.FalhaCalendar, 'incompleto'):
                 self.d.baixar('a', pasta)
         self.assertFalse((pasta / 'truncado.txt').exists())
+        import progresso
+        self.assertTrue(any(i['id'] == 'drive:a' and i['estado'] == 'erro' for i in progresso.listar()))
         self.assertFalse(list(pasta.glob('*.part')))
 
     def test_exporta_documento_google_pdf_e_nome_seguro(self):

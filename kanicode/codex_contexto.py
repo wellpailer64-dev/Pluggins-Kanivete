@@ -74,6 +74,13 @@ def preparar(tarefa, pasta, editar, retomar):
         if extra:
             partes.append(extra)
     preferencia = organizacao_pailer.contexto(tarefa)
+    try:
+        from tarefas_agente import contexto
+        pendencias=contexto(pasta,tarefa)
+        if pendencias and not any(pendencias in parte for parte in partes) and pendencias not in tarefa:
+            partes.append(pendencias)
+    except Exception:
+        pass
     if preferencia and not any("PREFERÊNCIAS DE ORGANIZAÇÃO DO PAILER" in parte for parte in partes):
         partes.append(preferencia.strip())
     return "\n\n".join(partes)

@@ -15,6 +15,7 @@ import sessao
 
 class MensagensTest(unittest.TestCase):
     def setUp(self):
+        threads_antes=set(threading.enumerate())
         self.temp = tempfile.TemporaryDirectory(dir=r'D:\kanivete_testes', prefix='mensagens_')
         self.addCleanup(self.temp.cleanup)
         self.base = self.temp.name
@@ -41,6 +42,14 @@ class MensagensTest(unittest.TestCase):
             return True
         self.app.enviar = Mock(side_effect=enviar)
         self.app.ajudante = Mock(side_effect=ajudante)
+        def encerrar_entregas():
+            limite=time.monotonic()+3
+            while True:
+                vivas=[t for t in threading.enumerate() if t not in threads_antes and t.is_alive()]
+                if not vivas: return
+                if time.monotonic()>=limite: self.fail('A entrega não terminou antes da limpeza do teste.')
+                for t in vivas: t.join(.1)
+        self.addCleanup(encerrar_entregas)
 
     def esperar(self, teste):
         limite = time.monotonic() + 3

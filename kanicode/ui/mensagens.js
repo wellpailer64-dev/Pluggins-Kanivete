@@ -61,6 +61,25 @@
     catch (erro) { bolha('erro', String(erro.message || erro)); }
   });
   const eventoAntes = window.kcEv;
+  window.mensagemLocalizar=async ref=>{
+    const seletor='[data-mensagem-id="'+CSS.escape(ref.mensagem_id)+'"]';
+    if(!conversa.querySelector(seletor)&&window.KC_ABAS?.ativa&&window.KC_ABAS.ativa!==String(ref.aba)){
+      const aba=document.querySelector('.aba-chat[data-aba="'+CSS.escape(String(ref.aba))+'"]');
+      if(!aba)return false;
+      aba.click();
+      for(let i=0;i<50&&window.KC_ABAS?.ativa!==String(ref.aba);i++)await new Promise(r=>setTimeout(r,40));
+    }
+    let alvo=conversa.querySelector(seletor);
+    if(!alvo&&ref.texto){
+      const normalizar=t=>String(t).replace(/\s+/g,' ').trim();
+      const encontrados=[...conversa.querySelectorAll('.msg.eu')].filter(e=>normalizar(e.textContent).includes(normalizar(ref.texto)));
+      if(encontrados.length===1)alvo=encontrados[0];
+    }
+    if(!alvo)return false;
+    alvo.scrollIntoView({block:'center',behavior:'smooth'});
+    alvo.animate([{outline:'2px solid #B6F23A'},{outline:'2px solid transparent'}],{duration:2200});
+    return true;
+  };
   window.kcEv = ev => {
     if (ev?.t === 'fila_mensagem') { desenhar(ev); return; }
     if (ev?.t === 'fila_livre') { ocupada(false); return; }

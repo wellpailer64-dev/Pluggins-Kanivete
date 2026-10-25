@@ -10,6 +10,7 @@ canal 127.0.0.1:47613 com chave); só sem o KaniCode aberto vai para o KANIVETE 
   py -3.13 kb.py texto [--aba ID]          foto <arquivo.png> [--aba ID] [--inteira]
   py -3.13 kb.py imagens [--aba ID] [--min 250]
   py -3.13 kb.py baixar [--aba ID] [--max 20] [--min 250] (--demanda ID8 | --pasta P)
+  py -3.13 kb.py anexar "<pasta ou a;b;c>"   (põe os arquivos no campo de envio aberto na página, ex. Fazer Entrega do Pandalab)
   py -3.13 kb.py destinos
   py -3.13 kb.py painel "estado|mostrar ID|nova URL|ir URL|fechar_aba ID|acao voltar|aparelho celular"   (abas do Pailer)
   py -3.13 kb.py js "<código JS>" | js @arquivo.js     (na aba da Kani; aceita async/Promise; volta o valor)
@@ -132,6 +133,33 @@ def main():
     return r
 
 
+def _anexar(alvo, c, exts=(".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".pdf"), pedaco=150_000):
+    """põe arquivos no último <input type=file> da aba da Kani (dispara change: o site vê como escolha do usuário).
+    Vai em pedaços de base64 (o canal com o KaniCode não aguenta megas numa mensagem só)."""
+    import base64, mimetypes
+    if os.path.isdir(alvo or ""):
+        arqs = sorted(os.path.join(alvo, n) for n in os.listdir(alvo) if n.lower().endswith(exts))
+    else:
+        arqs = [p for p in (alvo or "").split(";") if p]
+    if not arqs or not all(os.path.isfile(p) for p in arqs):
+        raise RuntimeError("anexar: passe uma pasta com imagens/vídeos ou arquivos separados por ';'")
+    c("js_kani", codigo="window.__kbAnexo = []; 'ok'")
+    for p in arqs:
+        d = base64.b64encode(open(p, "rb").read()).decode()
+        c("js_kani", codigo="window.__kbAnexo.push({n: %s, t: %s, d: ''}); 'ok'" % (
+            json.dumps(os.path.basename(p)), json.dumps(mimetypes.guess_type(p)[0] or "application/octet-stream")))
+        for i in range(0, len(d), pedaco):
+            c("js_kani", codigo="window.__kbAnexo[window.__kbAnexo.length - 1].d += '%s'; 'ok'" % d[i:i + pedaco])
+    return c("js_kani", codigo="""(() => { const ins = [...document.querySelectorAll('input[type=file]')];
+        if (!ins.length) return 'nenhum campo de arquivo aberto na página';
+        const dt = new DataTransfer();
+        for (const f of window.__kbAnexo) { const b = Uint8Array.from(atob(f.d), c => c.charCodeAt(0)); dt.items.add(new File([b], f.n, {type: f.t})); }
+        delete window.__kbAnexo;
+        const i = ins[ins.length - 1]; i.files = dt.files;
+        i.dispatchEvent(new Event('input', {bubbles: true})); i.dispatchEvent(new Event('change', {bubbles: true}));
+        return dt.files.length + ' arquivo(s) anexado(s)'; })()""")
+
+
 def _rodar(a, c):
     try:
         if a.cmd in ("abrir", "abas", "estado"):
@@ -173,6 +201,8 @@ def _rodar(a, c):
             cod = open(a.arg[1:], encoding="utf-8").read() if a.arg.startswith("@") else a.arg
             r = c("js_kani", codigo=cod)
             print(r if isinstance(r, str) else json.dumps(r, ensure_ascii=False))
+        elif a.cmd == "anexar":   # arquivos (pasta ou "a;b;c") no <input type=file> aberto na aba da Kani
+            print(_anexar(a.arg, c))
         elif a.cmd == "destinos":
             for d in c("destinos"):
                 print(d["id"][:8], d["cliente"], "|", d["nome"])

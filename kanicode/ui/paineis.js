@@ -26,6 +26,8 @@
     $('atv').classList.toggle('projeto-visivel', secao === 'projeto');
     $('proj-trilho')?.setAttribute('aria-expanded', String(on && secao === 'projeto'));
     $('casa-trilho')?.setAttribute('aria-expanded', String(on && secao === 'casa'));
+    $('atv').classList.toggle('saude-visivel', secao === 'saude');
+    $('saude-trilho')?.setAttribute('aria-expanded', String(on && secao === 'saude'));
     // Trocar de seção também confere o espaço das ferramentas.
     PAINEL.dir = on; PAINEL.dirAuto = on && auto;
     if (on) {

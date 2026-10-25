@@ -23,6 +23,10 @@ _missao_trava = threading.Lock()
 _ULTIMA = {"codex": None}   # última sessão do Codex nesta conversa ("continuar")
 
 FERRAMENTAS = [
+    {"name":"tarefa_agente", "description":"To-do de trabalho do agente, separado das tarefas pessoais. anotar(ref,titulo) guarda algo combinado para depois ligado ao pedido original; adiar(ref,motivo) mantém o pedido aberto mesmo ao encerrar o turno; concluir(ref,motivo) só após cumprir e conferir; listar e ler(ref) recuperam contexto. Use a ref recebida no contexto do turno.",
+     "inputSchema":{"type":"object","properties":{
+         "acao":{"type":"string","enum":["listar","ler","anotar","adiar","concluir","reabrir"]},
+         "ref":{"type":"string"},"titulo":{"type":"string"},"motivo":{"type":"string"}},"required":["acao"]}},
     {"name": "mapa_d", "description": "Mapa local e vivo do disco D: busca arquivos/pastas por nome e caminho, lista uma pasta ou informa atualização. Não lê conteúdo nem altera os arquivos. Confira o indicador parcial.",
      "inputSchema": {"type": "object", "properties": {"acao": {"type": "string", "enum": ["buscar", "listar", "status"]},
          "busca": {"type": "string"}, "pasta": {"type": "string"}, "extensao": {"type": "string"}}, "required": ["acao"]}},
@@ -60,6 +64,46 @@ FERRAMENTAS = [
                      "com o como-fazer (ex.: 'Comparar monitor: desligue vePrSegEm e aqueça os dois estados')."),
      "inputSchema": {"type": "object", "properties": {
          "texto": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["texto"]}},
+    {"name": "cerebro",
+     "description": ("CÉREBRO do Pailer: repositório de CERTEZAS sobre ele (jeito de trabalhar, clientes, processos, "
+                     "habilidades, projetos). Use SÓ quando faltar uma informação dele que a tarefa precisa — não por "
+                     "rotina. acao=mapa (area opcional): títulos por lobo, barato, para ver SE existe. acao=consultar "
+                     "(tema): até 4 neurônios com acerto forte; sem acerto volta 'nada' → siga sem ele ou pergunte. "
+                     "acao=ler (ref): texto inteiro de um neurônio. acao=guardar (titulo, texto, certeza='pailer' ou "
+                     "'verificado', origem, tipo, area): só o que ele disse/confirmou ou você conferiu na fonte; se vier "
+                     "parecido, acao=atualizar (ref, texto). acao=descartar (ref, motivo): contradito/obsoleto. "
+                     "reforcar/enfraquecer (ref), revisar, faxina, restaurar, resolvida (pendência da faxina). "
+                     "Ao trabalhar num projeto real, acao=projeto (projeto=nome específico do trabalho, ficha, certeza, origem) "
+                     "registra ou atualiza o mesmo neurônio: cliente, formato, tema, ferramentas, resumo, etapa, pasta, status. "
+                     "Aproveite só fatos já confirmados na conversa/fonte; envie apenas mudanças, sem investigação ou IA extra. "
+                     "Não deduza cliente nem conclusão. Desconhecido: omita; corrigir/remover campo: texto vazio. "
+                     "Separe assunto de autoria: mapa/consultar aceitam ambito (kanivete, kanicode, kani_local, pc, geral, revisar). "
+                     "PC contém referências vivas do mapa D e organização registrada; pasta existente não prova preferência. "
+                     "acao=classificar (ref, ambitos, finalidade, origem, certeza; agente opcional): confirme a classificação "
+                     "quando souber para que serve; falar de Kani não prova que ela aprendeu ou escreveu. "
+                     "Método: CEREBRO.md do KaniCode."),
+     "inputSchema": {"type": "object", "properties": {
+         "acao": {"type": "string", "enum": ["mapa", "consultar", "ler", "guardar", "projeto", "classificar", "atualizar", "reforcar", "enfraquecer", "descartar", "restaurar", "revisar", "faxina", "resolvida", "resumo"]},
+         "ambito": {"type": "string", "enum": ["kanivete", "kanicode", "kani_local", "pc", "geral", "revisar"]},
+         "ambitos": {"type": "array", "items": {"type": "string", "enum": ["kanivete", "kanicode", "kani_local", "pc", "geral", "revisar"]}},
+         "finalidade": {"type": "string", "enum": ["regra", "projeto", "aprendizado", "procedimento", "referencia"]},
+         "agente": {"type": "string", "enum": ["pailer", "claude", "codex", "kani", "pickle", "não registrado"]},
+         "ficha": {"type": "object", "additionalProperties": False, "properties": {
+             "cliente": {"type": "string", "maxLength": 120}, "formato": {"type": "string", "maxLength": 120},
+             "tema": {"type": "string", "maxLength": 240}, "ferramentas": {"type": "string", "maxLength": 240},
+             "resumo": {"type": "string", "maxLength": 700}, "etapa": {"type": "string", "maxLength": 240},
+             "pasta": {"type": "string", "maxLength": 500},
+             "status": {"type": "string", "enum": ["em andamento", "pausado", "concluído", "cancelado"]}}},
+         "certeza": {"type": "string", "enum": ["pailer", "verificado"]},
+         "tema": {"type": "string"}, "quantos": {"type": "integer", "description": "padrão 4"},
+         "ref": {"type": "string", "description": "chave (mem:…, pro:…, lic:…) ou título do neurônio"},
+         "titulo": {"type": "string"}, "texto": {"type": "string"}, "motivo": {"type": "string"},
+         "tipo": {"type": "string", "enum": ["fato", "processo", "habilidade", "conhecimento", "preferencia", "contato", "pesquisa", "project"]},
+         "area": {"type": "string", "enum": ["pc", "eu", "design", "video", "audio", "ia", "dev", "clientes"]},
+         "tags": {"type": "array", "items": {"type": "string"}}, "projeto": {"type": "string"},
+         "origem": {"type": "string", "description": "de onde veio (conversa, link, arquivo)"},
+         "ligar": {"type": "array", "items": {"type": "string"}, "description": "chaves de neurônios para ligar"},
+         "forcar": {"type": "boolean"}}}},
     {"name": "kani",
      "description": ("Pedir algo à Kani: modelo LOCAL pequeno (Qwen 3.5 4B), grátis e sem cota. Boa para tarefas simples "
                      "sobre um texto que você passa no contexto: resumir, classificar, extrair, reescrever curto, traduzir. "
@@ -281,7 +325,15 @@ def _revisar(antes, teste, arquivos_codex=()):
 
 def _chamar(id_, nome, args):
     try:
-        if nome == "mapa_d":
+        if nome == "tarefa_agente":
+            import tarefas_agente
+            r={"ok":True}
+            texto=json.dumps(tarefas_agente.acao(args),ensure_ascii=False)
+        elif nome == "cerebro":
+            import perfil_cerebro
+            r = {"ok": True}
+            texto = json.dumps(perfil_cerebro.acao(args), ensure_ascii=False)
+        elif nome == "mapa_d":
             import mapa_d
             mapa_d.iniciar()
             acao = args.get("acao", "buscar")

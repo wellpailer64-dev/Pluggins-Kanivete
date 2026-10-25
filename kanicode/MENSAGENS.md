@@ -17,9 +17,11 @@ Parar com o campo vazio pausa a fila. Um novo envio ou uma urgência explícita 
 retoma. Falha de entrega também pausa; o chat conserva o texto e mostra o motivo.
 Não se entrega um pedido em outra pasta caso o projeto tenha sido trocado.
 
-As pendentes são mantidas na memória do processo e reaparecem ao recarregar a
-interface ou alternar abas. Reiniciar o KaniCode não conserva esta fila; o registro
-de continuidade do Claude começa quando a mensagem é efetivamente entregue.
+As pendentes reaparecem ao recarregar a interface ou alternar abas e ficam também
+em disco (`fila/aba<N>.json` na pasta de dados): ao reiniciar o KaniCode elas voltam
+PAUSADAS — nada é entregue sozinho; um novo envio ou o duplo clique retoma. A que
+estava sendo entregue na hora volta como falha (pode ter chegado ao agente).
+Anexos de imagem não vão para o disco. Fechar a aba descarta a fila dela.
 As APIs diretas enviar/ajudante continuam disponíveis para integrações; a fila da
 interface usa mensagem_enviar, mensagem_urgente e mensagens_fila.
 

@@ -204,13 +204,13 @@ class Voz:
         """depois do Ei Kani: grava até a pausa e transcreve.
         Pausa curta (SILENCIO_S) no meio de "…e", "…porque": relê o que já tem e, se acabou numa palavra de ligação,
         espera a pausa longa — pensar no meio da frase não corta o pedido."""
-        self._bipe(True)
         self._estado("ouvindo")
         if self.ao_acordar:
             try:
                 self.ao_acordar()
             except Exception:
                 pass
+        self._bipe(True)
         vad.zerar()
         self._cortar = self._cancelar = False
         blocos, falou, quieto, t0, longa, conferiu = [], False, 0.0, time.time(), False, False

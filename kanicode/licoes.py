@@ -70,6 +70,16 @@ def gravar(pasta, texto, tags=None):
 def anexo(pasta, tarefa):
     """o texto que vai junto do contrato: regras do projeto + lições parecidas com a tarefa"""
     partes = []
+    try:
+        from tarefas_agente import contexto
+        partes.append(contexto(pasta,tarefa))
+    except Exception:
+        pass
+    try:
+        import perfil_cerebro
+        partes.append(perfil_cerebro.ponto_de_partida(tarefa, 2200, quem="codex"))
+    except Exception:
+        pass
     r = regras(pasta)
     if r:
         partes.append("REGRAS DESTE PROJETO (valem sempre):\n" + r)

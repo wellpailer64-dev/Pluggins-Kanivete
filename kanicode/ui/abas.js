@@ -19,7 +19,7 @@
   function modeloCurto(a) {
     const q = a.quem || 'claude';
     if (q === 'kani') return 'Kani · local';
-    if (q === 'pickle') return 'Big Pickle';
+    if (q === 'pickle') return EQUIPE.pickle.nome || 'Big Pickle';
     const m = String((a.id === A.ativa ? K.modelo : '') || a.modelo || (q === 'claude' ? A.modeloPadrao : '') || '');
     if (q === 'codex') return m && /gpt|codex/i.test(m) ? m.replace(/^gpt-/i, 'GPT-') : 'Codex';
     const r = m.match(/(opus|sonnet|haiku|fable)[-_ ]?(\d+)(?:[-.](\d+))?/i);
@@ -93,23 +93,49 @@
     id = String(id);
     if (id === A.ativa) return;
     guardar(); A.mudando = true;
-    try { await entrar(id, await api().aba_ativar(id)); } finally { A.mudando = false; }
+    try { await entrar(id, await api().aba_ativar(id)); } finally { soltar(); }
   }
   async function nova() {
     guardar(); A.mudando = true;
-    try { const r = await api().aba_nova(); est(String(r.ativa)).visto = false; await entrar(r.ativa, r); } finally { A.mudando = false; }
+    try { const r = await api().aba_nova(); est(String(r.ativa)).visto = false; await entrar(r.ativa, r); } finally { soltar(); }
   }
   async function fechar(id) {
     id = String(id);
     const a = A.lista.find(x => x.id === id);
     const trab = id === A.ativa ? K.ocupada : est(id).ocupada;
     if (trab && !await perguntar(`"${nome(a)}" ainda está trabalhando. Fechar para a tarefa dela?`, null, 'Fechar e parar')) return;
-    const r = await api().aba_fechar(id);
-    delete A.est[id]; rascunho(id, '');
-    if (String(r.ativa) !== A.ativa) {
-      if (id !== A.ativa) guardar();
-      await entrar(r.ativa, r);
-    } else { A.lista = r.lista; desenhar(); }
+    A.mudando = true;
+    try {
+      const r = await api().aba_fechar(id);
+      delete A.est[id]; rascunho(id, '');
+      if (String(r.ativa) !== A.ativa) {
+        if (id !== A.ativa) guardar();
+        await entrar(r.ativa, r);
+      } else { A.lista = r.lista; desenhar(); }
+    } finally { soltar(); }
+  }
+  // a lista mudou no outro aparelho (evento "abas" do servidor, a cada criar/fechar/renomear)
+  async function sincronizar(r) {
+    if (!r || !Array.isArray(r.lista) || !A.ativa) return;
+    if (A.mudando) { A.pendente = r; return; }   // no meio de uma troca daqui: aplica quando ela terminar
+    const ids = r.lista.map(a => String(a.id));
+    Object.keys(A.est).forEach(id => { if (!ids.includes(id)) { delete A.est[id]; rascunho(id, ''); } });
+    if (ids.includes(A.ativa)) { A.lista = r.lista; desenhar(); return; }
+    // a aba aberta aqui foi fechada lá: o PC segue a escolha do servidor; o celular vai para a vizinha
+    let alvo = String(r.ativa);
+    if (window.KC_MOVEL) {
+      const antes = A.lista.map(a => String(a.id)), i = antes.indexOf(A.ativa);
+      alvo = antes.slice(0, Math.max(i, 0)).reverse().concat(antes.slice(i + 1)).find(x => ids.includes(x)) || ids[0];
+    }
+    if (!alvo) return;
+    A.mudando = true;
+    try { await entrar(alvo, dict(r, alvo)); } finally { soltar(); }
+  }
+  const dict = (r, ativa) => Object.assign({}, r, { ativa });
+  function soltar() {
+    A.mudando = false;
+    const p = A.pendente; A.pendente = null;
+    if (p) sincronizar(p);
   }
   async function renomear(id) {
     const a = A.lista.find(x => x.id === id);
@@ -170,6 +196,8 @@
   const TRAB = ['inicio', 'texto_novo', 'texto', 'pensando', 'ferr', 'ferr_fim', 'kani_pensando', 'kani_estado', 'ajudante', 'pickle_progresso'];
   const evAntes = window.kcEv;
   window.kcEv = ev => {
+    if (ev && ['microfone_prioridade','todo_agente'].includes(ev.t)) { evAntes(ev); return; }   // estado compartilhado pelo app
+    if (ev && ev.t === 'abas') { sincronizar(ev); return; }
     if (ev && ev.aba != null && A.mudando) { est(String(ev.aba)).fila.push(ev); return; }   // trocando de aba: chega depois
     if (ev && ev.aba != null && A.ativa && String(ev.aba) !== A.ativa) {
       const e = est(String(ev.aba));
@@ -213,12 +241,13 @@
   if (window.KC_MOVEL) setInterval(async () => {
     if (!A.ativa || A.mudando || document.hidden) return;
     try {
-      const r = await api().abas();
-      if (!Array.isArray(r?.lista)) return;
-      if (!r.lista.some(a => String(a.id) === A.ativa)) {
-        guardar(); await entrar(r.ativa, r);
-      } else { A.lista = r.lista; desenhar(); }
+      await sincronizar(await api().abas());   // rede de segurança: o evento "abas" já chega na hora
     } catch (e) { /* a conexão SSE já sinaliza quando o PC está desconectado */ }
   }, 3000);
+  // celular voltou depois de cair: o que chegou nas abas de trás se perdeu; elas recarregam do disco ao abrir
+  A.reconectou = async () => {
+    Object.keys(A.est).forEach(id => { if (id !== A.ativa) Object.assign(A.est[id], { visto: false, frag: null, fila: [] }); });
+    try { await sincronizar(await api().abas()); } catch (e) {}
+  };
   window.KC_ABAS = A;
 })();

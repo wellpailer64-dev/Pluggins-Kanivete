@@ -2,12 +2,63 @@
 
 O KANIVETE em modo agente (CDP em 127.0.0.1:9222; 9333 = app de teste) manda quadros JPEG da própria página
 (Page.startScreencast) só quando algo muda; aqui eles viram um MJPEG (multipart/x-mixed-replace) que o <img> do
-celular mostra. Uma conexão por telinha aberta; fechou a telinha, o pedido de quadros para. Só assistir (sem cliques).
+celular mostra. Uma conexão por telinha aberta; fechou a telinha, o pedido de quadros para. O mouse remoto atua
+somente nessa página, em coordenadas proporcionais ao quadro, sem controlar outras janelas do computador.
 """
-import json, os, subprocess, urllib.request
+import json, math, os, subprocess, threading, time, urllib.request
 
 PORTAS = (9222, 9333)
 LIMITE = "kcquadro"
+_MOUSE_TRAVA = threading.Lock()
+
+
+def mouse(dados):
+    """Touchpad do celular: mover ou clicar no ponto normalizado da página transmitida."""
+    if not isinstance(dados, dict) or dados.get("acao") not in ("mover", "clicar"):
+        raise ValueError("Ação de mouse inválida.")
+    for eixo in ("x", "y"):
+        v = dados.get(eixo)
+        if type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1:
+            raise ValueError("Coordenada de mouse inválida.")
+    cliques = dados.get("cliques", 1)
+    if type(cliques) is not int or cliques not in (1, 2):
+        raise ValueError("Quantidade de cliques inválida.")
+    from websockets.sync.client import connect
+    with _MOUSE_TRAVA:
+        a = alvo()
+        if not a:
+            raise LookupError("KANIVETE fechado ou fora do modo agente")
+        with connect(a[1], max_size=2 ** 20, open_timeout=3) as ws:
+            numero = 0
+
+            def comando(metodo, params=None):
+                nonlocal numero
+                numero += 1
+                ws.send(json.dumps({"id": numero, "method": metodo, "params": params or {}}))
+                fim = time.monotonic() + 3
+                while True:
+                    restante = fim - time.monotonic()
+                    if restante <= 0:
+                        raise TimeoutError("O KANIVETE não respondeu ao mouse.")
+                    r = json.loads(ws.recv(timeout=restante))
+                    if r.get("id") == numero:
+                        if r.get("error"):
+                            raise RuntimeError("O KANIVETE recusou o evento de mouse.")
+                        return r.get("result", {})
+
+            medidas = comando("Page.getLayoutMetrics")
+            vista = medidas.get("cssVisualViewport") or medidas.get("cssLayoutViewport") or medidas["layoutViewport"]
+            largura, altura = float(vista["clientWidth"]), float(vista["clientHeight"])
+            x = min(largura - 1, dados["x"] * largura)
+            y = min(altura - 1, dados["y"] * altura)
+            params = {"x": x, "y": y, "pointerType": "mouse"}
+            comando("Input.dispatchMouseEvent", dict(params, type="mouseMoved", buttons=0))
+            if dados["acao"] == "clicar":
+                try:
+                    comando("Input.dispatchMouseEvent", dict(params, type="mousePressed", button="left", buttons=1, clickCount=cliques))
+                finally:
+                    comando("Input.dispatchMouseEvent", dict(params, type="mouseReleased", button="left", buttons=0, clickCount=cliques))
+    return {"ok": True, "largura": largura, "altura": altura}
 
 
 def alvo():

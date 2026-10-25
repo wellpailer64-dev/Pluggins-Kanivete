@@ -207,7 +207,9 @@ class BigPickleAppTest(unittest.TestCase):
         motor = self.pedir()
         self.assertFalse(motor.call_args.args[-1])
         self.assertIn('Resposta BP', str(motor.call_args.args[3]))
-        kanicode._gravar_estado(projeto=str(Path(self.pasta) / 'outra'))
+        outra = Path(self.pasta) / 'outra'   # desde 2026-10-23 cada aba tem a sua pasta
+        outra.mkdir(exist_ok=True)
+        self.app._ctx().pasta = str(outra)
         self.assertEqual(self.app.historico(), [])
 
 

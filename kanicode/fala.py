@@ -88,6 +88,9 @@ class Fala:
         self._pend = 0             # frases ainda não tocadas (inclusive a que está sendo preparada)
         self._acabou = False       # a resposta inteira já chegou (terminar())
         self._lock = threading.Lock()
+        self._liberada = threading.Event()
+        self._liberada.set()
+        self._saida = None
         threading.Thread(target=self._sintetizar, daemon=True, name="kc-fala-s").start()
         threading.Thread(target=self._tocar, daemon=True, name="kc-fala-t").start()
 
@@ -216,10 +219,52 @@ class Fala:
             while not q.empty():
                 q.get_nowait()
         try:
-            import sounddevice as sd
-            sd.stop()
+            if self._saida:
+                self._saida.abort()
         except Exception:
             pass
+
+    def pausar(self, on=True):
+        """O microfone tem prioridade; a fila e a posição da frase ficam preservadas."""
+        if on:
+            self._liberada.clear()
+        else:
+            self._liberada.set()
+
+    def _reproduzir(self, ger, audio, taxa, ainda_valido=None):
+        import sounddevice as sd
+        audio = np.asarray(audio, np.float32)
+        if audio.ndim == 1:
+            audio = audio[:, None]
+        posicao = 0
+        terminou = threading.Event()
+
+        def preencher(saida, quadros, _tempo, _status):
+            nonlocal posicao
+            saida.fill(0)
+            if ger != self._ger:
+                raise sd.CallbackStop
+            if not self._liberada.is_set():
+                return   # silêncio sem consumir amostras: retoma exatamente daqui
+            if ainda_valido is not None and not ainda_valido():
+                raise sd.CallbackStop
+            quantidade = min(quadros, len(audio) - posicao)
+            saida[:quantidade] = audio[posicao:posicao + quantidade]
+            posicao += quantidade
+            if posicao >= len(audio):
+                raise sd.CallbackStop
+
+        while ger == self._ger and not self._liberada.wait(.05):
+            pass
+        if ger != self._ger or (ainda_valido is not None and not ainda_valido()):
+            return
+        with sd.OutputStream(samplerate=taxa, channels=audio.shape[1], dtype='float32', blocksize=512,
+                             latency='low', callback=preencher, finished_callback=terminou.set) as fluxo:
+            self._saida = fluxo
+            try:
+                terminou.wait()
+            finally:
+                self._saida = None
 
     # ── trabalhadores: um prepara a próxima frase enquanto o outro toca a atual ──
     def _sintetizar(self):
@@ -237,7 +282,6 @@ class Fala:
                 self._audios.put((ger, a, sr, None))
 
     def _tocar(self):
-        import sounddevice as sd
         self._tocando = False
         while True:
             ger, a, sr, ainda_valido = self._audios.get()
@@ -247,10 +291,12 @@ class Fala:
                 self._tocou(ger)
                 continue
             self._tocando = True
-            self._estado("falando")
             try:
-                sd.play(np.asarray(a, np.float32), sr)
-                sd.wait()
+                while ger == self._ger and not self._liberada.wait(.05):
+                    pass
+                if ger == self._ger:
+                    self._estado("falando")
+                    self._reproduzir(ger, a, sr, ainda_valido)
             except Exception:
                 pass
             self._tocando = False

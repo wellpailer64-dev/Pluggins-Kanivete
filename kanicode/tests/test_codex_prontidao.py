@@ -219,11 +219,10 @@ class ProntidaoAudioTest(unittest.TestCase):
         self.f._audios.empty.return_value = True
         self.f._pend = 2
         self.f._estado = Mock()
-        dispositivo = SimpleNamespace(play=Mock(), wait=Mock())
-        with patch.dict(sys.modules, {"sounddevice": dispositivo}):
+        with patch.object(self.f, '_reproduzir') as reproduzir:
             with self.assertRaises(StopIteration):
                 self.f._tocar()
-        dispositivo.play.assert_called_once()
+        reproduzir.assert_called_once()
         self.assertEqual(self.f._pend, 0)
 
     def test_primeiro_uso_confirma_apos_preparar_se_pedido_ainda_vale(self):

@@ -1,9 +1,16 @@
-"""Fila de mensagens por aba; urgência explícita e entrega única no processo atual."""
+"""Fila de mensagens por aba; urgência explícita e entrega única no processo atual.
+
+Com `arquivo`, as pendentes vão para o disco (2026-10-24) e voltam ao reabrir o KaniCode — pausadas: nada é
+entregue sozinho depois de um reinício (um novo envio ou o duplo clique retoma). A que estava sendo entregue
+na hora volta como falha, porque pode ter chegado ao agente. Anexos de imagem não são guardados.
+"""
+import json
+import os
 import threading
 
 
 class Fila:
-    def __init__(self):
+    def __init__(self, arquivo=None, restaurar=False):
         self.trava = threading.RLock()
         self.itens = []
         self.entregues = set()
@@ -11,6 +18,49 @@ class Fila:
         self.interrompendo = None
         self.interromper_apos_envio = False
         self.pausada = False
+        self.arquivo = arquivo
+        if arquivo and restaurar:
+            self._restaurar()
+        elif arquivo:
+            self.esquecer()   # aba nova com o número de uma fechada: não herda a fila dela
+
+    def _restaurar(self):
+        try:
+            with open(self.arquivo, encoding="utf-8") as f:
+                itens = json.load(f)
+        except (OSError, ValueError):
+            return
+        for i in itens if isinstance(itens, list) else []:
+            if not isinstance(i, dict) or not i.get("id") or not i.get("texto"):
+                continue
+            if i.get("estado") == "enviando":
+                i["estado"], i["erro"] = "falha", "O KaniCode reiniciou durante a entrega; confira se o agente recebeu antes de reenviar."
+            elif i.get("estado") != "falha":
+                i["estado"] = "pendente"
+            self.itens.append(dict(i, imagens=[]))
+        self.pausada = bool(self.itens)
+
+    def _salvar(self):
+        if not self.arquivo:
+            return
+        try:
+            if not self.itens:
+                self.esquecer()
+                return
+            os.makedirs(os.path.dirname(self.arquivo), exist_ok=True)
+            guardar = [{k: v for k, v in i.items() if k != "imagens"} for i in self.itens]
+            with open(self.arquivo + ".parte", "w", encoding="utf-8") as f:
+                json.dump(guardar, f, ensure_ascii=False)
+            os.replace(self.arquivo + ".parte", self.arquivo)
+        except OSError:
+            pass   # a fila continua na memória
+
+    def esquecer(self):
+        if self.arquivo:
+            try:
+                os.remove(self.arquivo)
+            except OSError:
+                pass
 
     def adicionar(self, item):
         with self.trava:
@@ -22,6 +72,7 @@ class Fila:
             item = dict(item, estado='pendente')
             self.itens.append(item)
             self.pausada = False
+            self._salvar()
             return item, True
 
     def proxima(self):
@@ -33,6 +84,7 @@ class Fila:
                 self.enviando = item['id']
                 self.interrompendo = None
                 item['estado'] = 'enviando'
+                self._salvar()
             return item
 
     def urgente(self, id_):
@@ -46,6 +98,7 @@ class Fila:
             item['estado'] = 'urgente'
             self.interrompendo = id_
             self.pausada = False
+            self._salvar()
             return item, not repetir
 
     def cancelar(self, id_):
@@ -60,6 +113,7 @@ class Fila:
             if item['estado'] == 'falha' and not any(i['estado'] == 'falha' for i in self.itens):
                 self.pausada = False
             item['estado'] = 'cancelada'
+            self._salvar()
             return item
 
     def concluir(self, item, ok, erro=''):
@@ -72,6 +126,7 @@ class Fila:
             else:
                 item['erro'] = erro
                 self.pausada = True
+            self._salvar()
 
     def visivel(self, item):
         return {k: item.get(k) for k in ('id', 'texto', 'quem', 'estado', 'erro')} | {

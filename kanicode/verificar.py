@@ -10,10 +10,14 @@ import tempfile
 
 RAIZ = Path(__file__).resolve().parent
 AREAS = {
+    "progresso": ("progresso.py", "progresso_kanivete.js", "ponte.py", "painel.js", "google_drive_arquivos.py", "kanicode.py", "movel.py", "ui/progresso.js", "ui/janela.html", "tests/test_progresso.py", "tests/test_google_drive_arquivos.py"),
+    "tarefas": ("tarefas.py", "tarefas_agente.py", "kanicode.py", "kani_modo.py", "licoes.py", "codex_contexto.py", "sessao.py", "mcp_equipe.py", "movel.py", "ui/tarefas.js", "ui/mensagens.js", "ui/abas.js", "tests/test_tarefas*.py", "tests/test_mensagens.py", "tests/test_fila_disco.py", "tests/test_codex_eventos.py"),
+    "cerebro": ("perfil_cerebro.py", "mcp_equipe.py", "ui/cerebro.js", "ui/mapa_d.js", "tests/test_cerebro_*.py"),
+    "movel": ("movel.py", "tela_pc.py", "tela_movel.py", "tests/test_tela_pc.py", "ui/movel.js", "tests/test_tela_movel.py", "tests/test_tela_movel_ui.py"),
     "mensagens": ("mensagens.py", "kanicode.py", "sessao.py", "ui/mensagens.js", "ui/janela.html", "tests/test_mensagens.py"),
-    "voz": ("fala.py", "radio.py", "kanicode.py", "tests/test_fala_tom.py", "tests/test_codex_prontidao.py", "tests/test_codex_voz.py"),
+    "voz": ("fala.py", "voz.py", "radio.py", "kanicode.py", "ui/abas.js", "ui/cerebro.js", "ui/janela.html", "tests/test_fala_tom.py", "tests/test_fala_microfone.py", "tests/test_codex_prontidao.py", "tests/test_codex_voz.py", "tests/test_cerebro_classificacao_ui.py"),
     "claude": ("sessao.py", "continuidade.py", "mcp_equipe.py", "ui/janela.html", "tests/test_continuidade.py", "tests/test_equipe_revisao.py"),
-    "kani": ("kani_modo.py", "ajudantes.py", "tests/test_kani_*.py", "tests/test_modelo_ferramenta.py"),
+    "kani": ("kani_modo.py", "kani_estado.py", "kani_orquestracao.py", "kani_etapas.py", "kani_codigo_etapas.py", "benchmark_kani_orquestracao.py", "kanicode.py", "ajudantes.py", "ui/kani_execucoes.js", "ui/janela.html", "tests/test_kani_*.py", "tests/test_modelo_ferramenta.py"),
     "pickle": ("bigpickle_modo.py", "pickle_agente.py", "codigo_agente.py", "ui/codigo_agente.js", "pickle_controle.py", "opencode_mvp.py", "kani_modo.py", "kanicode.py", "bolinha.py", "ui/janela.html", "ui/movel.js", "tests/test_bigpickle_*.py", "tests/test_pickle_agente.py", "tests/test_opencode_mvp.py", "tests/test_kani_historico.py"),
     "codex": ("ajudantes.py", "codex_contexto.py", "codex_processo.py", "codex_conta.py", "codex_alteracoes.py", "ui/alteracoes.js", "ui/codex_uso.js", "ui/janela.html", "tests/test_codex_*.py"),
     "codigo": ("codigo_agente.py", "codigo_testes.py", "kani_modo.py", "bigpickle_modo.py", "kanicode.py", "ui/codigo_agente.js", "tests/test_codigo_*.py"),

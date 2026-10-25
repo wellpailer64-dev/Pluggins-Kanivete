@@ -7,7 +7,7 @@ Uma instância só: o canal de controle (127.0.0.1:PORTA, só aceita "ping", "mo
 
 Rodar à mão: pyw -3.13 kanicode.py   (ferramentas do navegador: --console; testes por CDP: --agente[=9350])
 """
-import json, os, re, socket, sys, threading, time
+import json, os, re, shutil, socket, sys, threading, time
 from collections import deque
 from mensagens import Fila
 
@@ -40,7 +40,17 @@ def _ler_estado():
 def _gravar_estado(**kw):
     with _ESTADO_TRAVA:
         os.makedirs(DADOS, exist_ok=True)
-        e = _ler_estado()
+        try:
+            with open(ESTADO, encoding="utf-8") as f:
+                e = json.load(f)
+        except FileNotFoundError:
+            e = {}
+        except (OSError, ValueError):   # corrompido: guarda uma cópia antes de regravar (senão sessões e contas sumiam)
+            try:
+                shutil.copy2(ESTADO, ESTADO + time.strftime(".corrompido-%Y%m%d-%H%M%S"))
+            except OSError:
+                pass
+            e = {}
         e.update(kw)
         tmp = ESTADO + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -68,7 +78,7 @@ class _Aba:
     """uma aba da janela (2026-10-21): conversa e tarefa próprias; várias rodam ao mesmo tempo.
     A aba "1" usa as chaves antigas do estado.json (conversas de antes das abas continuam nela)."""
 
-    def __init__(self, id, quem="claude", nome=""):
+    def __init__(self, id, quem="claude", nome="", restaurar=False):
         self.id, self.quem, self.nome = str(id), quem, nome
         self.assunto, self.modelo, self.manual = "", "", False
         self.pasta = ""                # pasta de trabalho da aba (2026-10-23: cada aba com a sua)
@@ -81,8 +91,12 @@ class _Aba:
         self.kani_hist = []
         self.respondendo = False
         self.prontidao_pendente = None
-        self.mensagens = Fila()
+        self.mensagens = Fila(os.path.join(DADOS, "fila", f"aba{self.id}.json"), restaurar)
         self.resposta = ""
+        self.pedido_turno = ""
+        self.tarefa_agente = None
+        self.por_voz = False           # a resposta desta aba volta falada (pedido por voz / minimizou no meio)
+        self.codex_comentario, self.codex_lidos, self.codex_falando = "", set(), False         # pedido do turno do Claude em andamento (passagem.py registra no fim)
 
     def ocupada(self):
         return bool(self.ajudante_ativo or (self.sessao and self.sessao.ocupada))
@@ -106,14 +120,21 @@ class App:
     _respondendo = _da_aba("respondendo")
     _resposta = _da_aba("resposta")
     _prontidao_pendente = _da_aba("prontidao_pendente")
+    _por_voz = _da_aba("por_voz")
+    _codex_comentario = _da_aba("codex_comentario")
+    _codex_lidos = _da_aba("codex_lidos")
+    _codex_falando = _da_aba("codex_falando")
 
     def __init__(self):
         self._local = threading.local()   # .aba = id da aba da tarefa que roda nesta thread
         e = _ler_estado()
+        if e.get("pickle_modelo"):   # modelo grátis escolhido para o Big Pickle (MiniMax, DeepSeek...)
+            import opencode_mvp
+            opencode_mvp.definir_modelo(e["pickle_modelo"])
         lista = [a for a in (e.get("abas") or []) if isinstance(a, dict) and a.get("id")]
         if not lista:
             lista = [{"id": "1", "quem": e.get("quem") or "claude", "nome": ""}]
-        self._abas = {str(a["id"]): _Aba(a["id"], a.get("quem") or "claude", a.get("nome") or "") for a in lista}
+        self._abas = {str(a["id"]): _Aba(a["id"], a.get("quem") or "claude", a.get("nome") or "", True) for a in lista}
         for a in lista:   # assunto atual e modelo, para a faixa das abas (2026-10-22)
             ab = self._abas[str(a["id"])]
             ab.assunto, ab.modelo, ab.manual = a.get("assunto") or "", a.get("modelo") or "", bool(a.get("manual"))
@@ -131,12 +152,10 @@ class App:
         self._mtimes = self._fotografar()   # data de cada arquivo do código: o "atualizar" aplica só o que mudou
         self._voz = None           # voz.py: "Ei Kani" + fala para texto
         self._fala = None          # fala.py: resposta lida em voz alta (pedido por voz com a janela fechada)
-        self._por_voz = False
         self._estado_voz = ""
+        self._microfone_prioritario = False
         self._sons_ativos = bool(_ler_estado().get("sons_bolinha", True))
-        self._codex_comentario = ""
-        self._codex_lidos = set()
-        self._codex_falando = False
+        self._fala_sempre = bool(_ler_estado().get("fala_sempre", False))   # a bolinha fala também com a janela aberta
         self._prontidao_pendente = None
         # _respondendo/_resposta (por aba): resposta do Claude chegando, para falar o resto se a janela for minimizada
         self._pend = {}            # permissões/perguntas abertas, por id (para o celular, movel.py)
@@ -169,6 +188,8 @@ class App:
         _gravar_estado(abas=[{"id": a.id, "quem": a.quem, "nome": a.nome, "assunto": a.assunto, "modelo": a.modelo,
                               "manual": a.manual, "pasta": a.pasta} for a in self._abas.values()],
                        aba_ativa=self._aba_ativa)
+        # toda mudança na lista vai na hora para o PC e os celulares (criar/fechar/renomear num aparece no outro)
+        self._para_janela(dict(self.abas(), t="abas"))
 
     def abas(self):
         return {"ativa": self._aba_ativa, "lista": [{"id": a.id, "quem": a.quem, "nome": a.nome, "ocupada": a.ocupada(),
@@ -196,6 +217,19 @@ class App:
             self._na_ui(lambda: self._bola and self._bola.definir(quem=q))
         return self.abas()
 
+    def perfil_acesso(self, acao="status", campos=None):
+        import perfil_nuvem
+        from perfil_acesso import AcessoPerfil
+        from google_drive import drive
+        with perfil_nuvem._TRAVA:
+            return AcessoPerfil(perfil_nuvem.PerfilNuvem(drive)).executar(acao, campos)
+
+    def perfil_nuvem(self, acao="status", escolha="", conferencia="", politica="manter"):
+        import perfil_nuvem
+        def restaurar(texto, token, modo):
+            return self.perfil_restaurar(texto, token, modo)
+        return perfil_nuvem.executar(acao, restaurar, escolha, conferencia, politica)
+
     def perfil_resumo(self):
         import perfil_portatil
         return perfil_portatil.resumo()
@@ -215,6 +249,40 @@ class App:
             raise ValueError("Espere as tarefas terminarem antes de restaurar o perfil.")
         with _ESTADO_TRAVA:
             return perfil_portatil.aplicar(texto, conferencia, politica)
+
+    def usuario_ler(self):
+        import perfil_usuario
+        return perfil_usuario.ler()
+
+    def usuario_salvar(self, campos):
+        import perfil_usuario
+        return perfil_usuario.salvar(campos)
+
+    def cerebro_ler(self):
+        import perfil_cerebro
+        return perfil_cerebro.ler()
+
+    def cerebro_consultar(self, tema, ambito=None):
+        import perfil_cerebro
+        return perfil_cerebro.consultar(tema, 10, marcar=False, ambito=ambito)   # o Pailer olhando não conta como uso
+
+    def cerebro_painel(self):
+        import perfil_cerebro
+        return {"atividade": perfil_cerebro.atividade(25), "revisar": perfil_cerebro.revisar(6),
+                "faxina": perfil_cerebro._jler(perfil_cerebro.ARQ_FAXINA, {}),
+                "pendencias": len(perfil_cerebro._jler(perfil_cerebro.ARQ_PEND, []))}
+
+    def cerebro_faxina(self):
+        import perfil_cerebro
+        return perfil_cerebro.faxina()
+
+    def cerebro_descartar(self, ref, motivo):
+        import perfil_cerebro
+        return perfil_cerebro.descartar(ref, motivo or "descartado pelo Pailer")
+
+    def usuario_foto(self, data_url):
+        import perfil_usuario
+        return perfil_usuario.foto(data_url)
 
     def mapa_d_status(self):
         import mapa_d
@@ -268,9 +336,93 @@ class App:
             rc = casa.alimentar(int(porcoes or 1), True)
         return {"ok": rc == 0, "texto": buf.getvalue().strip()}
 
+    # ── aba Saúde do PC (saude_pc.py lê o hardware; manutencao.py roda elevado e grava o andamento) ──
+    def saude_ler(self):
+        import saude_pc
+        try:
+            return saude_pc.ler()
+        except Exception as e:
+            return {"ok": False, "erro": f"{type(e).__name__}: {e}"}
+
+    def saude_estado(self):
+        import saude_pc
+        return saude_pc.estado()
+
+    def saude_iniciar(self, opcoes=None):
+        import saude_pc
+        o = opcoes or {}
+        return saude_pc.iniciar(o.get("etapas"), bool(o.get("completa")), bool(o.get("seco")))
+
+    def saude_parar(self):
+        import saude_pc
+        return saude_pc.parar()
+
+    def saude_decidir(self, ameacas, offline=False):
+        import saude_pc
+        return saude_pc.decidir(ameacas, offline)
+
+    def saude_lixeira(self, caminhos):
+        """só pela aba, com os duplicados que o Pailer deixou marcados"""
+        import saude_pc
+        return saude_pc.lixeira(caminhos)
+
     def todo_listar(self):
         import tarefas
         return tarefas.tarefas.listar()
+
+    def progresso_listar(self):
+        import progresso
+        return progresso.listar()
+
+    def todo_agente_listar(self):
+        from tarefas_agente import TarefasAgente
+        return TarefasAgente(DADOS).resumo()
+
+    def todo_agente_contexto(self, id):
+        from tarefas_agente import TarefasAgente
+        return TarefasAgente(DADOS).obter(id)
+
+    def todo_agente_concluir(self, id, concluida):
+        if not isinstance(concluida, bool): raise ValueError('Estado de tarefa inválido.')
+        from tarefas_agente import TarefasAgente
+        return TarefasAgente(DADOS).estado(id, 'concluida' if concluida else 'pendente', 'Alterado pelo Pailer no to-do.')
+
+    def _todo_agente_fila(self, item):
+        if item.get('texto', '').startswith('/'):
+            return
+        try:
+            from tarefas_agente import TarefasAgente
+            tarefas=TarefasAgente(DADOS)
+            r=tarefas.registrar(self._ctx().id,item['id'],item.get('texto',''),item['quem'],item.get('pasta') or self._pasta())
+            estado={'pendente':'pendente','urgente':'pendente','enviando':'em_andamento','falha':'falha','cancelada':'cancelada'}.get(item.get('estado'))
+            if estado:
+                tarefas.estado(r['id'],estado,item.get('erro',''),automatico=True)
+            if item.get('estado')=='enviando': self._ctx().tarefa_agente=r['id']
+            self._para_janela({'t':'todo_agente'})
+        except Exception as e:
+            self._para_janela({'t':'erro','texto':'Não foi possível atualizar o to-do do agente: '+str(e)})
+
+    def _todo_agente_restaurar(self):
+        for aba in tuple(self._abas.values()):
+            with aba.mensagens.trava:
+                itens=list(aba.mensagens.itens)
+            for item in itens:
+                self._na_aba(aba.id,self._todo_agente_fila)(item)
+
+    def _todo_agente_finalizar(self, ok, texto=''):
+        id=self._ctx().tarefa_agente
+        if not id: return
+        self._ctx().tarefa_agente=None
+        try:
+            from tarefas_agente import TarefasAgente
+            estado='a_conferir' if ok else 'falha'
+            if ok and getattr(self,'_modo','auto')=='plan': estado='adiada'
+            motivo='Planejamento concluído; execução pendente.' if estado=='adiada' else (
+                'Resposta entregue; falta o agente confirmar a conclusão.' if ok else texto)
+            TarefasAgente(DADOS).estado(id,estado,motivo,automatico=True)
+            self._para_janela({'t':'todo_agente'})
+        except Exception as e:
+            self._para_janela({'t':'erro','texto':'Não foi possível atualizar o to-do do agente: '+str(e)})
 
     def todo_salvar(self, titulo, prazo="", id=""):
         import tarefas
@@ -453,6 +605,18 @@ class App:
                 _salvar(estado, {'estado': 'erro', 'atualizado': datetime.datetime.now().isoformat()})
         threading.Thread(target=preparar, daemon=True).start()
 
+        def faxina_cerebro():
+            import subprocess
+            from pathlib import Path
+            time.sleep(600)
+            try:
+                with (Path(DADOS) / 'cerebro_faxina.log').open('a', encoding='utf-8') as log:
+                    subprocess.run([sys.executable, os.path.join(PASTA, 'perfil_cerebro.py'), 'faxina', '--diaria'],
+                                   stdout=log, stderr=log, creationflags=0x08000000 | 0x00004000, timeout=1800)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        threading.Thread(target=faxina_cerebro, daemon=True).start()
+
     def compromissos(self):
         """próximos compromissos com aviso falado (compromissos.py preparar grava a cada 30 min), para o selo da janela"""
         try:
@@ -500,6 +664,7 @@ class App:
         self._na_aba(aba, self._encerrar)()
         ids = list(self._abas)
         self._fechadas[aba] = self._abas.pop(aba)
+        self._fechadas[aba].mensagens.esquecer()   # recados não entregues saem junto com a aba
         if self._aba_ativa == aba:
             self._aba_ativa = ids[max(0, ids.index(aba) - 1)] if ids[0] != aba else ids[1]
         self._abas_gravar()
@@ -808,18 +973,33 @@ class App:
             if not self._voz:
                 from voz import Voz
                 self._voz = Voz(self._voz_acordou, self._voz_texto, self._voz_estado)
-            self._voz.escutar()
+            self._microfone_fala(True)
+            if self._voz.escutar() is False:
+                self._microfone_fala(False)
+                return {"ok": False, "erro": "Não foi possível abrir o microfone."}
             return {"ok": True}
         except Exception as e:
+            self._microfone_fala(False)
             return {"ok": False, "erro": str(e)}
+
+    def _microfone_fala(self, ativo):
+        mudou = self._microfone_prioritario != bool(ativo)
+        self._microfone_prioritario = bool(ativo)
+        if self._fala:
+            self._fala.pausar(self._microfone_prioritario)
+        if mudou:
+            self._para_janela({"t": "microfone_prioridade", "ativo": self._microfone_prioritario})
 
     def _voz_acordou(self):
         # a janela fica como está: fechada, a conversa é toda por voz (a bolinha mostra o rosto ouvindo)
-        if self._fala:
-            self._fala.parar()   # "Ei Kani" no meio da fala = interromper
+        self._microfone_fala(True)
 
     def _voz_estado(self, e):
         self._estado_voz = e
+        if e in ("ouvindo", "transcrevendo"):
+            self._microfone_fala(True)
+        elif e != "escutando" or not (self._voz and getattr(self._voz, "_seguir", 0)):
+            self._microfone_fala(False)
         if e in ("ouvindo", "transcrevendo"):
             from sons_bolinha import parar
             parar()
@@ -836,14 +1016,19 @@ class App:
         if not self._fala:
             from fala import Fala
             self._fala = Fala(self._fala_estado)
+            self._fala.pausar(self._microfone_prioritario)
         return self._fala
 
     def _fala_estado(self, e):
+        if self._microfone_prioritario and e == "falando":
+            return
+        if e in ("fim", ""):
+            self._para_janela({"t": "voz", "fase": "fala_fim"})   # a janela apaga o 🔊 da mensagem lida
         if e == "falando":
             from sons_bolinha import parar
             parar()
         if e == "fim":   # terminou de falar a resposta: ouve o próximo pedido sem "Ei Kani" (janela fechada)
-            if not self._aberta and not self._ocupada():   # chat minimizado = conversa por voz, mesmo com o Ei Kani desligado
+            if not self._microfone_prioritario and not self._aberta and not self._ocupada():   # chat minimizado = conversa por voz, mesmo com o Ei Kani desligado
                 try:
                     if not self._voz:
                         from voz import Voz
@@ -887,6 +1072,36 @@ class App:
                     f.pedaco(self._resposta)
             except Exception:
                 self._por_voz = False
+
+    def _falar_agora(self):
+        """a resposta vira voz: pedido por voz, janela minimizada ou "Falar sempre" ligado"""
+        # Falar sempre vale para a aba à vista: duas abas falando ao mesmo tempo embaralhavam as frases
+        return self._por_voz or (self._fala_sempre and self._ctx().id == self._aba_ativa)
+
+    def fala_sempre(self, on=None):
+        """liga/desliga "Falar sempre" (None = só diz o estado); desligado, só fala com a janela minimizada"""
+        if on is not None:
+            self._fala_sempre = bool(on)
+            _gravar_estado(fala_sempre=self._fala_sempre)
+            if self._fala_sempre:
+                threading.Thread(target=self._fala_obj().carregar, daemon=True).start()   # 1ª resposta sem espera
+            elif self._fala and self._aberta and not self._por_voz:
+                self._fala.parar()
+        return self._fala_sempre
+
+    def falar_texto(self, texto):
+        """botão 🔊 de uma mensagem: lê o texto com a voz da Kani (de novo = para)"""
+        try:
+            f = self._fala_obj()
+            if f.falando:
+                f.parar()
+                return {"ok": True, "falando": False}
+            f.novo()
+            f.pedaco(str(texto or ""))
+            f.terminar()
+            return {"ok": True, "falando": True}
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
 
     def sons_acoes(self, on=None):
         if on is not None:
@@ -979,6 +1194,15 @@ class App:
 
     def opencode_info(self):
         import opencode_mvp
+        return opencode_mvp.info()
+
+    def pickle_modelo(self, modelo=None):
+        """Modelo gratuito do OpenCode usado pelo Big Pickle (MiniMax, DeepSeek...). Sem argumento, consulta."""
+        import opencode_mvp
+        if modelo:
+            _gravar_estado(pickle_modelo=opencode_mvp.definir_modelo(modelo))
+        else:
+            opencode_mvp.definir_modelo(_ler_estado().get("pickle_modelo") or opencode_mvp.MODELO)
         return opencode_mvp.info()
 
     def opencode_testar(self, texto):
@@ -1214,7 +1438,32 @@ class App:
             self.janela_diagnostico("ajudante.erro", str(erro))
             raise
 
-    def _ajudante_iniciar(self, quem, texto, _de="pc"):
+    def kani_execucao(self, acao, id="", chave="", concedida=False, informacao=""):
+        """Ponte da revisão humana; não é ferramenta disponível ao modelo."""
+        import kani_modo
+        from kani_estado import Estado
+        from kani_etapas import construir
+        estado = Estado(kani_modo.DADOS)
+        pasta = self._pasta()
+        if acao == "listar":
+            return [{"t":"kani_checkpoint", "execucao":t["id"], "status":t["status"],
+                     "pedido":t["pedido"][:200], "pergunta":t.get("pergunta"), "aprovacao":t.get("aprovacao")}
+                    for t in estado.listar(pasta) if t["status"] != "concluida"]
+        t = estado.obter(id)
+        if os.path.normcase(os.path.abspath(t["pasta"])) != os.path.normcase(os.path.abspath(pasta)):
+            raise PermissionError("Execução pertence a outra pasta.")
+        if self._ocupada():
+            raise RuntimeError("Espere a tarefa terminar antes de retomar ou aprovar.")
+        if acao == "aprovar":
+            t = construir(kani_modo, pasta).autorizar(id, chave, concedida)
+            if not concedida:
+                self._para_janela({"t":"kani_checkpoint", "execucao":id, "status":"negada"})
+                return True
+        elif acao != "retomar":
+            raise ValueError("Use listar, aprovar ou retomar.")
+        return self._ajudante_iniciar("kani", t["pedido"], _execucao=id, _informacao=informacao)
+
+    def _ajudante_iniciar(self, quem, texto, _de="pc", _execucao=None, _informacao=None):
         import ajudantes
         if quem not in ("codex", "kani", "pickle"):
             raise ValueError("ajudante desconhecido")
@@ -1235,6 +1484,7 @@ class App:
         if quem == "codex":
             self._codex_parar = threading.Event()
         self._prontidao_agendar()
+        passou = self._passagem_pendente(quem)   # trocou de agente: o novo recebe o que os outros fizeram nesta aba
 
         def evento_codex(ev):
             if ev.get("sessao"):
@@ -1247,13 +1497,13 @@ class App:
             try:
                 self._bola_estado("trabalhando")
                 if quem == "codex":
-                    r = ajudantes.codex(texto, pasta, editar=editar, ao_evento=self._na_aba(aba, evento_codex),
+                    r = ajudantes.codex(passou + texto, pasta, editar=editar, ao_evento=self._na_aba(aba, evento_codex),
                                         retomar=self._codex_id(pasta), parar=self._codex_parar)
                     if r.get("sessao"):
                         self._codex_guardar(pasta, r["sessao"])
                     self._codex_registrar(pasta, texto, r)
                 elif quem == "pickle":
-                    r = self._pickle_rodar(texto, pasta, por_voz, editar)
+                    r = self._pickle_rodar(texto, pasta, por_voz, editar, passou)
                 else:   # modo Kani: em etapas (kani_modo.py), com a conversa recente como contexto
                     import kani_modo
                     self._kani_parar = threading.Event()
@@ -1264,7 +1514,11 @@ class App:
                             passos.append({k: e.get(k) for k in ("t", "nome", "entrada", "ok", "saida") if e.get(k) is not None})
                             vistos.append(dict(e))
                         self._evento(e)
-                    r = kani_modo.rodar(texto, pasta, self._na_aba(aba, ev), getattr(self, "_kani_hist", []), por_voz, self._kani_parar, editar=editar)
+                    hist = getattr(self, "_kani_hist", [])
+                    if passou:
+                        hist = hist + [{"role": "user", "content": passou.strip()}, {"role": "assistant", "content": "Entendi, continuo daí."}]
+                    extras = {"retomar":_execucao, "informacao":_informacao} if _execucao else {}
+                    r = kani_modo.rodar(texto, pasta, self._na_aba(aba, ev), hist, por_voz, self._kani_parar, editar=editar, **extras)
                     try:   # registro de cada pedido do modo Kani: o Claude lê depois para achar limitações
                         with open(os.path.join(DADOS, "kani_modo.jsonl"), "a", encoding="utf-8") as f:
                             f.write(json.dumps({"quando": time.strftime("%Y-%m-%d %H:%M:%S"), "pedido": texto, "voz": por_voz,
@@ -1272,13 +1526,13 @@ class App:
                                                 "ok": r.get("ok"), "ms": r.get("ms"), "tokens": r.get("tokens")}, ensure_ascii=False) + chr(10))
                     except Exception:
                         pass
-                    if r.get("claude"):   # pedido difícil: vai para o Claude, com a mesma pergunta
+                    if r.get("claude"):   # mantém o pedido e as evidências da continuação local
                         self._kani_hist = []
                         self._para_janela({"t": "ajudante_resposta", "quem": "kani", "ok": True, "tokens": r["tokens"],
-                                           "texto": "Isso é com o Claude, passei para ele." + (f" ({r['texto']})" if r["texto"] else "")})
+                                           "texto": "O fluxo local precisa do Claude; encaminhando o pedido." + (f" ({r['texto']})" if r["texto"] else "")})
                         self._bola_atividade("")
                         self._para_janela({"t": "local", "acao": "quem", "quem": "claude"})
-                        self.enviar(texto)
+                        self.enviar(texto + r.get("passagem", ""))
                         return
                     self._kani_hist = (getattr(self, "_kani_hist", []) + [{"role": "user", "content": texto},
                                                                           {"role": "assistant", "content": r["texto"]}])[-20:]
@@ -1286,7 +1540,7 @@ class App:
                                        [{"t": "ajudante_resposta", "quem": "kani", "texto": r["texto"], "ok": r["ok"]}],
                                        texto, r["texto"])
                     self._bola_atividade("")
-                    if por_voz:   # pedido por voz: a resposta volta falada
+                    if por_voz or self._falar_agora():   # pedido por voz (ou Falar sempre): a resposta volta falada
                         f = self._fala_obj()
                         f.novo()
                         f.pedaco(r["texto"])
@@ -1294,6 +1548,9 @@ class App:
                         self._por_voz = False
                 resposta = {"t": "ajudante_resposta", "quem": quem, "texto": r["texto"], "ok": r["ok"],
                             "tokens": r["tokens"], "uso": r.get("uso")}
+                if r.get("texto"):
+                    import passagem
+                    passagem.registrar(DADOS, pasta + self._sufixo(), quem, texto, r["texto"])
                 self._na_ui(lambda: self._bola and self._bola.definir(humor="feliz" if r["ok"] else "erro", segundos=3))
             except Exception as e:
                 resposta = {"t": "ajudante_resposta", "quem": quem, "texto": str(e), "ok": False, "tokens": 0}
@@ -1307,6 +1564,7 @@ class App:
                     self._codex_voz(resposta)
                 self._ajudante_trava.release()
                 if resposta:
+                    self._todo_agente_finalizar(resposta.get('ok') is True and not resposta.get('cancelado'), resposta.get('texto',''))
                     self._para_janela(resposta)   # só liberar a caixa da janela depois de liberar o motor
                 self._bola_atividade("")
                 self._bola_estado("" if self._aberta else "pergunta")
@@ -1322,6 +1580,15 @@ class App:
             self._ajudante_trava.release()
             raise
         return True
+
+    def _passagem_pendente(self, destino):
+        """o que outro agente fez nesta aba e `destino` ainda não viu (troca de agente sem perder o fio)"""
+        try:
+            import passagem
+            # só conta como visto quando o agente responde (registrar): falha no envio não perde o contexto
+            return passagem.pendente(DADOS, self._pasta() + self._sufixo(), destino, marcar=False)
+        except Exception:
+            return ""
 
     def _ocupada(self):
         return bool(self._ajudante_ativo or (self._sessao and self._sessao.ocupada))
@@ -1353,7 +1620,7 @@ class App:
         except OSError:
             return []
 
-    def _pickle_rodar(self, texto, pasta, por_voz, editar):
+    def _pickle_rodar(self, texto, pasta, por_voz, editar, passou=""):
         import bigpickle_modo
         self._kani_parar = threading.Event()
         vistos = []
@@ -1371,6 +1638,8 @@ class App:
 
         import pickle_agente
         ponte = pickle_agente.rota_ponte(texto, [h["content"] for h in historico if h["role"] == "user"])
+        if passou:   # trocou de agente: o que os outros fizeram entra como a troca mais recente
+            historico = historico[-14:] + [{"role": "user", "content": passou.strip()}, {"role": "assistant", "content": "Entendi, continuo daí."}]
         if ponte:   # mexer no KANIVETE, sites, disco, arte (e a continuação deles): a ponte em etapas
             evento = self._na_aba(self._ctx().id, evento)
             r = bigpickle_modo.rodar(ponte, pasta, evento, historico[-16:], por_voz, self._kani_parar, editar)
@@ -1386,7 +1655,7 @@ class App:
             with open(arquivo, "a", encoding="utf-8") as f:
                 for ev in eventos:
                     f.write(json.dumps(ev, ensure_ascii=False) + "\n")
-        if por_voz:
+        if por_voz or self._falar_agora():
             fala = self._fala_obj()
             fala.novo()
             fala.pedaco(r["texto"])
@@ -1485,6 +1754,7 @@ class App:
         return a.mensagens.visivel(item)
 
     def _fila_evento(self, item):
+        self._todo_agente_fila(item)
         self._para_janela({'t': 'fila_mensagem', **self._ctx().mensagens.visivel(item)})
 
     def mensagem_urgente(self, id_):
@@ -1599,7 +1869,11 @@ class App:
         pasta = self._pasta()
         if not self._sessao.sessao_id:   # conversa nova: o que a Kani falou antes entra no começo dela
             self._sessao._pendentes = self._kani_previa(pasta, tirar=True) + (getattr(self._sessao, "_pendentes", None) or [])
-        contexto = "" if texto.startswith("/") else self._kani_para_claude(pasta)
+        contexto = "" if texto.startswith("/") else self._kani_para_claude(pasta) + self._passagem_pendente("claude")
+        if not texto.startswith('/'):
+            from tarefas_agente import contexto as contexto_tarefas
+            contexto += '\n\n' + contexto_tarefas(pasta,texto)
+        self._ctx().pedido_turno = "" if texto.startswith("/") else texto
         if not texto.startswith("/"):
             self._prontidao_agendar()
         try:
@@ -1646,6 +1920,7 @@ class App:
         return self._comandos
 
     def parar(self, preservar_fila=False):
+        self._todo_agente_finalizar(False, 'Interrompida; o pedido original continua disponível para retomar.')
         if not preservar_fila:
             with self._ctx().mensagens.trava:
                 self._ctx().mensagens.pausada = True
@@ -1960,13 +2235,13 @@ class App:
 
     def _prontidao_agendar(self):
         self._prontidao_cancelar()
-        if self._aberta and not self._por_voz:
+        if self._aberta and not self._falar_agora():
             return
         cancelado = threading.Event()
         aba = self._ctx()
         def valido():
             trabalhando = aba.ajudante_ativo or aba.respondendo or (aba.sessao and aba.sessao.ocupada)
-            return not cancelado.is_set() and self._abas.get(aba.id) is aba and bool(trabalhando) and (not self._aberta or self._por_voz)
+            return not cancelado.is_set() and self._abas.get(aba.id) is aba and bool(trabalhando) and (not self._aberta or self._falar_agora())
         def confirmar():
             if valido():
                 try:
@@ -1980,7 +2255,7 @@ class App:
 
     def _codex_ler(self, texto):
         texto = (texto or "").strip()
-        if (self._aberta and not self._por_voz) or not texto or texto in self._codex_lidos:
+        if (self._aberta and not self._falar_agora()) or not texto or texto in self._codex_lidos:
             return
         if self._codex_parar and self._codex_parar.is_set():
             return
@@ -2024,7 +2299,11 @@ class App:
         if t not in ("texto", "pensando", "kani_pensando"):   # passos ao vivo para o Claude acompanhar (2026-10-21)
             try:
                 os.makedirs(DADOS, exist_ok=True)
-                with open(os.path.join(DADOS, "ao_vivo.jsonl"), "a", encoding="utf-8") as f:
+                vivo = os.path.join(DADOS, "ao_vivo.jsonl")
+                self._vivo_n = getattr(self, "_vivo_n", 0) + 1
+                if self._vivo_n % 200 == 1 and os.path.exists(vivo) and os.path.getsize(vivo) > 5_000_000:
+                    os.replace(vivo, vivo + ".1")   # rodízio: fica a parte atual e a anterior (antes crescia sem limite)
+                with open(vivo, "a", encoding="utf-8") as f:
                     f.write(json.dumps({"h": time.strftime("%H:%M:%S"), **ev}, ensure_ascii=False, default=str)[:1500] + "\n")
             except OSError:
                 pass
@@ -2035,6 +2314,12 @@ class App:
         elif t == "texto":
             self._resposta += ev.get("d") or ""
         elif t in ("fim", "saiu"):
+            self._todo_agente_finalizar(t=='fim' and not ev.get('erro'), self._resposta or str(ev.get('erro') or ''))
+            if self._ctx().pedido_turno:
+                import passagem
+                passagem.registrar(DADOS, self._pasta() + self._sufixo(), "claude", self._ctx().pedido_turno,
+                                   self._resposta or ("(interrompido)" if t == "saiu" else ""))
+                self._ctx().pedido_turno = ""
             self._respondendo, self._resposta = False, ""
         if t == "ferr":
             self._bola_atividade(self._ATIV.get(ev.get("nome"), ""))
@@ -2042,7 +2327,8 @@ class App:
             self._bola_atividade("pensando")
         elif t in ("texto_novo", "fim", "saiu"):
             self._bola_atividade("")
-        if self._por_voz and self._fala:
+        if self._falar_agora() and t in ("texto_novo", "texto", "permissao", "pergunta", "fim", "saiu"):
+            self._fala_obj()
             if t == "texto_novo":
                 self._fala.novo()
             elif t == "texto":
@@ -2381,6 +2667,15 @@ class App:
                         break
                     buf += pedaco
                 cmd = buf.decode("utf-8", "replace").strip()
+                if cmd.startswith("progresso "):
+                    import progresso
+                    try:
+                        for item in json.loads(cmd[10:])[:64]:
+                            progresso.registrar(item)
+                        c.sendall(b"ok\n")
+                    except (ValueError, TypeError, AttributeError):
+                        c.sendall(b"?\n")
+                    return
                 if cmd.startswith("kb "):
                     self._kb(c, cmd[3:])
                     return
@@ -2425,7 +2720,7 @@ def _icone_na_janela(titulo="KaniCode"):
         if not os.path.isfile(ico):
             from PIL import Image
             Image.open(os.path.join(PASTA, "icone.png")).convert("RGBA").save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64)])
-        u = ctypes.windll.user32
+        u = ctypes.WinDLL("user32")   # cópia própria: tipar o windll compartilhado quebra outros módulos (pywebview)
         u.LoadImageW.restype = wintypes.HANDLE
         u.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
         meu, achadas = os.getpid(), []
@@ -2481,6 +2776,12 @@ def main():
     if reaberto:
         _esperar_webview_antigo()
     app = App()
+    from tarefas_agente import TarefasAgente
+    try:
+        TarefasAgente(DADOS).recuperar()
+        app._todo_agente_restaurar()
+    except (OSError, ValueError):
+        pass   # o painel informa a falha de leitura sem impedir a abertura do KaniCode
     e = _ler_estado()
     w, h = _tamanho()
     app._janela = webview.create_window("KaniCode", os.path.join(PASTA, "ui", "janela.html"), js_api=app, width=w, height=h,

@@ -86,6 +86,8 @@ async function kcEstado() {
 }
 
 kcMontar();
+// A observação continua mesmo quando o lobby não está à vista; não consulta o CDP do app.
+kcCall('progresso_observador').then(codigo => new Function('KPLUG', 'PLUGIN_ID', codigo)(KPLUG, PLUGIN_ID)).catch(() => {});
 kcEstado();
 // o painel só pergunta o estado com a aba à vista (nada rodando com o app parado)
 KC.timer = setInterval(() => { if (kcPg() && kcPg().classList.contains('active') && !document.hidden) kcEstado(); }, 3000);

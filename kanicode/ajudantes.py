@@ -77,7 +77,7 @@ def _codex_cota(thread_id):
         return None
 
 
-CODEX_PRAZO = 1200  # s (20 min): passou disso, o KaniCode encerra o Codex e devolve o que tiver
+CODEX_PRAZO = 3600  # s (1 h): permite fluxos longos; Parar continua interrompendo a qualquer momento
 
 
 def _conversa(tarefa):

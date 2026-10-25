@@ -31,6 +31,7 @@
     fonte.onopen = () => {
       document.documentElement.classList.remove('sem-pc');
       if (caiu && typeof carregar === 'function') carregar();
+      if (caiu && window.KC_ABAS?.reconectou) KC_ABAS.reconectou();   // abas criadas/fechadas enquanto estava fora
       caiu = false;
     };
     fonte.onmessage = m => { try { window.kcEv && kcEv(JSON.parse(m.data)); } catch (e) { console.error(e); } };
@@ -341,7 +342,7 @@
   const $$ = id => document.getElementById(id);
   function menuMontar() {
     const topo = document.querySelector('.topo');
-    topo.insertAdjacentHTML('beforeend', '<button class="bt" id="kv-bt" title="KANIVETE ao vivo">📺</button><button class="bt" id="menu-bt" title="Menu">☰</button>');
+    topo.insertAdjacentHTML('beforeend', '<button class="bt" id="kv-bt" title="Tela do PC ao vivo">📺</button><button class="bt" id="menu-bt" title="Menu">☰</button>');
     document.body.insertAdjacentHTML('beforeend', '<div class="menu-m" id="menu-m" hidden></div>');
     $$('menu-bt').onclick = e => { e.stopPropagation(); const m = $$('menu-m'); m.hidden ? menuAbrir() : (m.hidden = true); };
     $$('kv-bt').onclick = () => ($$('kv').hidden ? telaAbrir() : telaFechar());
@@ -374,17 +375,41 @@
 
   // ── 📺 KANIVETE ao vivo (tela_movel.py): telinha horizontal em cima da conversa; ⛶ tela cheia deitada; ✕ fecha e para ──
   let kvVigia = null;
+  let kvFonte = 'pc', kvMonitor = '', kvZoom = 1, kvPan = {x:0,y:0}, kvPinca = null;
+  const kvDedos = new Map();
+  let kvResolucao=1280,kvZoomTimer=null;
+  let kvNativa = false, kvGesto = null, kvUltToque = 0, kvMoveTimer = 0, kvEnviando = false, kvGer = 0, kvAbort = null;
+  const kvMouse = { x: .5, y: .5, largura: 0, ligado: true, fila: [] };
   function telaMontar() {
     document.querySelector('.topo').insertAdjacentHTML('afterend', `<div class="kv" id="kv" hidden>
-      <img id="kv-img" alt="">
+      <div class="kv-area controle" id="kv-area"><img id="kv-img" alt="Tela do PC" draggable="false">
+        <svg id="kv-cursor" viewBox="0 0 16 22" aria-hidden="true" hidden><path d="M1 1v17l4-4 4 7 3-2-4-7h6Z" fill="white" stroke="black" stroke-width="1.5"/></svg></div>
       <div class="kv-msg" id="kv-msg" hidden><span id="kv-txt"></span><button id="kv-abrir">Abrir o KANIVETE</button></div>
-      <div class="kv-bts"><button id="kv-cheia" title="Tela cheia">⛶</button><button id="kv-fechar" title="Fechar">✕</button></div></div>`);
+      <div class="kv-bts"><select id="kv-fonte" aria-label="Tela transmitida"><option value="pc">PC · principal</option><option value="kanivete">KANIVETE</option></select><button id="kv-mouse" title="Arraste para mover o mouse; toque para clicar; dois toques para duplo clique" aria-label="Controle do mouse" aria-pressed="true">↖</button><button id="kv-menos" aria-label="Diminuir zoom">−</button><button id="kv-mais" aria-label="Aumentar zoom">+</button><button id="kv-cheia" title="Tela cheia" aria-label="Tela cheia" aria-pressed="false">⛶</button><button id="kv-fechar" title="Fechar" aria-label="Fechar transmissão">✕</button></div>
+      <span id="kv-mouse-status" class="kv-mouse-status" role="status">Arraste: mover · toque: clicar · dois toques: duplo clique</span></div>`);
     const img = $$('kv-img');
-    img.onload = () => $$('kv-msg').hidden = true;
+    img.onload = () => { $$('kv-msg').hidden = true; mouseDesenhar(); };
     img.onerror = () => { if (!$$('kv').hidden) telaConferir(); };
-    img.ondblclick = telaCheia;
     $$('kv-cheia').onclick = telaCheia;
+    $$('kv-mais').onclick = () => zoomAplicar(kvZoom * 1.5);
+    $$('kv-menos').onclick = () => zoomAplicar(kvZoom / 1.5);
+    $$('kv-fonte').onchange = () => {
+      mouseCancelar(); kvDedos.clear(); kvPinca=null;
+      const valor=$$('kv-fonte').value;
+      kvFonte=valor==='kanivete'?'kanivete':'pc';kvMonitor=valor.startsWith('pc:')?valor.slice(3):'';
+      kvMouse.x=kvMouse.y=.5;kvMouse.largura=0;kvPan={x:0,y:0};zoomAplicar(1);
+      $$('kv-img').alt=kvFonte==='pc'?'Tela do PC':'Tela do KANIVETE';
+      $$('kv-msg').hidden=true;telaLigar();
+    };
     $$('kv-fechar').onclick = telaFechar;
+    $$('kv-mouse').onclick = () => {
+      kvMouse.ligado = !kvMouse.ligado; mouseCancelar();
+      $$('kv-area').classList.toggle('controle', kvMouse.ligado);
+      $$('kv-mouse').setAttribute('aria-pressed', String(kvMouse.ligado));
+      $$('kv-mouse-status').textContent = kvMouse.ligado ? 'Arraste: mover · toque: clicar · dois toques: duplo clique' : 'Só assistir';
+      mouseDesenhar();
+    };
+    mouseMontar();
     $$('kv-abrir').onclick = async () => {
       $$('kv-abrir').disabled = true; $$('kv-txt').textContent = 'Abrindo o KANIVETE no PC…';
       await post('/tela/abrir');
@@ -394,29 +419,205 @@
       }
       $$('kv-abrir').disabled = false; $$('kv-txt').textContent = 'O KANIVETE não abriu a tempo.';
     };
-    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) try { screen.orientation.unlock(); } catch (e) {} });
+    const mudouTela = () => {
+      if (!(document.fullscreenElement || document.webkitFullscreenElement) && kvNativa) telaNormal();
+      mouseDesenhar();
+    };
+    document.addEventListener('fullscreenchange', mudouTela);
+    document.addEventListener('webkitfullscreenchange', mudouTela);
+    window.addEventListener('resize', mouseDesenhar);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && $$('kv').classList.contains('kv-grande')) telaNormal(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) mouseCancelar(); });
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !$$('kv').hidden) telaLigar(); });
   }
-  function telaLigar() { $$('kv-img').src = '/tela?t=' + Date.now(); }
+  function telaParametros() { return new URLSearchParams({fonte:kvFonte,monitor:kvMonitor,largura:kvResolucao}); }
+  function telaLigar() { $$('kv-img').src = '/tela?' + telaParametros() + '&t=' + Date.now(); }
+  async function telaMonitores() {
+    try {
+      const r=await fetch('/tela/monitores'), itens=await r.json();
+      if(!r.ok||!Array.isArray(itens))return;
+      const seletor=$$('kv-fonte'), valor=seletor.value;seletor.replaceChildren();
+      for(const m of itens){const o=document.createElement('option');o.value='pc:'+m.id;o.textContent=m.nome;seletor.append(o);}
+      if(!itens.length){const o=document.createElement('option');o.value='pc';o.textContent='PC · principal';seletor.append(o);}
+      const app=document.createElement('option');app.value='kanivete';app.textContent='KANIVETE';seletor.append(app);
+      if(Array.from(seletor.options).some(o=>o.value===valor))seletor.value=valor;
+      else if(kvFonte==='pc'&&!kvMonitor){seletor.selectedIndex=0;}
+      else {seletor.selectedIndex=0;seletor.onchange();}
+    } catch (_) {}
+  }
+  function zoomAplicar(valor) {
+    kvZoom=Math.max(1,Math.min(4,valor));
+    if(kvZoom===1)kvPan={x:0,y:0};
+    const area=$$('kv-area').getBoundingClientRect();
+    const img=$$('kv-img'), proporcao=img.naturalWidth/img.naturalHeight;
+    const w=Math.min(img.clientWidth,img.clientHeight*proporcao)||area.width;
+    const h=w/proporcao||area.height;
+    const maxX=Math.max(0,(w*kvZoom-area.width)/2),maxY=Math.max(0,(h*kvZoom-area.height)/2);
+    kvPan.x=Math.max(-maxX,Math.min(maxX,kvPan.x));
+    kvPan.y=Math.max(-maxY,Math.min(maxY,kvPan.y));
+    $$('kv-img').style.transform=`translate(${kvPan.x}px,${kvPan.y}px) scale(${kvZoom})`;
+    $$('kv-mais').title=$$('kv-menos').title='Zoom: '+Math.round(kvZoom*100)+'% · dois dedos para ampliar e deslocar';
+    const resolucao=kvZoom>1.1?2560:1280;
+    if(resolucao!==kvResolucao){
+      kvResolucao=resolucao;clearTimeout(kvZoomTimer);
+      kvZoomTimer=setTimeout(()=>{if(!$$('kv').hidden&&kvFonte==='pc')telaLigar();},300);
+    }
+    mouseDesenhar();
+  }
   async function telaConferir() {
+    telaMonitores();
     let aberto = false;
-    try { aberto = (await (await fetch('/tela/estado')).json()).aberto; } catch (e) {}
+    try { aberto = (await (await fetch('/tela/estado?' + telaParametros())).json()).aberto; } catch (e) {}
     if (aberto) { if (!$$('kv-img').complete || !$$('kv-img').naturalWidth) setTimeout(telaLigar, 1500); return; }
-    $$('kv-txt').textContent = 'O KANIVETE está fechado (ou fora do modo agente).';
+    $$('kv-txt').textContent = kvFonte==='pc'?'Monitor indisponível. Escolha outra tela.':'O KANIVETE está fechado (ou fora do modo agente).';
+    $$('kv-abrir').hidden=kvFonte==='pc';
     $$('kv-msg').hidden = false;
   }
   function telaAbrir() {
     $$('kv').hidden = false; $$('kv-bt').classList.add('on'); telaLigar();
+    telaMonitores();
     clearInterval(kvVigia); kvVigia = setInterval(telaConferir, 10000);   // o app fechou no meio: avisa
+    requestAnimationFrame(mouseDesenhar);
   }
   function telaFechar() {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    mouseCancelar(); telaNormal();
     const img = $$('kv-img'); img.removeAttribute('src'); img.src = '';   // fecha a conexão: o PC para de mandar quadros
     $$('kv').hidden = true; $$('kv-bt').classList.remove('on'); clearInterval(kvVigia);
   }
   async function telaCheia() {
     const kv = $$('kv');
-    if (document.fullscreenElement) return document.exitFullscreen().catch(() => {});
-    try { await kv.requestFullscreen(); await screen.orientation.lock('landscape'); } catch (e) {}
+    if (kv.classList.contains('kv-grande')) return telaNormal();
+    kv.classList.add('kv-grande'); document.documentElement.classList.add('kv-ampliada');
+    $$('kv-cheia').setAttribute('aria-pressed', 'true');
+    $$('kv-cheia').setAttribute('aria-label', 'Sair da tela cheia');
+    mouseCancelar(); requestAnimationFrame(mouseDesenhar);
+    try {
+      const pedir = kv.requestFullscreen || kv.webkitRequestFullscreen;
+      if (pedir) { await pedir.call(kv); kvNativa = true; }
+    } catch (e) {}   // navegador sem Fullscreen API: a classe mantém a tela ampliada
+    if (!kv.classList.contains('kv-grande')) return telaNormal();
+    try { await screen.orientation.lock('landscape'); } catch (e) {}
+  }
+  function telaNormal() {
+    kvNativa = false;
+    $$('kv').classList.remove('kv-grande'); document.documentElement.classList.remove('kv-ampliada');
+    $$('kv-cheia').setAttribute('aria-pressed', 'false');
+    $$('kv-cheia').setAttribute('aria-label', 'Tela cheia');
+    const sair = document.exitFullscreen || document.webkitExitFullscreen;
+    if ((document.fullscreenElement || document.webkitFullscreenElement) && sair) {
+      try { const p = sair.call(document); if (p?.catch) p.catch(() => {}); } catch (e) {}
+    }
+    try { screen.orientation.unlock(); } catch (e) {}
+    mouseCancelar(); requestAnimationFrame(mouseDesenhar);
+  }
+  function mouseCancelar() {
+    clearTimeout(kvMoveTimer); kvMoveTimer = 0; kvGesto = null; kvUltToque = 0;
+    kvMouse.fila.length = 0; kvGer++; kvAbort?.abort();
+    kvDedos.clear();kvPinca=null;
+  }
+  function quadroVisivel() {
+    const img = $$('kv-img'), r = img.getBoundingClientRect(), proporcao = img.naturalWidth / img.naturalHeight;
+    if (!Number.isFinite(proporcao) || !r.width || !r.height) return null;
+    const w = Math.min(r.width, r.height * proporcao), h = w / proporcao;
+    return { x: r.left + (r.width - w) / 2, y: r.top + (r.height - h) / 2, w, h };
+  }
+  function mouseDesenhar() {
+    const q = quadroVisivel(), cursor = $$('kv-cursor');
+    if (!cursor) return;
+    cursor.toggleAttribute('hidden', !q || !kvMouse.ligado || !$$('kv-msg').hidden);
+    if (!q) return;
+    const r = $$('kv-area').getBoundingClientRect();
+    cursor.style.left = (q.x - r.left + Math.min(q.w - 1, kvMouse.x * q.w)) + 'px';
+    cursor.style.top = (q.y - r.top + Math.min(q.h - 1, kvMouse.y * q.h)) + 'px';
+    cursor.style.width = Math.max(6, 16 * q.w / (kvMouse.largura || $$('kv-img').naturalWidth)) + 'px';
+  }
+  function mouseEnfileirar(acao, cliques = 1) {
+    const d = { acao, x: kvMouse.x, y: kvMouse.y, cliques:kvFonte==='pc'?1:cliques, fonte:kvFonte, monitor:kvMonitor };
+    const fila = kvMouse.fila;
+    // O clique já leva a posição final; movimentos pendentes não devem atrasá-lo.
+    if(acao==='clicar'&&kvFonte==='pc')for(let i=fila.length-1;i>=0;i--)if(fila[i].acao==='mover')fila.splice(i,1);
+    if (acao === 'mover' && fila.at(-1)?.acao === 'mover') fila[fila.length - 1] = d;
+    else fila.push(d);
+    mouseEnviar();
+  }
+  async function mouseEnviar() {
+    if (kvEnviando || !kvMouse.fila.length || $$('kv').hidden) return;
+    kvEnviando = true;
+    const ger = kvGer;
+    try {
+      while (kvMouse.fila.length && ger === kvGer && !$$('kv').hidden) {
+        const dados = kvMouse.fila.shift(), abort = new AbortController(); kvAbort = abort;
+        const prazo = setTimeout(() => abort.abort(), 3000);
+        try {
+          const r = await fetch('/tela/mouse', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dados), signal:abort.signal});
+          const j = await r.json();
+          if (!r.ok || j.erro) throw Error(j.erro || 'Mouse indisponível');
+          if (ger === kvGer) {
+            kvMouse.largura = j.largura;
+            $$('kv-mouse-status').textContent = 'Arraste: mover · toque: clicar · dois toques: duplo clique';
+            mouseDesenhar();
+          }
+        } finally { clearTimeout(prazo); }
+      }
+    } catch (e) {
+      if (ger === kvGer) { kvMouse.fila.length = 0; $$('kv-mouse-status').textContent = 'Mouse indisponível — tente novamente'; }
+    } finally {
+      kvEnviando = false; kvAbort = null;
+      if (kvMouse.fila.length && !$$('kv').hidden) mouseEnviar();
+    }
+  }
+  function mouseMontar() {
+    const area = $$('kv-area');
+    area.addEventListener('contextmenu', e => { if (kvMouse.ligado) e.preventDefault(); });
+    area.addEventListener('pointerdown', e => {
+      if (!$$('kv-msg').hidden || !quadroVisivel() || e.button !== 0) return;
+      e.preventDefault();
+      kvDedos.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      try { area.setPointerCapture(e.pointerId); } catch (_) {}
+      if(kvDedos.size>=2){
+        const [a,b]=Array.from(kvDedos.values());
+        kvPinca={dist:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),x:(a.x+b.x)/2,y:(a.y+b.y)/2,zoom:kvZoom,pan:{...kvPan}};
+        kvGesto=null;kvUltToque=0;clearTimeout(kvMoveTimer);kvMoveTimer=0;return;
+      }
+      if(!kvMouse.ligado)return;
+      if (kvGesto) { kvGesto = null; kvUltToque = 0; return; }
+      kvGesto = { id:e.pointerId, x:e.clientX, y:e.clientY, inicioX:e.clientX, inicioY:e.clientY, t:performance.now(), moveu:false };
+      try { area.setPointerCapture(e.pointerId); } catch (e) {}
+    });
+    area.addEventListener('pointermove', e => {
+      if(kvDedos.has(e.pointerId))kvDedos.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(kvPinca){
+        e.preventDefault();
+        if(kvDedos.size>=2){
+          const [a,b]=Array.from(kvDedos.values());
+          kvPan={x:kvPinca.pan.x+(a.x+b.x)/2-kvPinca.x,y:kvPinca.pan.y+(a.y+b.y)/2-kvPinca.y};
+          zoomAplicar(kvPinca.zoom*Math.hypot(a.x-b.x,a.y-b.y)/kvPinca.dist);
+        }
+        return;
+      }
+      const g = kvGesto, q = quadroVisivel();
+      if (!g || g.id !== e.pointerId || !q) return;
+      e.preventDefault();
+      if (!g.moveu && Math.hypot(e.clientX - g.inicioX, e.clientY - g.inicioY) < 5) return;
+      g.moveu = true; kvUltToque = 0;
+      kvMouse.x = Math.max(0, Math.min(1, kvMouse.x + (e.clientX - g.x) / q.w));
+      kvMouse.y = Math.max(0, Math.min(1, kvMouse.y + (e.clientY - g.y) / q.h));
+      g.x = e.clientX; g.y = e.clientY; mouseDesenhar();
+      if (!kvMoveTimer) kvMoveTimer = setTimeout(() => { kvMoveTimer = 0; mouseEnfileirar('mover'); }, 50);
+    });
+    area.addEventListener('pointerup', e => {
+      kvDedos.delete(e.pointerId);
+      if(kvPinca){if(!kvDedos.size)kvPinca=null;kvGesto=null;kvUltToque=0;return;}
+      const g = kvGesto;
+      if (!g || g.id !== e.pointerId) return;
+      kvGesto = null;
+      if (g.moveu) { clearTimeout(kvMoveTimer); kvMoveTimer = 0; mouseEnfileirar('mover'); return; }
+      if (performance.now() - g.t > 500 || Math.hypot(e.clientX - g.inicioX, e.clientY - g.inicioY) >= 5) return;
+      const agora = performance.now(), duplo = kvUltToque && agora - kvUltToque < 450;
+      kvUltToque = duplo ? 0 : agora;
+      mouseEnfileirar('clicar', duplo ? 2 : 1);
+    });
+    area.addEventListener('pointercancel', mouseCancelar);
+    area.addEventListener('lostpointercapture', () => { if (kvGesto) mouseCancelar(); });
   }
 })();

@@ -1,6 +1,9 @@
 /* KaniBall dentro do chat (2026-10-22, pedido do Pailer): ao abrir, a bolinha nativa (bolinha.py) pula até aqui, em
    cima da faixa de status, à direita; esta cópia em canvas assume e afunda até só o alto da cabeça ficar para fora (o
-   resto atrás da faixa). Parada, ela olha o mouse e faz palhaçada de vez em quando; trabalhando, mostra o arco; com
+   resto atrás da faixa). Parada, ela olha o mouse e faz palhaçada de vez em quando (2026-10-24: piscadela, giro, soluço, dança, bocejo; cochila
+   após 2 min com Zzz; carinho = passar o mouse de um lado ao outro nela; rodinha = gira; botão direito = falar sempre;
+   dois cliques direitos = cócegas; mouse
+   rápido perto = susto; olha o campo enquanto você digita; pula ao enviar; comemora quando termina o trabalho); trabalhando, mostra o arco; com
    pergunta, sobe e mostra o ponto vermelho. Ao recolher, sobe inteira, a nativa aparece no mesmo lugar e volta para casa.
    Cara: os mesmos quadros do rosto.py (App.rosto_quadros). Python chama kbDocaAlvo/kbDoca/kbDocaEstado.
    Ctrl+Q aqui recolhe o chat e deixa a bolinha com o teclado (Ctrl+Q de novo nela fecha o KaniCode). */
@@ -12,8 +15,19 @@
   doca.innerHTML = '<div class="kb-clip"><div class="kb-caixa" id="kb-caixa" title="KaniBall · clique ou Ctrl+Q recolhe"><canvas width="64" height="64"></canvas></div></div>';
   $('status').before(doca);   // o recorte (.kb-clip) termina na borda de cima da faixa: o que afunda some "atrás" dela
   const caixa = doca.firstChild.firstChild, cv = caixa.firstChild, g = cv.getContext('2d');
+  caixa.title = 'KaniBall · clique recolhe · botão direito: falar sempre · dois cliques direitos: cócegas';
+  const aviso = document.createElement('div');
+  aviso.className = 'kb-aviso'; aviso.setAttribute('role', 'status'); aviso.hidden = true; doca.appendChild(aviso);
+  let direitoTimer = 0, avisoTimer = 0;
+  function avisarFala(texto) {
+    clearTimeout(avisoTimer);
+    aviso.textContent = texto; aviso.hidden = false;
+    avisoTimer = setTimeout(() => { aviso.hidden = true; }, 2200);
+  }
   const B = { on: false, expr: 'neutro', estado: '', voz: '', humorAte: 0, y: 0, rot: 0, sx: 1, sy: 1, olho: [0, 0],
-              truque: null, proximo: 0, mouse: null, perto: false, quadros: {}, timer: 0 };
+              truque: null, proximo: 0, mouse: null, perto: false, quadros: {}, timer: 0,
+              ativa: performance.now() / 1000, dorme: false, digita: 0, carinho: { n: 0, dx: 0, t: 0 }, zzz: 0, susto: 0 };
+  const DORME_S = 120;   // parada e sem mouse/teclado por 2 min: cochila (qualquer movimento acorda)
   const CORES = { '#': '#0E1110', w: '#FFFFFF', p: '#FF8FA3', r: '#FF5A5F' };
 
   function quadros(expr) {
@@ -23,7 +37,7 @@
     }
     return B.quadros[expr];
   }
-  ['neutro', 'feliz', 'trabalhando', 'pergunta'].forEach(e => window.addEventListener('pywebviewready', () => quadros(e)));
+  ['neutro', 'feliz', 'trabalhando', 'pergunta', 'dormindo'].forEach(e => window.addEventListener('pywebviewready', () => quadros(e)));
 
   // ── palhaçadas: cada uma é uma função do tempo (0..1) que mexe em y/rot/escala/olho/cara ──
   const ease = p => p * p * (3 - 2 * p);
@@ -34,11 +48,52 @@
     olha: { dur: 2.2, f: p => ({ olho: [p < .45 ? -2 : p < .9 ? 2 : 0, 0], y: -3 * Math.sin(p * Math.PI) }) },
     lingua: { dur: 1.6, f: p => ({ y: -ESPIA * .8 * Math.min(1, Math.sin(p * Math.PI) * 1.6), lingua: p > .15 && p < .85 }) },
     espia: { dur: 2.0, f: p => ({ y: 14 * Math.sin(p * Math.PI), rot: -22 * Math.sin(p * Math.PI), olho: [-1, -1] }) },
+    pisca: { dur: 1.3, f: p => ({ y: -10 * Math.sin(p * Math.PI), rot: 8 * Math.sin(p * Math.PI), pisca: p > .25 && p < .75, fx: p > .3 && p < .5 ? ['✨', '#FFE27A'] : null }) },
+    giro: { dur: 1.2, f: p => ({ y: -ESPIA * .9 * Math.sin(p * Math.PI), rot: 360 * ease(p), expr: 'feliz' }) },
+    soluco: { dur: 1.6, f: p => { const k = (p * 3) % 1; return { y: -9 * Math.sin(k * Math.PI) ** 2, sy: 1 + .08 * Math.sin(k * Math.PI), fx: k > .1 && k < .2 ? ['hic', '#E9F5D0'] : null }; } },
+    danca: { dur: 2.4, f: p => ({ y: -ESPIA * .7 * Math.abs(Math.sin(p * Math.PI * 4)) * Math.sin(p * Math.PI), rot: 16 * Math.sin(p * Math.PI * 4), expr: 'feliz', fx: ['♪', '#C4F64E'] }) },
+    boceja: { dur: 2.2, f: p => ({ y: -6 * Math.sin(p * Math.PI), sy: 1 + .1 * Math.sin(p * Math.PI), lingua: p > .3 && p < .8, olho: [0, -1] }) },
   };
+  // truques que só saem pelas interações (não entram no sorteio)
+  const ESPECIAIS = {
+    carinho: { dur: 1.8, f: p => ({ y: -12 * Math.sin(p * Math.PI), rot: 6 * Math.sin(p * Math.PI * 6) * (1 - p), sx: 1 + .05 * Math.sin(p * Math.PI * 6), expr: 'feliz', fx: ['♥', '#FF8FA3'] }) },
+    cocegas: { dur: 1.4, f: p => ({ rot: 18 * Math.sin(p * Math.PI * 10) * (1 - p), y: -8 * Math.sin(p * Math.PI), expr: 'feliz', lingua: true, fx: p < .5 ? ['hihi', '#FFD6E0'] : null }) },
+    susto: { dur: 1.2, f: p => ({ y: p < .2 ? 26 * p / .2 : 26 * (1 - ease((p - .2) / .8)), sx: p < .2 ? .9 : 1, olho: [0, 0], fx: p < .3 ? ['!', '#FF5A5F'] : null }) },
+    acorda: { dur: 1.0, f: p => ({ y: -ESPIA * 1.1 * Math.sin(p * Math.PI), sy: p < .15 ? .85 : 1, fx: p < .3 ? ['!', '#FFE27A'] : null }) },
+    festa: { dur: 2.2, f: p => ({ y: -ESPIA * 1.2 * Math.abs(Math.sin(p * Math.PI * 3)) * (1 - p * .5), rot: p > .5 ? 360 * ease((p - .5) / .5) : 0, expr: 'feliz', fx: ['✨', '#FFE27A'] }) },
+    roda: { dur: .9, f: p => ({ rot: 360 * ease(p), y: -8 * Math.sin(p * Math.PI), expr: 'feliz' }) },
+  };
+  const TODOS = Object.assign({}, TRUQUES, ESPECIAIS);
+  function fazer(n) {   // dispara um truque agora (interação); não atrapalha pergunta nem o estilingue do git
+    if (!B.on || envio) return;
+    const t = performance.now() / 1000;
+    if (B.estado === 'pergunta' || B.expr === 'pergunta') return;
+    B.truque = { n, t0: t }; B.proximo = Math.max(B.proximo, t + TODOS[n].dur + 4);
+  }
+  // partículas: ♥, Zzz, ✨, "!" que sobem e somem, dentro do recorte da doca
+  let ultFx = 0;
+  function fx(txt, cor, dx = 0) {
+    const agora = performance.now();
+    if (agora - ultFx < 180) return;
+    ultFx = agora;
+    const clip = doca.firstChild, e = document.createElement('span');
+    e.className = 'kb-fx'; e.textContent = txt; e.style.color = cor;
+    const r = caixa.getBoundingClientRect(), c = clip.getBoundingClientRect();
+    e.style.left = (r.left - c.left + 26 + dx + (Math.random() * 24 - 12)).toFixed(0) + 'px';
+    e.style.top = Math.max(4, r.top - c.top + 2).toFixed(0) + 'px';
+    clip.appendChild(e);
+    e.animate([{ transform: 'translate(0,0) scale(.6)', opacity: 0 }, { transform: 'translate(0,-10px) scale(1)', opacity: 1, offset: .2 },
+               { transform: `translate(${(Math.random() * 20 - 10).toFixed(0)}px,-44px) scale(.9)`, opacity: 0 }],
+              { duration: 1100, easing: 'ease-out' }).onfinish = () => e.remove();
+  }
   function sortear(t) {
     const nomes = Object.keys(TRUQUES), n = nomes[Math.floor(Math.random() * nomes.length)];
     B.truque = { n, t0: t };
     B.proximo = t + TRUQUES[n].dur + 5 + Math.random() * 7;
+  }
+  function acordar() {   // mouse/teclado: zera a contagem do cochilo (e acorda num pulo, se dormia)
+    B.ativa = performance.now() / 1000;
+    if (B.dorme) { B.dorme = false; fazer('acorda'); }
   }
 
   function grade(expr, t, olho, lingua, mira) {
@@ -75,15 +130,16 @@
     const gr = g.createRadialGradient(P * .32, P * .28, 0, P * .32, P * .28, P * .78);
     gr.addColorStop(0, '#D8FF7A'); gr.addColorStop(.35, '#C4F64E'); gr.addColorStop(1, '#7FB51A');
     g.fillStyle = gr; g.beginPath(); g.arc(P / 2, P / 2, P / 2 - .5, 0, Math.PI * 2); g.fill();
-    let o = { y: 0, rot: 0, sx: 1, sy: 1, olho: B.olho, expr: null, lingua: false };
+    let o = { y: 0, rot: 0, sx: 1, sy: 1, olho: B.olho, expr: null, lingua: false, pisca: false, fx: null };
     const trab = !mira && B.estado === 'trabalhando';
     if (B.truque) {
-      const T = TRUQUES[B.truque.n], p = (t - B.truque.t0) / T.dur;
+      const T = TODOS[B.truque.n], p = (t - B.truque.t0) / T.dur;
       if (p >= 1) B.truque = null; else Object.assign(o, T.f(p));
     }
     let expr = B.expr;
     if (o.expr && expr === 'neutro') expr = o.expr;
-    const linhas = grade(mira ? 'neutro' : expr, t, mira ? [0, -1] : o.olho || [0, 0], mira || o.lingua, mira);
+    if (B.dorme && expr === 'neutro' && !B.truque) expr = 'dormindo';
+    const linhas = grade(mira ? 'neutro' : expr, t, mira ? [0, -1] : o.olho || [0, 0], mira || o.lingua, mira || o.pisca);
     if (linhas) {
       const cel = Math.max(2, Math.floor(P * .8 / 16)), x0 = Math.floor(P / 2 - 8 * cel), y0 = Math.floor(P / 2 - 8 * cel + cel * .5);
       linhas.forEach((l, y) => { for (let x = 0; x < 16; x++) { const c = CORES[l[x]]; if (c) { g.fillStyle = c; g.fillRect(x0 + x * cel, y0 + y * cel, cel, cel); } } });
@@ -111,20 +167,27 @@
     const t = performance.now() / 1000;
     if (B.humorAte && t > B.humorAte) B.humorAte = 0;
     const parada = B.expr === 'neutro' && !B.estado;
-    if (parada && !B.truque && t > B.proximo) sortear(t);
-    if (!parada && B.truque && TRUQUES[B.truque.n].f(0).expr) B.truque = null;
+    if (!parada) { B.ativa = t; B.dorme = false; }
+    if (parada && !B.dorme && !B.truque && t - B.ativa > DORME_S) { B.dorme = true; B.truque = { n: 'boceja', t0: t }; }
+    if (parada && !B.dorme && !B.truque && t > B.proximo) sortear(t);
+    if (!parada && B.truque && TODOS[B.truque.n].f(0).expr) B.truque = null;
+    if (B.dorme && !B.truque && t > B.zzz) { B.zzz = t + 1.8; fx('z', '#E9F5D0', 8); setTimeout(() => B.dorme && fx('Z', '#E9F5D0', 16), 500); }
     // olhar o mouse
-    if (B.mouse && !B.truque) {
+    if (t < B.digita && !B.truque && !B.dorme) B.olho = [-1, 0];   // olha para o campo enquanto você digita
+    else if (B.mouse && !B.truque && !B.dorme) {
       const r = caixa.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       const dx = B.mouse[0] - cx, dy = B.mouse[1] - cy;
       B.olho = [Math.abs(dx) < 40 ? 0 : dx > 0 ? (dx > 220 ? 2 : 1) : (dx < -220 ? -2 : -1), dy < -60 ? -1 : 0];
     }
     const o = desenhar(t);
+    if (o.fx) fx(o.fx[0], o.fx[1]);
     // altura: pergunta sobe mais; trabalhando um pouco; mouse perto = curiosa
     let base = ESPIA;
     if (B.estado === 'pergunta' || B.expr === 'pergunta') base = 6 + 3 * Math.sin(t * 4);
     else if (B.estado === 'trabalhando') base = ESPIA - 8;
+    else if (B.dorme) base = ESPIA + 8;
     else if (B.perto) base = ESPIA - 12;
+    else if (t < B.digita) base = ESPIA - 5;
     if (B.expr === 'feliz' || B.expr === 'concluido') base = 4 + 4 * Math.abs(Math.sin(t * 5));
     B.y += (base - B.y) * .25;
     caixa.style.transform = `translateY(${(B.y + (o.y || 0)).toFixed(1)}px) rotate(${(o.rot || 0).toFixed(1)}deg) scale(${o.sx || 1}, ${o.sy || 1})`;
@@ -135,7 +198,47 @@
     if (on && !document.hidden) B.timer = setInterval(quadro, 50);   // 20 por segundo basta (leve com o app parado)
   }
   document.addEventListener('visibilitychange', () => ligar(B.on));
-  document.addEventListener('mousemove', e => { B.mouse = [e.clientX, e.clientY]; }, { passive: true });
+  document.addEventListener('mousemove', e => {
+    const t = performance.now() / 1000, ant = B.mouse, at = B.mouseT || t;
+    B.mouse = [e.clientX, e.clientY]; B.mouseT = t; acordar();
+    // mouse passando muito rápido bem perto dela: leva um susto (no máximo a cada 8 s)
+    if (B.on && ant && !B.truque && !B.perto && !B.estado && t > B.susto) {
+      const r = caixa.getBoundingClientRect(), d = Math.hypot(e.clientX - r.left - 32, e.clientY - r.top - 32);
+      const v = Math.hypot(e.clientX - ant[0], e.clientY - ant[1]) / Math.max(.008, t - at);
+      if (d < 85 && v > 2600) { B.susto = t + 8; fazer('susto'); }
+    }
+  }, { passive: true });
+  document.addEventListener('keydown', e => {
+    acordar();
+    if (!B.on || !e.target || e.target.tagName !== 'TEXTAREA' || e.ctrlKey || e.altKey) return;
+    B.digita = performance.now() / 1000 + 1.5;
+    if (e.key === 'Enter' && !e.shiftKey && !B.estado && e.target.value.trim()) fazer(Math.random() < .5 ? 'pulo' : 'giro');   // mandou: pulinho
+    else if (!B.truque) caixa.animate([{ marginBottom: '0px' }, { marginBottom: '2px' }, { marginBottom: '0px' }], { duration: 140 });
+  }, true);
+  // carinho: passar o mouse de um lado para o outro em cima dela
+  caixa.addEventListener('mousemove', e => {
+    const c = B.carinho, t = performance.now() / 1000, dx = e.movementX || 0;
+    if (t - c.t > .6) c.n = 0;
+    if (Math.abs(dx) > 1 && Math.sign(dx) !== Math.sign(c.dx)) { c.n++; c.t = t; c.dx = dx; }
+    if (c.n >= 5 && !B.truque) { c.n = 0; fazer('carinho'); }
+  });
+  caixa.addEventListener('wheel', e => { e.preventDefault(); if (!B.truque) fazer('roda'); }, { passive: false });   // rodinha em cima: gira
+  caixa.addEventListener('contextmenu', e => {
+    e.preventDefault(); e.stopPropagation(); acordar();
+    if (direitoTimer) {
+      clearTimeout(direitoTimer); direitoTimer = 0; fazer('cocegas');
+      return;
+    }
+    // Aguarda o segundo clique para a cosquinha não alternar a fala junto.
+    direitoTimer = setTimeout(async () => {
+      direitoTimer = 0;
+      if (!B.on || doca.hidden) return;
+      try {
+        const on = await falaSempreAlternar();
+        if (on !== null) avisarFala(on ? 'Falar ativado' : 'Falar desativado');
+      } catch (e) { avisarFala('Não deu para alterar a fala'); }
+    }, 450);
+  });
   document.addEventListener('mouseleave', () => { B.mouse = null; B.olho = [0, 0]; });
   caixa.addEventListener('mouseenter', () => { B.perto = true; });
   caixa.addEventListener('mouseleave', () => { B.perto = false; });
@@ -147,6 +250,8 @@
     return { x: r.right - 22 - L, y: r.top - L, dpr: window.devicePixelRatio || 1 };
   };
   window.kbDoca = on => {
+    clearTimeout(direitoTimer); direitoTimer = 0;
+    clearTimeout(avisoTimer); aviso.hidden = true;
     if (on === true) {
       B.on = true; doca.hidden = false; B.y = 0; B.truque = null;
       B.proximo = performance.now() / 1000 + 2.5;
@@ -166,9 +271,11 @@
     return true;
   };
   window.kbDocaEstado = d => {
+    const antes = B.estado;
     B.expr = d.expr || 'neutro'; B.estado = d.estado || ''; B.voz = d.voz || '';
+    if (antes === 'trabalhando' && !B.estado) setTimeout(() => B.expr === 'neutro' && !B.estado && fazer('festa'), 400);   // terminou: comemora
     if (d.humor_ate) B.humorAte = performance.now() / 1000 + d.humor_ate;
-    if (B.expr !== 'neutro') B.truque = null;
+    if (B.expr !== 'neutro') { B.truque = null; B.dorme = false; }
     quadros(B.expr);
     return true;
   };

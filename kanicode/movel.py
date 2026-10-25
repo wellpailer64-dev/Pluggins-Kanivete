@@ -16,7 +16,7 @@ UI = os.path.join(PASTA, "ui")
 PORTA = 47614
 
 # o que o celular pode chamar (o resto da js_api mexe na janela do PC: no celular não faz nada)
-LIBERADOS = {"mapa_d_status", "mapa_d_buscar", "mapa_d_listar", "todo_listar", "todo_salvar", "todo_concluir", "todo_agenda", "todo_lembrar", "todo_alarmes", "todo_alarme_salvar", "todo_alarme_apagar", "info", "abas", "aba_nova", "aba_ativar", "aba_fechar", "aba_assunto", "aba_renomear", "aba_ajudante", "aba_parar", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
+LIBERADOS = {"progresso_listar", "todo_agente_listar", "todo_agente_contexto", "todo_agente_concluir", "mapa_d_status", "mapa_d_buscar", "mapa_d_listar", "todo_listar", "todo_salvar", "todo_concluir", "todo_agenda", "todo_lembrar", "todo_alarmes", "todo_alarme_salvar", "todo_alarme_apagar", "info", "abas", "aba_nova", "aba_ativar", "aba_fechar", "aba_assunto", "aba_renomear", "aba_ajudante", "aba_parar", "historico", "preparar", "enviar", "parar", "responder", "responder_pergunta", "sempre", "modo",
              "mensagem_enviar", "mensagem_urgente", "mensagem_cancelar", "mensagens_fila",
              "nova", "quem", "ajudante", "habilidades", "miniatura", "tarefas_ler", "contas_listar", "conta_atualizar",
              "conta_usar", "pendentes", "casa_estado", "casa_alternar", "casa_alimentar", "gpu_info", "resposta_imagem", "resposta_abrir_caminho", "codigo_revisar", "codigo_aplicar", "codex_limites", "codex_redefinir"}
@@ -113,6 +113,12 @@ class _H(BaseHTTPRequestHandler):
             return self._eventos(q.get("de", [""])[0])
         if u.path == "/tela":
             return self._tela()
+        if u.path == '/tela/monitores':
+            import tela_pc
+            try:
+                return self._enviar(200, json.dumps(tela_pc.monitores()).encode(), _TIPOS['.json'])
+            except OSError:
+                return self._enviar(503, b'{"erro":"Monitores indisponiveis"}', _TIPOS['.json'])
         if u.path == "/voz/radio":   # a voz da resposta como rádio (toca com o app minimizado e a tela apagada)
             import radio
             self.send_response(200)
@@ -122,6 +128,13 @@ class _H(BaseHTTPRequestHandler):
             self.end_headers()
             return radio.servir(self.wfile)
         if u.path == "/tela/estado":
+            if q.get('fonte', ['kanivete'])[0] == 'pc':
+                import tela_pc
+                try:
+                    tela_pc.monitor(q.get('monitor', [''])[0])
+                    return self._enviar(200, b'{"aberto":true}', _TIPOS['.json'])
+                except (LookupError, OSError):
+                    return self._enviar(503, b'{"aberto":false}', _TIPOS['.json'])
             import tela_movel
             return self._enviar(200, json.dumps({"aberto": bool(tela_movel.alvo())}).encode(), _TIPOS[".json"])
         return self._arquivo(u.path.lstrip("/"))
@@ -153,7 +166,19 @@ class _H(BaseHTTPRequestHandler):
     def _tela(self):
         """o KANIVETE ao vivo (tela_movel.py) até o celular fechar a telinha"""
         import tela_movel
-        if not tela_movel.alvo():
+        q = parse_qs(urlparse(self.path).query)
+        pc = q.get('fonte', ['kanivete'])[0] == 'pc'
+        if pc:
+            import tela_pc
+            try:
+                largura=max(640,min(2560,int(q.get('largura',['1280'])[0])))
+            except ValueError:
+                return self._enviar(400, b'Resolucao invalida')
+            try:
+                tela_pc.monitor(q.get('monitor', [''])[0])
+            except (LookupError, OSError):
+                return self._enviar(503, 'Monitor indisponível'.encode())
+        elif not tela_movel.alvo():
             return self._enviar(503, "KANIVETE fechado".encode())
         try:
             self.send_response(200)
@@ -161,7 +186,10 @@ class _H(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            tela_movel.transmitir(self.wfile)
+            if pc:
+                tela_pc.transmitir(self.wfile, q.get('monitor', [''])[0], largura)
+            else:
+                tela_movel.transmitir(self.wfile)
         except Exception:
             pass
         self.close_connection = True
@@ -201,6 +229,28 @@ class _H(BaseHTTPRequestHandler):
         if not self._autorizado():
             return self._enviar(403)
         u = urlparse(self.path)
+        if u.path == "/tela/mouse":
+            origem = self.headers.get("Origin")
+            site = self.headers.get("Sec-Fetch-Site")
+            hospedeiros = {self.headers.get("Host"), (self.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()}
+            if site in ("cross-site", "same-site") or (site != "same-origin" and origem and urlparse(origem).netloc not in hospedeiros):
+                return self._enviar(403)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n <= 2048:
+                    raise ValueError("Pedido de mouse inválido.")
+                import tela_movel
+                dados = json.loads(self.rfile.read(n))
+                if isinstance(dados, dict) and dados.get('fonte') == 'pc':
+                    import tela_pc
+                    r = tela_pc.mouse(dados)
+                else:
+                    r = tela_movel.mouse(dados)
+                return self._enviar(200, json.dumps(r).encode(), _TIPOS[".json"])
+            except (ValueError, TypeError):
+                return self._enviar(400, b'{"erro":"Pedido de mouse invalido."}', _TIPOS[".json"])
+            except Exception:
+                return self._enviar(503, b'{"erro":"Nao foi possivel controlar o KANIVETE."}', _TIPOS[".json"])
         if u.path in ("/voz/ouvir", "/voz/falar"):
             return self._voz(u.path[5:])
         if u.path.startswith("/push/"):

@@ -233,19 +233,34 @@ class OperacoesDrive:
                 raise FalhaCalendar('Já existe um arquivo com esse nome na pasta destino. Escolha outra pasta ou renomeie o arquivo existente.')
             req = urllib.request.Request(API + caminho + '?' + urllib.parse.urlencode(params), headers={'Authorization': 'Bearer ' + access})
             parcial = None
+            import progresso
+            import time
+            operacao = {'id': 'drive:' + id, 'tipo': 'download', 'titulo': 'Drive: ' + nome}
+            progresso.registrar(operacao)
+            ultimo = 0
             try:
                 with _abrir(req) as resposta, tempfile.NamedTemporaryFile(dir=pasta, prefix='.kanicode_', suffix='.part', delete=False) as saida:
                     parcial = Path(saida.name); tamanho = 0
                     while bloco := resposta.read(1024 * 1024):
                         saida.write(bloco); tamanho += len(bloco)
+                        agora = time.monotonic()
+                        if agora - ultimo >= .5:
+                            progresso.registrar(dict(operacao, pct=tamanho / esperado * 100 if esperado else None,
+                                                     detalhe=f'{tamanho / 1048576:.1f} MB'))
+                            ultimo = agora
                 if esperado is not None and tamanho != esperado:
                     raise FalhaCalendar('Download incompleto. Nenhum arquivo final foi gravado.')
                 # rename no Windows recusa sobrescrever um destino criado durante o download.
                 if alvo.exists():
                     raise FalhaCalendar('O nome de destino passou a existir. Nenhum arquivo foi sobrescrito.')
                 os.rename(parcial, alvo)
+                progresso.registrar(dict(operacao, estado='concluido'))
                 return {'id': id, 'nome': nome, 'caminho': str(alvo), 'bytes': tamanho}
+            except FalhaCalendar:
+                progresso.registrar(dict(operacao, estado='erro', detalhe='Download não concluído'))
+                raise
             except OSError:
+                progresso.registrar(dict(operacao, estado='erro', detalhe='Falha ao baixar o arquivo'))
                 raise FalhaCalendar('Não foi possível concluir o download. Confira a rede, a pasta destino e o espaço disponível.') from None
             finally:
                 if parcial is not None:

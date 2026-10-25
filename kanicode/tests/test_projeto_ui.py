@@ -6,7 +6,27 @@ from test_conexoes_ui import ConexoesUITest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import projeto
 
-PASTA = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import shutil, subprocess, tempfile
+
+
+def _repo_de_teste():
+    """repositório git próprio com uma alteração conhecida (antes usava o git real e dependia do que estava mudado)"""
+    base = "D:/kanivete_testes" if os.path.isdir("D:/kanivete_testes") else None
+    raiz = tempfile.mkdtemp(prefix="projeto_ui_", dir=base)
+    os.makedirs(os.path.join(raiz, "kanicode", "ui"))
+    for rel, txt in (("kanicode/projeto.py", "def a():\n    return 1\n"), ("kanicode/ui/movel.js", "// movel\n")):
+        with open(os.path.join(raiz, rel), "w", encoding="utf-8") as f:
+            f.write(txt)
+    git = lambda *a: subprocess.run(["git", "-C", raiz, *a], check=True, capture_output=True)
+    git("init", "-q")
+    git("add", "-A")
+    git("-c", "user.name=teste", "-c", "user.email=teste@local", "commit", "-qm", "base")
+    with open(os.path.join(raiz, "kanicode", "projeto.py"), "a", encoding="utf-8") as f:
+        f.write("\ndef b():\n    return 2\n")
+    return raiz
+
+
+PASTA = _repo_de_teste() if shutil.which("git") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @unittest.skipUnless(layout.sync_playwright, 'Playwright opcional não instalado')
@@ -53,6 +73,11 @@ class ProjetoUITest(unittest.TestCase):
         p.wait_for_selector('#pj-corpo .pj-it[data-rel="kanicode/ui/movel.js"]')
         p.click('#atv-trilho')
         self.assertFalse(p.locator('#proj-painel').is_visible())
+
+
+def tearDownModule():
+    if os.path.basename(PASTA).startswith("projeto_ui_"):
+        shutil.rmtree(PASTA, ignore_errors=True)
 
 
 if __name__ == '__main__':
