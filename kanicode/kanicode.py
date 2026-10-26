@@ -1405,13 +1405,35 @@ class App:
         """lê e-mail, plano e cotas (sem gastar tokens) de uma conta ou de todas; guarda no estado"""
         import contas
         lista, ativa = self._contas()
+        medidas = {}
         for c in lista:
             if conta_id and c["id"] != conta_id:
                 continue
             st = contas.status(c["id"])
-            c.update(email=st.get("email", ""), plano=st.get("plano", ""), logado=st.get("logado", False))
-            if c["logado"]:
-                c["cotas"] = contas.cotas(c["id"])
+            medida = dict(st)
+            if st.get("logado"):
+                medida["cotas"] = contas.cotas(c["id"])
+            medidas[c["id"]] = medida
+        with _ESTADO_TRAVA:
+            lista, ativa = self._contas()
+            for c in lista:
+                st = medidas.get(c["id"])
+                if not st:
+                    continue
+                if st.get("erro"):
+                    c["cota_erro"] = st["erro"]
+                else:
+                    c.update(email=st.get("email", ""), plano=st.get("plano", ""), logado=st.get("logado", False))
+                if "cotas" in st:
+                    q = st["cotas"]
+                    c["cotas"] = contas.mesclar_cotas(c.get("cotas"), q)
+                    c["cota_erro"] = q.get("erro") or ("Medição incompleta" if any(q.get(k) is None for k in ("h5", "sem")) else None)
+            _gravar_estado(contas=lista)
+        with _ESTADO_TRAVA:
+            return self._contas_concluir()
+
+    def _contas_concluir(self):
+        lista, ativa = self._contas()
         # a mesma conta duas vezes (mesmo e-mail): mostra uma só — a em uso; senão uma salva (a "Principal" segue o
         # login do PC e pode mudar por fora; as salvas têm login próprio e ficam). Nada é apagado: as outras só somem.
         por = {}
@@ -1430,6 +1452,21 @@ class App:
                         c["oculta"] = True
         _gravar_estado(contas=lista)
         return self._contas_com_fotos(lista, ativa)
+
+    def _conta_automatica(self, atual, tentadas, cancelada):
+        import contas
+        self.conta_atualizar()
+        with _ESTADO_TRAVA:
+            lista, _ = self._contas()
+            c = contas.escolher(lista, atual, tentadas)
+            if not c or cancelada.is_set():
+                return None
+            self._limite = c.get("cotas")
+            _gravar_estado(conta=c["id"], limite=self._limite)
+            dados = self._contas_com_fotos(lista, c["id"])
+        self._para_janela({"t": "conta_trocada", "dados": dados,
+                           "texto": f'Cota esgotada. Continuando com a conta "{c["apelido"]}".'})
+        return c["id"]
 
     def conta_adicionar(self, apelido):
         import contas, re as _re
@@ -2039,6 +2076,7 @@ class App:
             self._sessao = Sessao(self._pasta(), DADOS, self._na_aba(self._ctx().id, self._evento), sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
             self._sessao.conta = _ler_estado().get("conta") or None
+            self._sessao.escolher_conta = self._na_aba(self._ctx().id, self._conta_automatica)
             self._sessao.modo = getattr(self, "_modo", "auto")
         self._bola_estado("trabalhando")
         if not self._respondendo:
@@ -2091,6 +2129,7 @@ class App:
             self._sessao = Sessao(self._pasta(), DADOS, self._na_aba(self._ctx().id, self._evento), sessao_id=sid)
             self._sessao.modelo = _ler_estado().get("modelo") or None
             self._sessao.conta = _ler_estado().get("conta") or None
+            self._sessao.escolher_conta = self._na_aba(self._ctx().id, self._conta_automatica)
             self._sessao.modo = getattr(self, "_modo", "auto")
         if not self._sessao.vivo():
             try:
@@ -2540,13 +2579,17 @@ class App:
                 ss[self._pasta() + self._sufixo()] = ev["sessao"]
                 _gravar_estado(sessoes=ss)
         elif t == "limite":
-            self._limite = {k: ev.get(k) for k in ("h5", "h5_zera", "sem", "sem_zera")}
-            # a cota ao vivo também vai para a conta em uso (o painel de contas mostra sem consultar)
-            lista, ativa = self._contas()
-            for c in lista:
-                if c["id"] == ativa:
-                    c["cotas"] = dict(self._limite, lido=int(time.time()))
-            _gravar_estado(limite=self._limite, contas=lista)
+            import contas
+            with _ESTADO_TRAVA:
+                lista, ativa = self._contas()
+                origem = ev.get("conta") or (self._sessao and self._sessao.conta) or ativa
+                for c in lista:
+                    if c["id"] == origem:
+                        c["cotas"] = contas.mesclar_cotas(c.get("cotas"), {**ev, "lido": ev.get("lido", time.time())})
+                        ev = {**ev, **c["cotas"], "conta": origem}
+                        if origem == ativa:
+                            self._limite = c["cotas"]
+                _gravar_estado(limite=self._limite, contas=lista)
         elif t == "comandos":
             self._comandos = ev.get("lista") or []
         elif t == "ajudante" and ev.get("fase") == "fim" and ev.get("cota") and ev.get("quem") == "codex":

@@ -535,5 +535,39 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(self.erros, [])
 
 
+    def test_cota_ao_vivo_atualiza_lateral_e_preserva_semana(self):
+        self.page.evaluate("kcEv({t:'limite',conta:'principal',h5:.83,lido:2000})")
+        self.assertEqual(self.page.locator('#lado-contas [data-id="principal"] small').inner_text(), '83%')
+        self.page.locator('#c5').click()
+        self.assertIn('25%', self.page.locator('#uso').inner_text())
+        self.page.evaluate("kcEv({t:'limite',conta:'principal',sem:.68,lido:2001})")
+        self.assertIn('68%', self.page.locator('#uso').inner_text())
+        self.assertEqual(self.page.locator('#lado-contas [data-id="principal"] small').inner_text(), '83%')
+        self.assertEqual(self.erros, [])
+
+    def test_medicao_de_outra_conta_nao_altera_cota_ativa(self):
+        self.page.evaluate("kcEv({t:'limite',conta:'workspace',h5:.91,lido:2000})")
+        self.assertEqual(self.page.locator('#lado-contas [data-id="workspace"] small').inner_text(), '91%')
+        self.assertIn('32%', self.page.locator('#c5').inner_text())
+        self.assertEqual(self.erros, [])
+
+    def test_troca_automatica_atualiza_painel_sem_misturar_janelas(self):
+        self.page.evaluate("""kcEv({t:'conta_trocada', texto:'Continuando com outra conta', dados:{ativa:'nova',
+            lista:[{id:'nova',apelido:'Nova',logado:true,cotas:{h5:.8}}]}})""")
+        self.assertEqual(self.page.locator('#lado-contas .ativa small').inner_text(), '80%')
+        self.page.locator('#c5').click()
+        self.assertNotIn('25%', self.page.locator('#uso').inner_text())
+        self.assertEqual(self.erros, [])
+
+
+
+    def test_codex_resposta_atrasada_nao_regride_porcentagem(self):
+        self.evento({'t':'codex_uso','cota':{'h5':.84,'sem':.62,'medido_em':2000}})
+        self.evento({'t':'codex_uso','cota':{'h5':.2,'sem':.1,'medido_em':1000}})
+        self.assertIn('84%', self.page.locator('#codex-conta-lateral').inner_text())
+        self.assertIn('62% usado', self.page.locator('.codex-janelas').inner_text())
+        self.assertEqual(self.erros, [])
+
+
 if __name__ == '__main__':
     unittest.main()

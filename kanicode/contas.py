@@ -1,5 +1,5 @@
-"""Contas do Claude salvas no KaniCode (troca MANUAL, com um clique — decisão do Pailer, 2026-10-20: nada de trocar
-sozinho quando uma acaba; os termos da Anthropic proíbem contornar restrições do produto).
+"""Contas do Claude salvas no KaniCode, com troca manual ou automática ao esgotar a cota.
+Troca automática autorizada pelo Pailer em 2026-10-26; só usa contas cadastradas com saldo confirmado.
 
 Cada conta = uma pasta de configuração do Claude Code (variável CLAUDE_CONFIG_DIR), cada uma com o seu login.
 A principal é a de sempre (~/.claude). As outras ficam em <DADOS>/contas/<id> e enxergam as MESMAS conversas, memória,
@@ -88,6 +88,7 @@ def _quando(txt):
 
 def cotas(conta_id):
     """{h5, h5_zera, sem, sem_zera} pelo /usage (resposta interna do Claude Code: não gasta tokens)"""
+    inicio = time.time()
     os.makedirs(os.path.join(DADOS, "sonda"), exist_ok=True)
     try:
         r = _claude(conta_id, "-p", "/usage", "--output-format", "json", cwd=os.path.join(DADOS, "sonda"), timeout=90)
@@ -103,7 +104,62 @@ def cotas(conta_id):
         out.update(sem=int(w.group(1)) / 100, sem_zera=_quando(w.group(2)))
     if not out:
         out["erro"] = (txt or r.stderr or "sem resposta")[:200]
-    out["lido"] = int(time.time())
+    out["lido"] = inicio
+    return out
+
+
+def mesclar_cotas(anterior, nova):
+    """Preserva janelas ausentes e recusa resposta iniciada antes da medição já recebida."""
+    anterior, nova = anterior or {}, nova or {}
+    if nova.get("erro") or (nova.get("lido", 0) < anterior.get("lido", 0)):
+        return dict(anterior)
+    chaves = {"h5", "h5_zera", "sem", "sem_zera", "lido", "estado"}
+    if not any(nova.get(k) is not None for k in ("h5", "sem")):
+        chaves.discard("lido")
+    return {**anterior, **{k: v for k, v in nova.items() if v is not None and k in chaves}}
+
+
+def escolher(lista, atual, tentadas, agora=None):
+    """Maior consumo semanal, depois de 5 h; exige saldo fresco nas duas janelas."""
+    agora = time.time() if agora is None else agora
+    proibidas = set(tentadas) | {atual or "principal"}
+    emails = {(c.get("email") or "").casefold() for c in lista if c["id"] in proibidas} - {""}
+    candidatas = []
+    for c in lista:
+        q = c.get("cotas") or {}
+        if (c["id"] in proibidas or not c.get("logado") or c.get("oculta")
+                or (c.get("email") or "").casefold() in emails or q.get("erro") or c.get("cota_erro")
+                or not 0 <= agora - q.get("lido", 0) <= 120):
+            continue
+        if all(isinstance(q.get(k), (int, float)) and 0 <= q[k] < 1 for k in ("h5", "sem")):
+            candidatas.append(c)
+    return max(candidatas, key=lambda c: (c["cotas"]["sem"], c["cotas"]["h5"]), default=None)
+
+
+def limite_confirmado(resultado):
+    """Erros explícitos de cota; um 429 genérico pode ser apenas limitação temporária."""
+    erro = resultado.get("error")
+    if isinstance(erro, dict):
+        erro = erro.get("type") or erro.get("code")
+    if erro in ("rate_limit", "usage_limit", "usage_limit_reached"):
+        return True
+    texto = json.dumps(resultado, ensure_ascii=False)
+    return bool(re.search(r"hit your (?:usage )?limit|usage limit (?:reached|exceeded)|weekly (?:usage )?limit|5.hour (?:usage )?limit|cota (?:de uso )?esgotada", texto, re.I))
+
+
+def normalizar_evento(info):
+    janelas = info.get("unifiedWindows") or info.get("unified_windows") or {}
+    out = {"estado": info.get("status"), "lido": time.time()}
+    for nome, chave in (("five_hour", "h5"), ("seven_day", "sem")):
+        janela = janelas.get(nome) or {}
+        if info.get("rateLimitType", info.get("rate_limit_type")) == nome:
+            janela = {**info, **janela}
+        uso = janela.get("utilization")
+        if isinstance(uso, (int, float)) and 0 <= uso <= 1:
+            out[chave] = uso
+        zera = janela.get("resetsAt", janela.get("resets_at"))
+        if zera is not None:
+            out[chave + "_zera"] = zera
     return out
 
 

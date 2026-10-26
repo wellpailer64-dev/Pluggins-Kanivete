@@ -975,7 +975,7 @@
 
   // ── cotas (sessão de 5 horas e semana) ──
   function cotas(l) {
-    if (l) K.limite = l;
+    if (l) K.limite = {...K.limite, ...Object.fromEntries(Object.entries(l).filter(([, v]) => v != null))};
     $('kani-recursos').hidden = K.quem !== 'kani';
     if (K.quem === 'pickle') {
       $('c5').hidden = true; $('csem').hidden = true; $('uso').hidden = true;
@@ -1199,7 +1199,7 @@
     texto.value = i.usar; $('hab').hidden = true; ajustar(); texto.focus();
   });
 
-  // ── contas do Claude: salvas com apelido e e-mail, cota de cada uma, troca manual com um clique ──
+  // ── contas do Claude: salvas com apelido e e-mail, cota de cada uma e troca automática ao esgotar ──
   const CT = { dados: null, espera: 0 };
   // pergunta no visual da janela: com valor = campo de texto (devolve o texto ou null); sem = sim/não (true/false)
   function perguntar(texto, valor, okTxt = 'OK') {
@@ -1276,14 +1276,31 @@
   }
   $('lado-mais').addEventListener('click', contaNova);
   $('lado-aj').addEventListener('click', () => window.contasAbrir());
-  // as cotas das contas paradas andam sozinhas (zeram com o tempo): lê de novo a cada 10 min, sem gastar tokens
-  setInterval(async () => { if (CT.dados) { CT.dados = await api().conta_atualizar(); contaBotao(); } }, 600000);
+  // Eventos atualizam na hora; a leitura local mantém a lateral sincronizada entre abas.
+  let contasLendo = false;
+  setInterval(async () => {
+    if (!CT.dados || document.hidden || contasLendo) return;
+    contasLendo = true;
+    try {
+      CT.dados = await api().contas_listar(); contaBotao(); cotasDaConta();
+      if (!$('contas').hidden) contasDesenhar();
+    } catch (_) { /* conserva a última medição */ }
+    finally { contasLendo = false; }
+  }, 5000);
+  let contasConsultando = false;
+  setInterval(async () => {
+    if (!CT.dados || document.hidden || contasConsultando) return;
+    contasConsultando = true;
+    try { await api().conta_atualizar(); }
+    catch (_) { /* conserva a última medição */ }
+    finally { contasConsultando = false; }
+  }, 60000);
   function contasDesenhar() {
     const d = CT.dados; if (!d) return;
     const q = (nome, uso, zera) => uso == null ? '' :
       `<span>${nome}</span><i><b style="width:${Math.round(uso * 100)}%;background:${uso >= .85 ? 'var(--erro)' : uso >= .65 ? 'var(--aviso)' : 'var(--lima)'}"></b></i><span>${Math.round(uso * 100)}% · zera em ${esc(falta(zera))}</span>`;
     $('contas').innerHTML = `<h4>CONTAS DO CLAUDE</h4>
-      <p class="dica">Ficam salvas e logadas. A conversa continua a mesma ao trocar. A troca é sempre sua (um clique).</p>
+      <p class="dica">Ficam salvas e logadas. A conversa continua a mesma ao trocar. Ao esgotar a cota, troca automaticamente para uma conta com saldo, priorizando o maior uso semanal e depois o de 5h. Os percentuais atualizam assim que o serviço informa uma medição.</p>
       ${ctVisiveis(d).map(c => {
         const ct = c.cotas || {}, at = c.id === d.ativa;
         return `<div class="ct${at ? ' ativa' : ''}" data-id="${c.id}">
@@ -1312,7 +1329,9 @@
   function cotasDaConta() {
     const d = CT.dados; if (!d) return;
     const c = d.lista.find(x => x.id === d.ativa);
-    if (c && c.cotas && c.cotas.h5 != null) cotas(c.cotas);
+    K.limite = c?.cotas || null;
+    cotas();
+    if (!$('uso').hidden) painelUso();
   }
   $('contas').addEventListener('click', async e => {
     if (e.target.id === 'ct-add') { contaNova(); return; }
@@ -1511,7 +1530,20 @@
       case 'auto_ok': autoOk(ev); break;
       case 'permissao': K.espera = true; cartao(ev); atividade('Esperando você decidir'); som('pergunta'); break;
       case 'pergunta': K.espera = true; cartaoPergunta(ev); atividade('Esperando a sua escolha'); som('pergunta'); break;
-      case 'limite': cotas(ev); break;
+      case 'limite': {
+        const c = CT.dados?.lista.find(c => c.id === (ev.conta || CT.dados.ativa));
+        if (c) c.cotas = {...c.cotas, ...Object.fromEntries(Object.entries(ev).filter(([, v]) => v != null))};
+        if (!ev.conta || ev.conta === CT.dados?.ativa) cotas(ev);
+        contaBotao();
+        if (!$('contas').hidden && CT.dados) contasDesenhar();
+        if (!$('uso').hidden) painelUso();
+        break;
+      }
+      case 'conta_trocada':
+        CT.dados = ev.dados; contaBotao(); cotasDaConta();
+        if (!$('contas').hidden) contasDesenhar();
+        bolha('sis', esc(ev.texto));
+        break;
       case 'ajudante':
         ajudante(ev);
         if (ev.quem === K.quem && K.quem !== 'claude' && ev.fase !== 'fim') atividade(ev.texto || 'Trabalhando');

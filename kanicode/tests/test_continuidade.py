@@ -279,5 +279,185 @@ sys.exit(7)
             proc.stderr.close()
 
 
+
+
+class ContasAutomaticasTest(unittest.TestCase):
+    def setUp(self):
+        import contas
+        self.contas = contas
+        self.temp = tempfile.TemporaryDirectory(dir="D:/kanivete_testes", prefix="contas_auto_")
+        self.addCleanup(self.temp.cleanup)
+        self.eventos = []
+        self.s = Sessao(self.temp.name, self.temp.name, self.eventos.append, sessao_id="conversa-1")
+        self.s._ultimo_envio = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "Pedido"}]}}
+        self.s.escolher_conta = Mock(return_value="outra")
+        self.s._abrir = Mock()
+        self.s._escrever = Mock()
+
+    def conta(self, id_, h5=.4, sem=.6, **extra):
+        return dict(id=id_, apelido=id_, email=id_ + "@example.com", logado=True,
+                    cotas={"h5": h5, "sem": sem, "lido": 1000}, **extra)
+
+    def test_prioriza_semana_depois_cinco_horas(self):
+        lista = [self.conta("atual"), self.conta("a", .8, .7), self.conta("b", .9, .7), self.conta("c", .95, .2)]
+        self.assertEqual(self.contas.escolher(lista, "atual", set(), 1000)["id"], "b")
+
+    def test_descarta_esgotadas_erros_e_desatualizadas(self):
+        lista = [self.conta("h", 1), self.conta("s", sem=1), self.conta("erro", cota_erro="falhou"),
+                 self.conta("antiga"), self.conta("saiu"), self.conta("parcial"), self.conta("boa")]
+        lista[3]["cotas"]["lido"] = 800
+        lista[4]["logado"] = False
+        lista[5]["cotas"].pop("sem")
+        self.assertEqual(self.contas.escolher(lista, "atual", set(), 1000)["id"], "boa")
+
+    def test_nao_repete_id_nem_mesmo_email(self):
+        lista = [self.conta("atual"), self.conta("espelho"), self.conta("tentada"), self.conta("livre")]
+        lista[1]["email"] = "ATUAL@example.com"
+        self.assertIsNone(self.contas.escolher(lista, "atual", {"tentada", "livre"}, 1000))
+
+    def test_parcial_preserva_janela_e_resposta_antiga_nao_regride(self):
+        q = {"h5": .7, "sem": .9, "lido": 20}
+        self.assertEqual(self.contas.mesclar_cotas(q, {"h5": .1, "lido": 10}), q)
+        r = self.contas.mesclar_cotas(q, {"h5": None, "sem": .95, "lido": 30, "t": "limite"})
+        self.assertEqual((r["h5"], r["sem"]), (.7, .95))
+        self.assertNotIn("t", r)
+        self.assertEqual(self.contas.mesclar_cotas(q, {"erro": "offline"}), q)
+
+    def test_evento_suporta_janela_unica_e_nao_inventa_zero(self):
+        r = self.contas.normalizar_evento({"rateLimitType": "five_hour", "utilization": .84, "resetsAt": 2000})
+        self.assertEqual(r["h5"], .84)
+        self.assertNotIn("sem", r)
+        r = self.contas.normalizar_evento({"unifiedWindows": {"seven_day": {"utilization": .5}}})
+        self.assertEqual(r["sem"], .5)
+        self.assertNotIn("h5", r)
+
+    def test_rate_limit_temporario_nao_dispara_rotacao(self):
+        self.assertFalse(self.contas.limite_confirmado({"errors": ["429 Too Many Requests"]}))
+        self.assertFalse(self.contas.limite_confirmado({"errors": ["Network disconnected"]}))
+        self.assertTrue(self.contas.limite_confirmado({"error": "rate_limit"}))
+        self.assertTrue(self.contas.limite_confirmado({"result": "You've hit your limit · resets 5pm"}))
+
+    def test_resultado_esgotado_retoma_sem_finalizar_conversa(self):
+        class Imediata:
+            def __init__(self, target, args, **kw): self.rodar = lambda: target(*args)
+            def start(self): self.rodar()
+        self.s.proc = None
+        self.s._contas_tentadas = {"principal"}
+        with patch("sessao.threading.Thread", Imediata):
+            self.s._traduzir({"type": "result", "subtype": "error_during_execution", "errors": ["You've hit your limit"]})
+        self.assertEqual(self.s.conta, "outra")
+        self.assertTrue(self.s.ocupada)
+        self.s._abrir.assert_called_once()
+        self.assertIn("não repita", self.s._escrever.call_args.args[0]["message"]["content"][0]["text"])
+        self.assertFalse(any(e["t"] == "fim" for e in self.eventos))
+        self.assertEqual(self.s._contas_tentadas, {"principal", "outra"})
+
+    def test_assistant_rate_limit_com_result_success_tambem_retoma(self):
+        self.s._traduzir({"type": "assistant", "error": "rate_limit", "message": {"content": []}})
+        with patch("sessao.threading.Thread") as thread:
+            self.s._traduzir({"type": "result", "subtype": "success", "is_error": True})
+        thread.assert_called_once()
+
+    def test_sem_saldo_encerra_com_explicacao(self):
+        self.s.escolher_conta.return_value = None
+        self.s._trocar_apos_limite(None, {"t": "fim", "erro": True})
+        self.assertFalse(self.s.ocupada)
+        self.assertIn("Nenhuma outra conta", self.eventos[-1]["mensagem"])
+        self.s._abrir.assert_not_called()
+
+    def test_parar_durante_consulta_impede_nova_execucao(self):
+        def escolher(*args):
+            self.s.parar()
+            return "outra"
+        self.s.escolher_conta.side_effect = escolher
+        self.s._trocar_apos_limite(None, {"t": "fim", "erro": True})
+        self.s._abrir.assert_not_called()
+        self.assertFalse(self.s.ocupada)
+
+    def test_erro_consulta_preserva_diagnostico(self):
+        self.s.escolher_conta.side_effect = ValueError("offline")
+        self.s._trocar_apos_limite(None, {"t": "fim", "erro": True, "diagnostico": "registro"})
+        self.assertIn("offline", self.eventos[-1]["mensagem"])
+        self.assertEqual(self.eventos[-1]["diagnostico"], "registro")
+
+    def test_evento_identifica_conta_da_sessao(self):
+        self.s.conta = "secundaria"
+        self.s._traduzir({"type": "rate_limit_event", "rate_limit_info": {"rateLimitType": "seven_day", "utilization": .9}})
+        self.assertEqual(self.eventos[-1]["conta"], "secundaria")
+        self.assertEqual(self.eventos[-1]["sem"], .9)
+
+    def test_resultado_generico_nao_troca(self):
+        self.s._traduzir({"type": "result", "subtype": "error_during_execution", "errors": ["Connection failed"]})
+        self.s.escolher_conta.assert_not_called()
+        self.assertEqual(self.eventos[-1]["t"], "fim")
+
+
+
+
+class ContasAppTest(unittest.TestCase):
+    def setUp(self):
+        import kanicode
+        self.k = kanicode
+        self.temp = tempfile.TemporaryDirectory(dir="D:/kanivete_testes", prefix="contas_app_")
+        self.addCleanup(self.temp.cleanup)
+        for nome, valor in (("DADOS", self.temp.name), ("ESTADO", str(Path(self.temp.name) / "estado.json"))):
+            p = patch.object(kanicode, nome, valor)
+            p.start()
+            self.addCleanup(p.stop)
+        self.k._gravar_estado(conta="principal", contas=[
+            {"id": "principal", "apelido": "Principal", "email": "a@example.com", "logado": True,
+             "cotas": {"h5": .7, "sem": .6, "lido": 100}},
+            {"id": "outra", "apelido": "Outra", "email": "b@example.com", "logado": True,
+             "cotas": {"h5": .3, "sem": .2, "lido": 100}}])
+        self.app = kanicode.App()
+        for nome in ("_codex_voz", "_bola_atividade", "_bola_estado", "_na_ui", "_para_janela"):
+            setattr(self.app, nome, Mock())
+        self.app._falar_agora = Mock(return_value=False)
+
+    def lista(self):
+        return self.k._ler_estado()["contas"]
+
+    def test_evento_parcial_atualiza_so_conta_de_origem(self):
+        self.app._evento({"t": "limite", "conta": "outra", "h5": .9, "lido": 200})
+        self.assertEqual(self.lista()[0]["cotas"]["h5"], .7)
+        self.assertEqual(self.lista()[1]["cotas"]["h5"], .9)
+        self.assertEqual(self.lista()[1]["cotas"]["sem"], .2)
+
+    def test_consulta_lenta_nao_sobrescreve_evento_mais_recente(self):
+        def cotas(_):
+            self.app._evento({"t": "limite", "conta": "principal", "h5": .95, "lido": 300})
+            return {"h5": .8, "sem": .65, "lido": 200}
+        with patch("contas.status", return_value={"logado": True, "email": "a@example.com"}), patch("contas.cotas", side_effect=cotas):
+            self.app.conta_atualizar("principal")
+        self.assertEqual(self.lista()[0]["cotas"]["h5"], .95)
+
+    def test_troca_usa_medicao_nova_e_notifica_interface(self):
+        with patch.object(self.app, "conta_atualizar"), patch("contas.time.time", return_value=100):
+            escolhida = self.app._conta_automatica("principal", {"principal"}, threading.Event())
+        self.assertEqual(escolhida, "outra")
+        self.assertEqual(self.k._ler_estado()["conta"], "outra")
+        self.assertEqual(self.app._para_janela.call_args.args[0]["t"], "conta_trocada")
+
+    def test_falha_da_sonda_nao_apaga_cota_mas_impede_troca(self):
+        with patch("contas.status", return_value={"logado": True, "email": "b@example.com"}), patch("contas.cotas", return_value={"erro": "offline"}):
+            self.app.conta_atualizar("outra")
+        self.assertEqual(self.lista()[1]["cotas"]["h5"], .3)
+        with patch.object(self.app, "conta_atualizar"), patch("contas.time.time", return_value=100):
+            self.assertIsNone(self.app._conta_automatica("principal", {"principal"}, threading.Event()))
+
+    def test_status_indisponivel_nao_permite_usar_saldo_em_cache(self):
+        with patch("contas.status", return_value={"logado": False, "erro": "sem resposta"}):
+            self.app.conta_atualizar("outra")
+        with patch.object(self.app, "conta_atualizar"), patch("contas.time.time", return_value=100):
+            self.assertIsNone(self.app._conta_automatica("principal", {"principal"}, threading.Event()))
+
+    def test_troca_cancelada_nao_altera_conta_ativa(self):
+        cancelada = threading.Event()
+        cancelada.set()
+        with patch.object(self.app, "conta_atualizar"), patch("contas.time.time", return_value=100):
+            self.assertIsNone(self.app._conta_automatica("principal", {"principal"}, cancelada))
+        self.assertEqual(self.k._ler_estado()["conta"], "principal")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

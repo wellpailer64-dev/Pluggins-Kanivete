@@ -102,6 +102,11 @@ class Sessao:
         self.registro = Registro(dados, pasta, sessao_id)
         self._falha_registro_avisada = False
         self._turno = 0
+        self.escolher_conta = None
+        self._troca_cancelada = threading.Event()
+        self._contas_tentadas = set()
+        self._cota_esgotada = False
+        self._ultimo_envio = None
 
     def _registrar(self, tipo, dados=None):
         try:
@@ -181,6 +186,9 @@ class Sessao:
                 self._abrir()
             if self.ocupada:   # recado no meio da tarefa: o Claude Code lê no próximo passo (mesma volta, medido)
                 self._fechar_texto()
+            self._troca_cancelada.clear()
+            self._contas_tentadas = {self.conta or "principal"}
+            self._cota_esgotada = False
             self.ocupada = True
             self._turno += 1
             self._texto = []
@@ -191,7 +199,8 @@ class Sessao:
             blocos.append({"type": "text", "text": continuidade + contexto + (texto or "(veja a imagem)")})
             self._registrar("pedido", {"texto": texto})
             try:
-                self._escrever({"type": "user", "message": {"role": "user", "content": blocos}})
+                self._ultimo_envio = {"type": "user", "message": {"role": "user", "content": blocos}}
+                self._escrever(self._ultimo_envio)
             except (OSError, ValueError) as e:
                 self.ocupada = False
                 self._registrar("interrompida", {"erro": str(e), "fase": "envio"})
@@ -219,6 +228,7 @@ class Sessao:
 
     def parar(self):
         """interrompe a resposta em andamento (pede com jeito; se não parar em 3 s, encerra o processo)"""
+        self._troca_cancelada.set()
         if not self.vivo():
             return
         try:
@@ -236,6 +246,7 @@ class Sessao:
         threading.Thread(target=esperar, daemon=True).start()
 
     def fechar(self):
+        self._troca_cancelada.set()
         if self.vivo():
             try:
                 self.proc.stdin.close()
@@ -251,6 +262,8 @@ class Sessao:
 
     def _ler(self, proc):
         for linha in proc.stdout:
+            if proc is not self.proc:
+                break
             try:
                 d = json.loads(linha)
             except ValueError:
@@ -281,6 +294,9 @@ class Sessao:
 
     def _traduzir(self, d):
         t = d.get("type")
+        if t == "assistant" and d.get("error"):
+            import contas
+            self._cota_esgotada = contas.limite_confirmado(d)
         if t == "control_response":
             r = ((d.get("response") or {}).get("response")) or {}
             if r.get("commands"):
@@ -376,25 +392,64 @@ class Sessao:
                     self._guardar(ev)
                     self.ao_evento(ev)
         elif t == "rate_limit_event":
+            import contas
             info = d.get("rate_limit_info") or {}
-            w = info.get("unifiedWindows") or {}
-            h5, sem = w.get("five_hour") or {}, w.get("seven_day") or {}
-            self.ao_evento({"t": "limite", "h5": h5.get("utilization"), "h5_zera": h5.get("resetsAt"),
-                            "sem": sem.get("utilization"), "sem_zera": sem.get("resetsAt"), "estado": info.get("status")})
+            self.ao_evento({"t": "limite", "conta": self.conta or "principal", **contas.normalizar_evento(info)})
         elif t == "result":
             self._fechar_texto()
             self.ocupada = False
             u = d.get("usage") or {}
-            ev = {"t": "fim", "custo": d.get("total_cost_usd"), "ms": d.get("duration_ms"), "erro": d.get("subtype") != "success",
+            ev = {"t": "fim", "custo": d.get("total_cost_usd"), "ms": d.get("duration_ms"), "erro": bool(d.get("is_error")) or d.get("subtype") != "success",
                   "tokens": (u.get("input_tokens") or 0) + (u.get("output_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0)}
             if ev["erro"]:
                 erros = d.get("errors") or [d.get("result") or d.get("subtype")]
                 ev["mensagem"] = ('\n'.join(str(x) for x in erros) if isinstance(erros, list) else str(erros))[:1200]
                 ev["diagnostico"] = str(self.registro.pasta / "eventos.jsonl")
             self._registrar("resultado", d)
+            import contas
+            if (self.escolher_conta and self._ultimo_envio and not self._troca_cancelada.is_set()
+                    and (self._cota_esgotada or (ev["erro"] and contas.limite_confirmado(d)))):
+                ev["erro"] = True
+                self.ocupada = True
+                antigo, self.proc = self.proc, None
+                self.ao_evento({"t": "aviso", "texto": "Cota esgotada; consultando as contas disponíveis para continuar."})
+                threading.Thread(target=self._trocar_apos_limite, args=(antigo, ev), daemon=True).start()
+                return
             self._registrar("fim", ev)
             self._guardar(ev)
             self.ao_evento(ev)
+
+    def _trocar_apos_limite(self, antigo, fim):
+        try:
+            if antigo:
+                try:
+                    antigo.stdin.close()
+                    antigo.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    antigo.kill()
+            escolhida = self.escolher_conta(self.conta or "principal", self._contas_tentadas, self._troca_cancelada)
+            with self._trava:
+                if self._troca_cancelada.is_set():
+                    fim = {**fim, "erro": False, "mensagem": "Troca automática cancelada."}
+                elif escolhida:
+                    self.conta = escolhida
+                    self._contas_tentadas.add(escolhida)
+                    self._cota_esgotada = False
+                    self._abrir()
+                    envio = self._ultimo_envio
+                    if self.sessao_id:
+                        envio = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text":
+                            "Continue a tarefa interrompida pelo limite de uso a partir do ponto registrado. Confira o que já foi feito e não repita ações concluídas."}]}}
+                    self._escrever(envio)
+                    return
+                else:
+                    fim = {**fim, "mensagem": "Nenhuma outra conta cadastrada tem saldo confirmado nas duas cotas. " + fim.get("mensagem", "")}
+        except Exception as erro:
+            fim = {**fim, "erro": True, "mensagem": "Não foi possível trocar a conta: " + str(erro)}
+        self.ocupada = False
+        self._registrar("fim", fim)
+        self._guardar(fim)
+        self.ao_evento(fim)
 
     def _fechar_texto(self):
         if self._texto:

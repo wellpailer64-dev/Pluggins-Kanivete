@@ -105,7 +105,8 @@
     redefinirBt.textContent = tentativa ? 'Conferir redefinição pendente' : 'Usar 1 redefinição disponível';
   }
   function receberCota(valor) {
-    if (!valor || (cota?.medido_em && !valor.medido_em)) return;
+    if (!valor || (cota?.medido_em && !valor.medido_em)
+        || (valor.medido_em && cota?.medido_em > valor.medido_em)) return;
     cota = {...cota, ...valor};
     K.cotaCodex = {...K.cotaCodex, ...valor};
     cotas(); desenhar();
