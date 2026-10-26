@@ -2049,7 +2049,7 @@ class App:
         contexto = "" if texto.startswith("/") else self._kani_para_claude(pasta) + self._passagem_pendente("claude")
         if not texto.startswith('/'):
             from tarefas_agente import contexto as contexto_tarefas
-            contexto += '\n\n' + contexto_tarefas(pasta,texto)
+            contexto += '\n\n' + contexto_tarefas(pasta,texto,aba=self._ctx().id,agente='claude')
             fios_txt = self._fios_contexto()
             if fios_txt:
                 contexto += '\n\n' + fios_txt

@@ -1497,7 +1497,7 @@ def _rodar_pedido(pedido, pasta, ao_evento, historico=None, por_voz=False, parar
     sis += organizacao_pailer.contexto(pedido)
     try:
         from tarefas_agente import contexto
-        sis += '\n\n' + contexto(pasta,pedido)
+        sis += '\n\n' + contexto(pasta,pedido,agente='kani' if motor is None else 'pickle')
     except Exception:
         pass
     try:

@@ -51,7 +51,11 @@
   }
   function agenteEspelhar(lista) {
     el('status').before(espelho);
-    const abertas=lista.filter(i=>!i.concluida&&i.estado!=='cancelada');
+    let abertas=lista.filter(i=>!i.concluida&&i.estado!=='cancelada');
+    // Na barra só o que pede ação: "a conferir" (resposta já entregue) fica no painel; de falhas, só a última de cada conversa.
+    const ultFalha={};
+    for(const i of abertas)if(i.estado==='falha'&&String(i.criado||'')>=String((ultFalha[i.aba]||{}).criado||''))ultFalha[i.aba]=i;
+    abertas=abertas.filter(i=>i.estado!=='a_conferir'&&(i.estado!=='falha'||ultFalha[i.aba]===i));
     espelho.replaceChildren();espelho.hidden=false;espelho.removeAttribute('title');
     const total=document.createElement('button');total.className='todo-agente-contagem';
     total.textContent='Agente · '+abertas.length;total.title='Abrir To-do do agente';total.onclick=()=>agenteAbrir();

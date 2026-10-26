@@ -62,6 +62,19 @@ class AgenteUITest(unittest.TestCase):
         self.assertTrue(p.evaluate("(()=>{const e=document.querySelector('.todo-agente-tags');return e.scrollWidth>e.clientWidth})()"))
         p.screenshot(path='D:/kanivete_testes/todo_agente_espelho_mobile.png')
 
+    def test_espelho_so_mostra_o_que_pede_acao(self):
+        p=self.page
+        p.evaluate('''()=>{agenteTeste=[
+          {id:'conf',titulo:'Respondido',estado:'a_conferir',concluida:false,aba:'1',criado:'2026-01-01T01'},
+          {id:'f1',titulo:'Falha velha',estado:'falha',concluida:false,aba:'2',criado:'2026-01-01T01'},
+          {id:'f2',titulo:'Falha nova',estado:'falha',concluida:false,aba:'2',criado:'2026-01-01T02'},
+          {id:'f3',titulo:'Falha outra aba',estado:'falha',concluida:false,aba:'3',criado:'2026-01-01T01'},
+          {id:'ad',titulo:'Para depois',estado:'adiada',concluida:false,aba:'1',criado:'2026-01-01T01'}];
+          kcEv({t:'todo_agente'});}''')
+        p.wait_for_function("document.querySelector('.todo-agente-contagem').textContent==='Agente · 3'")
+        ids=p.evaluate("[...document.querySelectorAll('.todo-agente-tag')].map(e=>e.dataset.tarefaAgente)")
+        self.assertEqual(sorted(ids),['ad','f2','f3'])
+
     def test_aba_origem_segura_e_localizar_mensagem(self):
         p=self.page;self.abrir()
         self.assertIn('Para depois',p.locator('#todo-agente-lista').inner_text())

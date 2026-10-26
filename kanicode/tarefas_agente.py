@@ -49,6 +49,12 @@ class TarefasAgente(Tarefas):
             if motivo: i['motivo'] = str(motivo)[:2000]
             elif estado in ('pendente','em_andamento'): i['motivo']=''
             if estado=='concluida': i['resultado'] = str(motivo)[:4000]
+            if estado=='a_conferir' and not i.get('parent'):
+                for v in itens:
+                    if (v is not i and v['estado']=='falha' and not v.get('parent') and v.get('aba')==i.get('aba')
+                            and v.get('agente')==i.get('agente') and str(v.get('criado',''))<str(i.get('criado',''))):
+                        v.update(estado='cancelada', concluida=False, motivo='Substituída por pedido mais novo atendido na mesma aba.',
+                                 atualizado=dt.datetime.now().isoformat())
             self._salvar(itens)
             return i
 
@@ -81,10 +87,12 @@ class TarefasAgente(Tarefas):
             if mudou: self._salvar(itens)
 
 
-def contexto(pasta, pedido=''):
-    """Só o identificador do pedido atual e até três pendências da mesma pasta, sem copiar conversas."""
+def contexto(pasta, pedido='', aba=None, agente=None):
+    """Só o identificador do pedido atual e até três pendências da mesma pasta, sem copiar conversas.
+    Com aba/agente, só as do responsável: outra aba ou outro modelo não pega pedido alheio."""
     itens = TarefasAgente().listar()
-    iguais = [i for i in itens if os.path.normcase(os.path.realpath(i.get('pasta','')))==os.path.normcase(os.path.realpath(pasta))]
+    iguais = [i for i in itens if os.path.normcase(os.path.realpath(i.get('pasta','')))==os.path.normcase(os.path.realpath(pasta))
+              and (aba is None or str(i.get('aba'))==str(aba)) and (not agente or i.get('agente')==agente)]
     atual = [i for i in iguais if i['estado']=='em_andamento' and not i.get('parent') and
              (pedido.strip()==i['texto'].strip() or (i['texto'].strip() and pedido.strip().endswith('\n'+i['texto'].strip())))]
     linhas=[]

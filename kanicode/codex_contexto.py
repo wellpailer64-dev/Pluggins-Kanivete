@@ -76,7 +76,7 @@ def preparar(tarefa, pasta, editar, retomar):
     preferencia = organizacao_pailer.contexto(tarefa)
     try:
         from tarefas_agente import contexto
-        pendencias=contexto(pasta,tarefa)
+        pendencias=contexto(pasta,tarefa,agente='codex')
         if pendencias and not any(pendencias in parte for parte in partes) and pendencias not in tarefa:
             partes.append(pendencias)
     except Exception:

@@ -57,6 +57,18 @@ class TarefasAgenteTest(unittest.TestCase):
         with self.assertRaises(ValueError): self.pedido(id='outra')
         self.assertEqual(arq.read_text(encoding='utf-8'),'{invalido')
 
+    def test_pendencia_fica_com_a_aba_e_o_modelo_responsaveis(self):
+        a=self.pedido(aba='71',id='m1'); self.repo.estado(a['id'],'adiada','falta física')
+        with patch.object(ta,'TarefasAgente',return_value=self.repo):
+            self.assertIn(a['id'],ta.contexto(str(self.base),'outro',aba='71',agente='codex'))
+            self.assertNotIn(a['id'],ta.contexto(str(self.base),'outro',aba='74',agente='codex'))
+            self.assertNotIn(a['id'],ta.contexto(str(self.base),'outro',aba='71',agente='claude'))
+
+    def test_falha_antiga_cai_quando_pedido_novo_da_aba_e_atendido(self):
+        velho=self.pedido(id='m1'); self.repo.estado(velho['id'],'falha','caiu')
+        novo=self.pedido(id='m2'); self.repo.estado(novo['id'],'a_conferir','ok')
+        self.assertEqual(self.repo.obter(velho['id'])['estado'],'cancelada')
+
     def test_contexto_curto_e_acoes_exigem_motivo(self):
         a=self.pedido(); self.repo.estado(a['id'],'em_andamento')
         classe=ta.TarefasAgente
