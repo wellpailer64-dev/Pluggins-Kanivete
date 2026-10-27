@@ -15,7 +15,7 @@ import avatares
 
 class AvataresTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.tmp = tempfile.TemporaryDirectory(dir="D:/kanivete_testes")
         self.addCleanup(self.tmp.cleanup)
         self.raiz = Path(self.tmp.name)
         (self.raiz / "Default").mkdir()

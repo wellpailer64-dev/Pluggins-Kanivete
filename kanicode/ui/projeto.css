@@ -1,6 +1,15 @@
-/* Painel Projeto no painel da direita (projeto.js). */
+/* Painel Projeto no painel da direita (projeto.js); o botão fica no topo, ao lado do 🌐. */
+#proj-trilho { position: relative; width: 26px; height: 26px; border-radius: 7px; border: 1px solid transparent; background: transparent;
+  color: var(--fraco); display: grid; place-items: center; cursor: pointer; padding: 0; }
+#proj-trilho .ic { display: grid; place-items: center; }
+#proj-trilho svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+#proj-trilho:hover { color: var(--texto); background: var(--lima-suave); }
+#proj-trilho[aria-expanded="true"] { color: var(--lima); border-color: rgba(182, 242, 58, .35); background: var(--lima-suave); }
+#proj-trilho .cont { position: absolute; top: -4px; right: -5px; min-width: 14px; height: 14px; border-radius: 7px; padding: 0 3px;
+  background: var(--lima); color: var(--fundo); font: 700 9px/14px var(--mono); text-align: center; pointer-events: none; }
+#proj-trilho .cont[hidden] { display: none; }
 .atv.projeto-visivel > .det:not(#proj-painel), .atv:not(.projeto-visivel) > #proj-painel { display: none; }
-.atv.aberto #proj-painel { width: var(--pj-w, 360px); position: relative; }
+.atv.aberto #proj-painel { width: var(--pj-w, 540px); position: relative; }
 #proj-painel.puxando { transition: none; user-select: none; }
 .pj-puxa { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
 .pj-puxa:hover, #proj-painel.puxando .pj-puxa { background: var(--lima-suave); }
@@ -53,5 +62,5 @@
 @media (max-width: 900px) {
   .atv.projeto-visivel { position: relative; }
   .atv.aberto.projeto-visivel #proj-painel { position: absolute; right: 100%; top: 0; bottom: 0; z-index: 6; background: var(--painel);
-    width: min(var(--pj-w, 360px), calc(100vw - 110px)); border-left: 1px solid var(--borda); box-shadow: -10px 0 24px rgba(0, 0, 0, .45); }
+    width: min(var(--pj-w, 540px), calc(100vw - 110px)); border-left: 1px solid var(--borda); box-shadow: -10px 0 24px rgba(0, 0, 0, .45); }
 }

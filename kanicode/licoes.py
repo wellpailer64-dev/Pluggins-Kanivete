@@ -72,7 +72,7 @@ def anexo(pasta, tarefa):
     partes = []
     try:
         from tarefas_agente import contexto
-        partes.append(contexto(pasta,tarefa))
+        partes.append(contexto(pasta,tarefa,agente='codex'))
     except Exception:
         pass
     try:
@@ -89,4 +89,4 @@ def anexo(pasta, tarefa):
     preferencia = organizacao_pailer.contexto(tarefa)
     if preferencia:
         partes.append(preferencia.strip())
-    return "\n\n".join(partes)
+    return "\n\n".join(p for p in partes if p.strip())

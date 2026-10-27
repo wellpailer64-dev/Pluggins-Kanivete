@@ -43,10 +43,11 @@
       const marca = espera ? 'pergunta' : trab ? 'trab' : on ? '' : e.aviso;
       const q = EQUIPE[a.quem] || EQUIPE.claude, mod = modeloCurto(a);
       const icone = marca === 'trab' ? '<span class="aba-trab" aria-label="trabalhando"><i></i><i></i><i></i></span>' : `<span class="aba-ponto ${marca}"></span>`;
-      const fs = window.KC_BOARD ? KC_BOARD.fiosDa(a.id) : [], sai = fs.filter(f => f.de === a.id), entra = fs.filter(f => f.para === a.id);
+      const fs = window.KC_BOARD ? KC_BOARD.fiosDa(a.id) : [], sai = fs.filter(f => f.modo !== 'colab' && f.de === a.id), entra = fs.filter(f => f.modo !== 'colab' && f.para === a.id), colabs = fs.filter(f => f.modo === 'colab');
       const nomeF = id => window.KC_BOARD ? KC_BOARD.nomeAba(id) : 'Aba ' + id;
       const marcaFio = (sai.length ? `<span class="aba-fio" title="Ligada a: ${esc(sai.map(f => nomeF(f.para) + (f.modo === 'comando' ? ' (manda)' : ' (lê)')).join(', '))}">${sai.some(f => f.modo === 'comando') ? '⚡' : '👁'}${sai.length > 1 ? sai.length : ''}</span>` : '') +
-        (entra.length ? `<span class="aba-fio obedece" title="Recebe de: ${esc(entra.map(f => nomeF(f.de) + (f.modo === 'comando' ? ' (obedece)' : ' (é lida)')).join(', '))}">⇠${entra.length > 1 ? entra.length : ''}</span>` : '');
+        (entra.length ? `<span class="aba-fio obedece" title="Recebe de: ${esc(entra.map(f => nomeF(f.de) + (f.modo === 'comando' ? ' (obedece)' : ' (é lida)')).join(', '))}">⇠${entra.length > 1 ? entra.length : ''}</span>` : '') +
+        (colabs.length ? `<span class="aba-fio colab" title="Colab: ${esc(colabs.map(f => nomeF(f.de === a.id ? f.para : f.de)).join(', '))}">⇄</span>` : '');
       const dica = `${titulo(a)} · ${mod}${espera ? ' · esperando você' : trab ? ' · trabalhando' : ''}${fs.length ? ' · ligada por fio' : ''} (duplo clique renomeia)`;
       return `<div class="aba-chat${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-aba="${a.id}" title="${esc(dica)}" style="--cor:${q.cor}">
         ${icone}<span class="aba-txt"><span class="aba-nome">${esc(titulo(a))}</span><span class="aba-mod">${esc(mod)}</span></span>${marcaFio}

@@ -82,8 +82,8 @@
     const falas = B.previas[id];
     if (!falas) return '<div class="vazio">carregando…</div>';
     if (!falas.length) return '<div class="vazio">conversa vazia</div>';
-    const rot = { pailer: 'Pailer', fio: 'outro chat', claude: 'Claude', kani: 'Kani', codex: 'Codex', pickle: 'Big Pickle' };
-    return falas.map(f => `<div class="bd-fala ${esc(f.quem)}"><i>${esc(rot[f.quem] || f.quem)}</i>${esc(f.texto.length > 320 ? f.texto.slice(0, 320) + '…' : f.texto)}</div>`).join('');
+    const rot = { log: 'Atividade', pailer: 'Pailer', fio: 'outro chat', claude: 'Claude', kani: 'Kani', codex: 'Codex', pickle: 'Big Pickle' };
+    return falas.map(f => `<div class="bd-fala ${esc(f.quem)}"><i>${esc(rot[f.quem] || f.quem)}</i>${esc(f.texto)}</div>`).join('');
   }
   function desenharCards() {
     if (!B.on) return;
@@ -107,8 +107,10 @@
       else if (corpo.contains(vivo) || !corpo.querySelector('.bd-previa') || c.dataset.previa !== JSON.stringify(B.previas[a.id] || null)) {
         if (corpo.contains(vivo)) vivo.remove();
         c.dataset.previa = JSON.stringify(B.previas[a.id] || null);
-        corpo.innerHTML = `<div class="bd-previa" title="Clique para abrir este chat aqui">${previa(a.id)}</div><div class="bd-previa-dica">clique para conversar aqui · duplo clique no topo abre nas abas</div>`;
-        const pv = corpo.querySelector('.bd-previa'); pv.scrollTop = pv.scrollHeight;
+        const antiga = corpo.querySelector('.bd-previa'), pos = antiga?.scrollTop || 0;
+        const seguir = !antiga || antiga.scrollHeight - pos - antiga.clientHeight < 80;
+        corpo.innerHTML = `<div class="bd-previa" aria-label="Conversa e logs ao vivo">${previa(a.id)}</div><button class="bd-previa-dica">Conversar aqui · mensagens e logs atualizam ao vivo</button>`;
+        const pv = corpo.querySelector('.bd-previa'); pv.scrollTop = seguir ? pv.scrollHeight : pos;
       }
       if (!on) aoVivo(a.id);
     });
@@ -123,7 +125,7 @@
       for (const id of [...B.sujos]) {
         B.sujos.delete(id);
         if (id === A.ativa || !A.lista.some(a => a.id === id)) continue;
-        try { B.previas[id] = await api().aba_previa(id, 8); } catch (e) { B.previas[id] = []; }
+        try { B.previas[id] = await api().aba_previa(id, 200, true); } catch (e) { B.previas[id] = []; }
       }
     } finally { buscando = false; }
     desenharCards();
@@ -135,26 +137,36 @@
     if (!pv) return;
     const v = AO[id];
     let el = pv.querySelector('.bd-aovivo');
-    if (!v || (!v.texto && !v.ferr)) { if (el) el.remove(); return; }
-    if (!el) { el = document.createElement('div'); pv.querySelector('.vazio')?.remove(); pv.appendChild(el); }
-    const a = A.lista.find(x => x.id === id), quem = (a && a.quem) || 'claude', rot = { claude: 'Claude', kani: 'Kani', codex: 'Codex', pickle: 'Big Pickle' };
-    const t = v.texto.length > 900 ? '…' + v.texto.slice(-900) : v.texto;
-    el.className = 'bd-fala bd-aovivo ' + quem;
-    el.innerHTML = `<i>${esc(rot[quem] || quem)} · ao vivo</i>${esc(t)}${v.ferr ? `<span class="bd-ferr">⚙ ${esc(v.ferr)}</span>` : ''}`;
+    if (!v || (!v.texto && !v.logs.length)) { if (el) el.remove(); return; }
     const perto = pv.scrollHeight - pv.scrollTop - pv.clientHeight < 80;
+    if (!el) { el = document.createElement('div'); pv.querySelector('.vazio')?.remove(); pv.appendChild(el); }
+    const a = A.lista.find(x => x.id === id), quem = a?.quem || 'claude';
+    el.className = 'bd-fala bd-aovivo ' + quem;
+    el.innerHTML = `<i>${esc(EQUIPE[quem]?.nome || quem)} · ao vivo</i>${v.logs.map(l => `<div class="bd-log">${esc(l.texto)}</div>`).join('')}${esc(v.texto)}`;
     if (perto) pv.scrollTop = pv.scrollHeight;
   }
   function aoEv(ev) {
-    const id = String(ev.aba), v = AO[id] || (AO[id] = { texto: '', ferr: '' });
-    if (ev.t === 'inicio') { v.texto = ''; v.ferr = ''; sujo(id); }
-    else if (ev.t === 'texto_novo') { if (v.texto) sujo(id); v.texto = ''; v.ferr = ''; }
-    else if (ev.t === 'texto') { v.texto += ev.d || ''; v.ferr = ''; }
-    else if (ev.t === 'ferr') v.ferr = ev.nome || 'ferramenta';
-    else if (ev.t === 'ferr_fim') v.ferr = '';
-    else if (ev.t === 'pensando' || ev.t === 'kani_pensando') { if (!v.texto) v.ferr = 'pensando…'; }
-    else if (['fim', 'saiu', 'ajudante_resposta'].includes(ev.t)) { delete AO[id]; }
+    const id = String(ev.aba), v = AO[id] || (AO[id] = { texto: '', logs: [] });
+    const serial = x => typeof x === 'string' ? x : JSON.stringify(x || '');
+    const log = (texto, chave) => {
+      if (!texto) return;
+      const anterior = chave && v.logs.find(l => l.chave === chave);
+      if (anterior) anterior.texto = texto; else v.logs.push({texto, chave});
+    };
+    if (ev.t === 'inicio' || (ev.t === 'ajudante' && ev.fase === 'inicio')) { v.texto = ''; v.logs = []; sujo(id); }
+    else if (ev.t === 'texto_novo') { if (v.texto) log(v.texto); v.texto = ''; }
+    else if (ev.t === 'texto') v.texto += ev.d || '';
+    else if (ev.t === 'codex_progresso') log(ev.texto, 'codex:' + (ev.id || 'atual'));
+    else if (ev.t === 'pickle_progresso' || ev.t === 'kani_estado') log(ev.texto);
+    else if (ev.t === 'ajudante') log((ev.operacao === 'fim' ? (ev.ok === false ? '⚠ ' : '✓ ') : '') + (ev.texto || '') +
+      (ev.entrada ? '\n' + serial(ev.entrada) : '') + (ev.saida ? '\n' + serial(ev.saida) : ''));
+    else if (ev.t === 'ferr') log('⚙ ' + (ev.nome || 'ferramenta') + '\n' + serial(ev.entrada));
+    else if (ev.t === 'ferr_fim') log((ev.ok === false ? '⚠ Falhou' : '✓ Concluído') + '\n' + serial(ev.saida));
+    else if (ev.t === 'pensando' || ev.t === 'kani_pensando') log('Pensando…', 'pensando');
+    else if (ev.t === 'permissao' || ev.t === 'pergunta') log('Esperando sua resposta — abra este chat para responder.');
+    else if (['fim', 'saiu', 'ajudante_resposta'].includes(ev.t)) { v.texto = ''; sujo(id); }
     else return;
-    if (!aoTimers[id]) aoTimers[id] = setTimeout(() => { aoTimers[id] = 0; aoVivo(id); }, 150);
+    if (B.on && !aoTimers[id]) aoTimers[id] = setTimeout(() => { aoTimers[id] = 0; aoVivo(id); }, 100);
   }
   let sujoTimer = 0;
   function sujo(id) { B.sujos.add(String(id)); clearTimeout(sujoTimer); sujoTimer = setTimeout(() => B.on && buscarPrevias(), 1200); }
@@ -203,7 +215,7 @@
     if (!B.on) return;
     const ligados = new Set(B.fios.map(f => f.de));
     gFios.innerHTML = B.fios.map(f => `<g data-fio="${f.id}"><path class="toque"/><path class="linha ${f.modo}${B.vivos.has(f.id) ? ' vivo' : ''}"/>
-        <text text-anchor="middle">${f.modo === 'comando' ? '⚡ manda' : '👁 lê'}</text></g>`).join('') +
+        <text text-anchor="middle">${f.modo === 'colab' ? '⇄ Colab' : f.modo === 'comando' ? '⚡ manda' : '👁 lê'}</text></g>`).join('') +
       A.lista.filter(a => B.cards[a.id] && !(arr && arr.tipo === 'fio' && arr.de === a.id)).map(a =>
         `<g class="pendurada${ligados.has(a.id) ? ' tem' : ''}" data-pino="${a.id}"><path class="linha"/><circle class="pino" r="7" data-pino="${a.id}"/></g>`).join('');
     [...cordas.keys()].forEach(k => {
@@ -334,10 +346,11 @@
   function fecharMenu() { document.querySelectorAll('.bd-menu').forEach(m => m.remove()); document.removeEventListener('pointerdown', fora, true); }
   const nomeAba = id => { const a = A.lista.find(x => x.id === id); return a ? A.titulo(a) : 'Aba ' + id; };
   const MODOS = f => `<button data-v="leitura" class="${f && f.modo === 'leitura' ? 'on' : ''}">👁 Leitura<small>o chat de origem pode ler este</small></button>
-      <button data-v="comando" class="${f && f.modo === 'comando' ? 'on' : ''}">⚡ Comando<small>o de origem manda pedidos e recebe a resposta</small></button>`;
+      <button data-v="comando" class="${f && f.modo === 'comando' ? 'on' : ''}">⚡ Comando<small>o de origem manda pedidos e recebe a resposta</small></button>
+      <button data-v="colab" class="${f && f.modo === 'colab' ? 'on' : ''}">⇄ Colab<small>os dois planejam, dividem arquivos e trabalham juntos</small></button>`;
   function menuNovoFio(de, para, x, y) {
     menu(x, y, `<h4>${esc(nomeAba(de))} → ${esc(nomeAba(para))}</h4>${MODOS(null)}`, async modo => {
-      try { await api().fio_criar(de, para, modo); } catch (e) { erro && erro(e); }
+      try { if (modo === 'colab') KC_COLAB.abrir(de, para); else await api().fio_criar(de, para, modo); } catch (e) { erro && erro(e); }
     });
   }
   function menuFio(f, x, y) {
@@ -348,6 +361,7 @@
       try {
         if (v === 'apagar') await api().fio_apagar(f.id);
         else if (v === 'parar') await api().aba_parar(f.para);
+        else if (v === 'colab') KC_COLAB.abrir(f.de, f.para);
         else if (v !== f.modo) await api().fio_mudar(f.id, v);
       } catch (e) { erro && erro(e); }
     });
@@ -373,7 +387,7 @@
     if (e.target.closest('.bd-tam')) { arr = { tipo: 'tam', id, x0: e.clientX, y0: e.clientY, p: Object.assign({}, p) }; board.setPointerCapture(e.pointerId); e.preventDefault(); animar(); return; }
     // move pelo topo, pela prévia (clique sem arrastar abre) e, no chat aberto, pelo vazio da conversa ou pela borda
     const vazio = e.target === c || e.target.matches('.bd-corpo, .bd-vivo, .conversa, .meio, .status');
-    if ((e.target.closest('.bd-cab') && !e.target.closest('button')) || e.target.closest('.bd-previa, .bd-previa-dica') || vazio) {
+    if ((e.target.closest('.bd-cab') && !e.target.closest('button')) || e.target.closest('.bd-previa-dica') || vazio) {
       arr = { tipo: 'card', id, x0: e.clientX, y0: e.clientY, p: Object.assign({}, p), mexeu: false };
       board.setPointerCapture(e.pointerId); e.preventDefault(); animar(); return;
     }
@@ -495,7 +509,7 @@
     if (ev && ev.t === 'fios') { B.fios = Array.isArray(ev.lista) ? ev.lista : []; desenharFios(); A.desenhar(); return; }
     if (ev && ev.t === 'fio_ativo') { if (ev.on) B.vivos.add(ev.id); else B.vivos.delete(ev.id); desenharFios(); return; }
     evAntes(ev);
-    if (B.on && ev && ev.aba != null && String(ev.aba) !== A.ativa) aoEv(ev);
+    if (ev && ev.aba != null) aoEv(ev);
     if (B.on && ev && ev.aba != null && String(ev.aba) !== A.ativa && ['fim', 'saiu', 'ajudante_resposta', 'eco_eu', 'ajudante'].includes(ev.t)) sujo(ev.aba);
   };
   document.addEventListener('keydown', e => {

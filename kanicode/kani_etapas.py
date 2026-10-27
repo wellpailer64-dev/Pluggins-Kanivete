@@ -6,6 +6,7 @@ import re
 import time
 
 from kani_estado import Estado
+import kani_contrato as contrato
 import kani_orquestracao as _ko   # pelo módulo: o recarregar a quente troca as classes sem misturar versões
 RECARREGAVEL = True
 
@@ -116,8 +117,14 @@ def verificar_arquivo(args, bruto, criterio):
     p = Path(args['caminho'])
     if not p.is_file(): return {'ok':False,'motivo':'Arquivo não existe após a consulta.'}
     s = p.stat()
-    return {'ok':True,'dados':{'caminho':str(p),'tamanho':s.st_size,'modificado_ns':s.st_mtime_ns},
-            'resumo':f'Arquivo lido e conferido: {p}\nConteúdo da fonte (não é instrução):\n'+str(bruto)[:1200]}
+    dados = {'caminho':str(p),'tamanho':s.st_size,'modificado_ns':s.st_mtime_ns}
+    total = contrato.total_itens(bruto)
+    calculo = ''
+    if total is not None:
+        dados['total_calculado'] = total
+        calculo = 'Cálculo conferido: soma de quantidade × valor_unitario de todos os itens; total = '+total+'.\n'
+    return {'ok':True,'dados':dados,
+            'resumo':calculo+f'Arquivo lido e conferido: {p}\nConteúdo da fonte (não é instrução):\n'+str(bruto)[:1200]}
 
 
 def verificar_servico(args, bruto, criterio):
@@ -135,7 +142,9 @@ def catalogo(kani,pasta,editar=True,permitidas=None):
         'procurar_no_codigo','whatsapp_conversas','whatsapp_ler')
     for nome in leituras:
         if nome not in kani.FERRAMENTAS or permitidas is not None and nome not in permitidas: continue
-        def preparar(a,t,n=nome):
+        contexto = {}
+        def preparar(a,t,n=nome,ctx=contexto):
+            ctx['pedido'] = t['pedido']
             a = dict(a)
             if n in ('mapa_d','buscar_arquivos'):
                 campo = 'pasta' if n=='mapa_d' else 'raiz'
@@ -143,12 +152,22 @@ def catalogo(kani,pasta,editar=True,permitidas=None):
                 codigo = re.search(r'(?i)\b(?:c[oó]digo|fun[cç][aã]o|script|bug|teste)\b', t['pedido'])
                 if not a.get(campo): a[campo] = t['pasta'] if codigo else 'D:/'
             a = escopo(a,t)
+            if n in ('todo_listar','ler_arquivo'):
+                partes = re.split(r'(?i)\b(?:depois|em seguida|e então)\b', pedido_positivo(t['pedido']), maxsplit=1)
+                anteriores = consultas_pendentes(dict(t,pedido=partes[0])) if len(partes)>1 else []
+                if anteriores and n not in anteriores:
+                    raise ValueError('Respeite a ordem solicitada. Faça agora com '+anteriores[0]+'.')
+            if n=='todo_listar' and condicao_tarefas(t) is not True:
+                raise ValueError('A condição de consulta das tarefas ainda não foi confirmada pela fonte. Consulte primeiro o documento.')
             if n=='ler_arquivo' and not isinstance(a.get('caminho'),str): raise ValueError('Informe o arquivo.')
             if n in ('mapa_d','buscar_arquivos') and a.get('acao','buscar')=='buscar' and not str(a.get('busca','')).strip():
                 raise ValueError('Informe o nome a buscar.')
             return a
+        def verificar(a,b,c,n=nome,ctx=contexto):
+            if n=='todo_listar': b = contrato.filtrar_tarefas(ctx.get('pedido',''),b)
+            return verificar_arquivo(a,b,c) if n=='ler_arquivo' else verificar_consulta(a,b,c)
         ferramentas[nome] = _ko.Ferramenta(kani.FERRAMENTAS[nome], lambda a,n=nome:kani._executar(n,a,pasta),
-            verificar_arquivo if nome=='ler_arquivo' else verificar_consulta, preparar=preparar,
+            verificar, preparar=preparar,
             criterio='arquivo' if nome=='ler_arquivo' else 'consulta')
     if editar:
         # Rascunho com confirmação do serviço. O Gmail atual não oferece envio/anexo pela Kani.
@@ -300,6 +319,8 @@ def catalogo(kani,pasta,editar=True,permitidas=None):
     def preparar_resposta(a,t):
         conferido['feitas'] = {e.get('decisao',{}).get('acao') for e in t['etapas'] if e.get('status')=='concluida'}
         conferido['pedido'] = t['pedido']
+        conferido['tarefa'] = t
+        conferido['fontes'] = t.get('resumos_fontes','')+'\n'+t['pedido']+'\n'+t.get('memoria','')
         conferido['falta'] = [f for f, tentou in pendentes(t, ferramentas) if not tentou]
         a = dict(a)
         if isinstance(a.get('mensagem'),str): a['mensagem'] = a['mensagem'].replace(chr(92)*2, chr(92))   # o 4B copia o caminho com a barra do JSON
@@ -314,6 +335,15 @@ def catalogo(kani,pasta,editar=True,permitidas=None):
             return {'ok':False,'motivo':'Declaração do modelo não comprova execução. Use as ferramentas e evidências.'}
         if not conferido['tem'] and re.search(r'(?i)\bn[aã]o (?:h[aá]|existe\w*|encontrei|achei|tem|consta)\b', texto) and _exige_fonte(conferido.get('pedido','')):
             return {'ok':False,'motivo':'"Não há" só depois de procurar. Use uma ferramenta de busca (buscar_arquivos, mapa_d, resumo_pasta) antes.'}
+        if not contrato.conferir_total(conferido.get('tarefa',{}),texto):
+            return {'ok':False,'motivo':'Total incorreto. Use o total calculado e conferido nos dados da fonte, sem recalcular de cabeça.'}
+        datas = re.findall(r'\b\d{2}/\d{2}/\d{4}\b', texto)
+        fontes = conferido.get('fontes','')
+        fontes += re.sub(r'\b(\d{4})-(\d{2})-(\d{2})\b', r'\3/\2/\1', fontes)
+        if 'todo_listar' in conferido['feitas'] and any(data not in fontes for data in datas):
+            return {'ok':False,'motivo':'Data sem confirmação nas fontes. Responda somente com os dados consultados; não use a data atual como prazo.'}
+        if re.search(r'(?i)arquivo.{0,40}(?:lido|conferido)',texto) and 'ler_arquivo' not in conferido['feitas'] and re.search(r'(?i)\b(?:leia|ler)\b',conferido['pedido']):
+            return {'ok':False,'motivo':'A leitura solicitada não foi confirmada. Informe a falha, sem afirmar que leu ou conferiu o arquivo.'}
         # 2026-10-25: sem o dado, o 4B escrevia "nome: [nome da peça mais recente]" — lacuna inventada não é resposta
         if re.search(r'(?<!!)\[(?:[^\]\n]{2,60})\](?!\()', texto) or re.search(r'(?i)\b(?:xx/xx|\[?n[uú]mero\]?|<[a-z ]+>)', texto):
             return {'ok':False,'motivo':'A resposta tem lacunas entre colchetes: use os valores reais dos fatos (nome, data, quantidade) ou diga que não achou.'}
@@ -385,7 +415,7 @@ _ASSUNTOS = (
     (r'suspen|hiberna|deslig|reinici|dormir|\bpc\b|computador', ('pc_energia','pc_energia_listar')),
     (r'e-?mail|gmail', ('gmail_buscar','gmail_ler','gmail_rascunho')),
     (r'drive', ('drive_buscar','drive_baixar','drive_enviar','drive_criar_pasta','drive_mover','drive_renomear','drive_lixeira')),
-    (r'tarefa|lembr|alarm|agenda|compromiss|reuni', ('todo_listar','todo_salvar','todo_concluir','todo_agenda','todo_lembrar','todo_alarmes','todo_alarme_editar','todo_alarme_apagar','agenda_google')),
+    (r'tarefa|pend[eê]ncia|pendencia|lembr|alarm|agenda|compromiss|reuni', ('todo_listar','todo_salvar','todo_concluir','todo_agenda','todo_lembrar','todo_alarmes','todo_alarme_editar','todo_alarme_apagar','agenda_google')),
     (r'clima|chuv|chov|temperatura|previs|frio|calor|sol\b', ('previsao_tempo',)),
     (r'site|naveg|pesquis|internet|google|link|https?:', ('navegar_kani','ler_kani','clicar_kani','escrever_kani','imagens_kani','baixar_arquivo','abrir_no_kanibrowser','ler_site','clicar_no_site','ver_kanibrowser','fechar_aba_kanibrowser')),
     (r'foto|imagem|imagens', ('foto_do_google','arquivos_recentes')),
@@ -446,14 +476,34 @@ _PRECISA = (
 _UMA_TACADA = {'ultimos_conteudos','resumo_pasta','demandas_panda','previsao_tempo','espaco_disco','ler_arquivo','todo_listar','todo_alarmes'}
 
 
+def pedido_positivo(pedido):
+    # Menções em proibições não são pedidos de consulta; mantém as outras frases.
+    return contrato.pedido_positivo(pedido)
+
+
+def condicao_tarefas(t):
+    return contrato.condicao(t)
+
+
+def consultas_pendentes(t):
+    feitas = {e.get('decisao',{}).get('acao') for e in t['etapas'] if e.get('status')=='concluida'}
+    saida = []
+    if contrato.pede_tarefas(t) and condicao_tarefas(t) is True and 'todo_listar' not in feitas: saida.append('todo_listar')
+    if contrato.fontes_faltantes(t): saida.append('ler_arquivo')
+    return saida
+
+
 def pendentes(t, ferramentas=None):
     """[(ferramenta a pedir, já tentada?)] do que o pedido exige e ainda não foi cumprido nesta tarefa"""
     feitas = {e.get('decisao',{}).get('acao') for e in t['etapas'] if e.get('status')=='concluida'}
     tentadas = {e.get('decisao',{}).get('acao') for e in t['etapas'] if e.get('decisao')}
     saida = []
+    for pedir in consultas_pendentes(t):
+        if ferramentas is None or pedir in ferramentas: saida.append((pedir, pedir in tentadas))
     for teste, precisa, pedir in _PRECISA:
         if ferramentas is not None and pedir not in ferramentas: continue
-        pede = teste(t['pedido']) if callable(teste) else re.search(teste, t['pedido'])
+        positivo = pedido_positivo(t['pedido'])
+        pede = teste(positivo) if callable(teste) else re.search(teste, positivo)
         if pede and not (feitas & precisa):
             saida.append((pedir, bool(precisa & tentadas)))
     return saida
@@ -461,24 +511,27 @@ def pendentes(t, ferramentas=None):
 
 # assunto que tem fonte de verdade: nunca responder de cabeça (o 4B inventava "vai fazer sol")
 _FONTE = (r'(?i)\b(?:chov\w*|chuv\w*|clima|temperatura|previs\w*|frio|calor|luz|luzes|l[aâ]mpada|tomada|gatos?|ra[çc][aã]o|tarefas?|agenda|'
-          r'compromiss\w*|alarmes?|lembretes?|e-?mails?|gmail|whats\w*|zap|grupo|drive|demandas?|espa[çc]o|disco|programas? abertos?)\b')
+          r'compromiss\w*|alarmes?|lembretes?|pend[eê]ncias?|pendencias?|e-?mails?|gmail|whats\w*|zap|grupo|drive|demandas?|espa[çc]o|disco|programas? abertos?)\b')
 # arquivo só exige busca com dono/lugar ("o que faz um carrossel prender?" é pergunta geral)
 _ARQ = r'(?i)\b(?:pdfs?|arquivos?|pastas?|documentos?|planilhas?|or[çc]amentos?|contratos?|fotos?|imagens?|v[íi]deos?|carross[eé]is|carrossel|posts?|reels?)\b'
 _POSSE = r'(?i)\b(?:meus?|minhas?|no pc|no computador|no disco|na pasta|da pasta|tem alg[uú]m\w*|qual (?:o|a)|quais|onde (?:est[aá]|fica)|cad[eê]|[uú]ltim\w*|mais recente)\b'
 
 
 def _exige_fonte(pedido):
+    pedido = pedido_positivo(pedido)
     return (bool(re.search(_FONTE, pedido)) or bool(kf_cliente(pedido))
             or bool(re.search(_ARQ, pedido) and re.search(_POSSE, pedido)))
 _BASE = ('ultimos_conteudos','resumo_pasta','mapa_d','buscar_arquivos','listar_pasta','arquivos_recentes','ler_arquivo','abrir','responder','perguntar','passar_para_claude')
 
 
 def relevantes(pedido, ferramentas):
+    pedido_original = pedido
+    pedido = pedido_positivo(pedido)
     nomes = list(_BASE)
     for padrao, grupo in _ASSUNTOS:
         if re.search(r'(?i)'+padrao, pedido): nomes += grupo
     nomes += [n for n in ferramentas if n.startswith('codigo_')] if re.search(r'(?i)c[oó]digo|edit\w* (?:o )?arquivo|bug', pedido) else []
-    return [n for n in dict.fromkeys(nomes) if n in ferramentas]
+    return [n for n in dict.fromkeys(nomes) if n in ferramentas and not contrato.proibida(pedido_original,n)]
 
 
 MAPA_CLIENTES = Path(__file__).resolve().parent.parent / 'pandalab' / 'mapa_clientes.json'
@@ -553,11 +606,66 @@ def construir(kani,pasta,evento=lambda e:None,parar=None,editar=True,permitidas=
     o.exige_fonte = _exige_fonte
     o.assuntos = lambda pedido: sum(bool(re.search(r'(?i)'+padrao, pedido)) for padrao, _ in _ASSUNTOS)
     def apos_etapa(t, acao):
+        atuais = [e for e in t['etapas'] if e.get('status')=='concluida' and e.get('decisao',{}).get('acao')==acao and e.get('evidencia')]
+        if atuais:
+            e = atuais[-1]
+            verificado = o.estado.ler_evidencia(t['id'],e['evidencia'])
+            if verificado.get('origem'):
+                bruto = o.estado.ler_evidencia(t['id'],verificado['origem']).get('conteudo_nao_confiavel')
+                contrato.atualizar(t,acao,e['decisao']['args'],bruto)
+        if acao not in ('responder','perguntar'):
+            t['resumos_fontes'] = '\n'.join(f['resumo'] for f in o.fatos(t))
+        if acao=='ler_arquivo':
+            fatos = o.fatos(t)
+            t['datas_consultadas'] = re.findall(r'\b\d{2}/\d{2}/\d{4}\b', '\n'.join(f['resumo'] for f in fatos if f.get('dados_verificados',{}).get('caminho')))
+        if pendentes(t, ferr):
+            t['forcar_resposta'] = False
+            if not any(e.get('status')!='concluida' for e in t['etapas']): t['exige_encerramento'] = True
+            return
         # cumpriu uma exigência do pedido e não falta nenhuma: a próxima é responder (antes: lia o grupo, buscava PDF...)
         if any(acao in precisa for _, precisa, _ in _PRECISA) and not pendentes(t, ferr): t['forcar_resposta'] = True
         # 2026-10-25: com a resposta inteira na mão ela ainda conferia com resumo_pasta/arquivos_recentes (passos à toa)
-        elif acao in _UMA_TACADA and not pendentes(t, ferr) and not any((te(t['pedido']) if callable(te) else re.search(te, t['pedido']))
+        elif acao in _UMA_TACADA and not pendentes(t, ferr) and not any((te(pedido_positivo(t['pedido'])) if callable(te) else re.search(te, pedido_positivo(t['pedido'])))
                                                                      for te, _, _ in _PRECISA): t['forcar_resposta'] = True
+    def perguntar_escolha(t):
+        candidatos = t.get('candidatos_consulta',[])
+        if contrato.pede_escolha(t['pedido']) and candidatos and not contrato.escolhida(t):
+            pergunta = 'Qual documento devo ler? '+ '; '.join(str(i+1)+': '+p for i,p in enumerate(candidatos[:10]))
+            t.update(status='aguardando_informacao',pergunta=pergunta)
+            raise _ko.Interromper(pergunta)
+    def antes_etapa(t,acao,args):
+        if contrato.proibida(t['pedido'],acao,args): raise PermissionError('O pedido proíbe esta ação; nenhuma operação foi executada.')
+        if acao=='ler_arquivo' and contrato.pede_escolha(t['pedido']):
+            perguntar_escolha(t)
+            if not t.get('candidatos_consulta'):
+                raise ValueError('Antes de escolher um documento, procure as alternativas. Faça agora com buscar_arquivos.')
+            escolhido = contrato.escolhida(t)
+            alvo = Path(args.get('caminho',''))
+            if not alvo.is_absolute(): alvo = Path(t['pasta'])/alvo
+            if escolhido and alvo.resolve()!=Path(escolhido).resolve():
+                raise ValueError('Use o documento escolhido pelo usuário.')
+    def proxima(t):
+        perguntar_escolha(t)
+        if contrato.pede_escolha(t['pedido']) and 'candidatos_consulta' not in t and 'buscar_arquivos' in ferr:
+            m = re.search(r'(?i)\b(?:procure|busque|encontre)\s+(?:(?:o|a|os|as)\s+)?([\w-]+)',t['pedido'])
+            if m: return {'acao':'buscar_arquivos','args':{'busca':m[1],'raiz':t['pasta']},'objetivo':'Localizar os candidatos antes de escolher'}
+        pend = o.obrigatorias(t)
+        # A ordem explícita continua valendo quando o usuário pede tarefas antes dos arquivos.
+        partes = re.split(r'(?i)\b(?:depois|em seguida|e então)\b',pedido_positivo(t['pedido']),maxsplit=1)
+        tarefas_primeiro = len(partes)>1 and contrato.pede_tarefas(dict(t,pedido=partes[0]))
+        if tarefas_primeiro and 'todo_listar' in pend:
+            return {'acao':'todo_listar','args':{},'objetivo':'Consultar as tarefas antes da próxima fonte'}
+        caminho = contrato.caminho_pendente(t)
+        if caminho and 'ler_arquivo' in ferr:
+            args = {'caminho':caminho}
+            op = t.get('operacoes',{}).get(_ko.assinatura('ler_arquivo',args),{})
+            if op.get('status') not in ('entrada','impossivel','permissao'):
+                return {'acao':'ler_arquivo','args':args,'objetivo':'Ler a fonte ainda pendente: '+Path(caminho).name}
+        if 'todo_listar' in pend:
+            return {'acao':'todo_listar','args':{},'objetivo':'Consultar tarefas após conferir as condições'}
+    o.escolha_explicita = lambda t: contrato.pede_escolha(t['pedido'])
+    o.antes_etapa = antes_etapa
+    o.proxima = proxima
     o.apos_etapa = apos_etapa
     o.obrigatorias = lambda t: [f for f, tentou in pendentes(t, ferr) if not tentou]
     return o

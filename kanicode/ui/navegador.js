@@ -52,14 +52,39 @@
     if (!NAV.on || !api()) return;
     const r = area.getBoundingClientRect(), k = window.devicePixelRatio || 1;
     const m = area.classList.contains('trab') ? 3 : 0;   // Kani trabalhando: a página recua 3 px e o brilho aparece em volta
-    api().nav_area((r.left + m) * k, (r.top + m) * k, (r.width - 2 * m) * k, (r.height - 2 * m) * k, document.documentElement.clientWidth * k);
+    const v = [(r.left + m) * k, (r.top + m) * k, (r.width - 2 * m) * k, (r.height - 2 * m) * k, document.documentElement.clientWidth * k];
+    NAV.ret = v.map(Math.round).join(',');
+    api().nav_area(...v);
   }
   new ResizeObserver(informarArea).observe(area);
+  // a página é uma janela do Windows por cima do HTML: qualquer coisa que abra por cima da área (visualizador de imagem,
+  // menu, janela, área expandida) ficava embaixo dela. Uma grade de pontos na área: se um deles não é da área, ela some.
+  function cobertoAgora() {
+    const r = area.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return false;
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 7; j++) {
+      // as alças transparentes da janela ficam nas bordas; não cobrem a página do navegador
+      const el = document.elementsFromPoint(r.left + 4 + (r.width - 8) * i / 5, r.top + 4 + (r.height - 8) * j / 6)
+        .find(e => !e.closest('.tam'));
+      if (el && !area.contains(el)) return true;
+    }
+    return false;
+  }
+  function checarCobertura() {
+    NAV.raf = 0;
+    if (!NAV.on || !api()) return;
+    const c = cobertoAgora();
+    if (c !== NAV.coberto) { NAV.coberto = c; api().nav_cmd('cobrir', c); }
+  }
+  const pedirChecagem = () => { if (NAV.on && !NAV.raf) NAV.raf = setTimeout(checarCobertura, 50); };   // leve com a conversa escrevendo
+  new MutationObserver(pedirChecagem).observe(document.body, { subtree: true, childList: true, attributes: true,
+    attributeFilter: ['class', 'style', 'hidden', 'open'] });
+  ['transitionend', 'animationend', 'scroll'].forEach(t => document.addEventListener(t, pedirChecagem, true));
   window.addEventListener('resize', () => { if (NAV.on) { largura(NAV.w); informarArea(); apertar(); } });
 
   async function abrir() {
     if (NAV.on) return;
-    NAV.on = true; bt.setAttribute('aria-pressed', 'true');
+    NAV.on = true; NAV.coberto = null; bt.setAttribute('aria-pressed', 'true');
     // janela estreita: cresce para a direita; já larga (≥ 1000): divide o que tem
     const cresce = window.innerWidth < 1000 ? NAV.w : 0;
     NAV.cresceu = cresce; try { sessionStorage.setItem('kc-nav-cresceu', String(cresce)); } catch (_) {}
@@ -98,7 +123,7 @@
   async function restaurar() {
     let e; try { e = await api().nav_estado(); } catch (_) { return; }
     if (!e || !e.aberto || NAV.on) return;
-    NAV.on = true; NAV.cresceu = Number(sessionStorage.getItem('kc-nav-cresceu')) || 0;
+    NAV.on = true; NAV.coberto = null; NAV.cresceu = Number(sessionStorage.getItem('kc-nav-cresceu')) || 0;
     bt.setAttribute('aria-pressed', 'true');
     largura(NAV.w);
     document.documentElement.classList.add('com-nav');
@@ -186,6 +211,10 @@
   }
   async function atualizar() {
     if (!NAV.on || document.hidden) return;
+    checarCobertura();
+    // a área mudou de lugar sem mudar de tamanho (o ResizeObserver não vê): manda de novo
+    { const r = area.getBoundingClientRect(), k = window.devicePixelRatio || 1, m = area.classList.contains('trab') ? 3 : 0;
+      if ([(r.left + m) * k, (r.top + m) * k, (r.width - 2 * m) * k, (r.height - 2 * m) * k, document.documentElement.clientWidth * k].map(Math.round).join(',') !== NAV.ret) informarArea(); }
     try {
       const e = await api().nav_estado();
       if (e && !e.aberto) { $('nav-msg').hidden = false; $('nav-msg').textContent = 'Reabrindo o navegador…'; clearInterval(NAV.timer); ligar(); return; }

@@ -17,7 +17,7 @@ SESSAO2 = "00000000-0000-0000-0000-00000000000b"
 
 class AbasTest(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.temp = tempfile.TemporaryDirectory(dir="D:/kanivete_testes")
         self.addCleanup(self.temp.cleanup)
         self.pasta = self.temp.name
         for nome, valor in (("DADOS", self.pasta), ("ESTADO", str(Path(self.pasta) / "estado.json"))):

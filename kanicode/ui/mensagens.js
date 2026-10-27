@@ -5,17 +5,31 @@
   function desenhar(ev) {
     let b = conversa.querySelector('[data-mensagem-id="' + CSS.escape(ev.id) + '"]');
     if (!b) {
-      b = bolha('eu', ev.texto || ''); b.dataset.mensagemId = ev.id;
+      b = bolha('eu', ''); b.dataset.mensagemId = ev.id;
+      const conteudo = document.createElement('span'); conteudo.className = 'mensagem-texto'; b.appendChild(conteudo);
       const m = minis(ev.minis); if (m) b.prepend(m);
     }
     if (ev.estado === 'cancelada') { b.remove(); return; }
     b.dataset.mensagemEstado = ev.estado;
+    b.dataset.mensagemTexto = ev.texto || '';
+    b.querySelector('.mensagem-texto').textContent = ev.texto || '';
     let x = b.querySelector('.mensagem-cancelar');
     const cancelavel = ['pendente','urgente','falha'].includes(ev.estado);
     if (cancelavel && !x) {
       x = document.createElement('button'); x.type = 'button'; x.className = 'mensagem-cancelar'; x.textContent = '✕';
       x.title = 'Cancelar esta mensagem (não envia)'; x.setAttribute('aria-label', x.title); b.appendChild(x);
     } else if (!cancelavel) x?.remove();
+    let editar = b.querySelector('.mensagem-editar');
+    if (cancelavel && !editar) {
+      editar = document.createElement('button'); editar.type = 'button'; editar.className = 'mensagem-editar';
+      editar.textContent = '✎'; editar.title = 'Editar mensagem na fila'; editar.setAttribute('aria-label', editar.title);
+      b.appendChild(editar);
+    } else if (!cancelavel) editar?.remove();
+    const editor = b.querySelector('.mensagem-editor');
+    if (editor && !cancelavel) {
+      editor.querySelector('.mensagem-salvar').disabled = true;
+      editor.querySelector('.mensagem-edicao-erro').textContent = 'A mensagem já saiu da fila. Seu rascunho está aqui para copiar.';
+    }
     b.classList.toggle('mensagem-pendente', ['pendente','urgente'].includes(ev.estado));
     b.classList.toggle('mensagem-urgente', ev.estado === 'urgente');
     let nota = b.querySelector('.mensagem-fila-nota');
@@ -43,7 +57,44 @@
       desenhar({...ev, estado:'falha', erro:String(erro.message || erro)});
     }
   };
+  function abrirEditor(b) {
+    if (b.querySelector('.mensagem-editor')) { b.querySelector('textarea').focus(); return; }
+    const editor = document.createElement('form'); editor.className = 'mensagem-editor';
+    const campo = document.createElement('textarea'); campo.value = b.dataset.mensagemTexto;
+    campo.setAttribute('aria-label', 'Editar texto da mensagem'); campo.rows = 4;
+    const salvar = document.createElement('button'); salvar.type = 'submit'; salvar.className = 'mensagem-salvar'; salvar.textContent = 'Salvar';
+    const cancelar = document.createElement('button'); cancelar.type = 'button'; cancelar.textContent = 'Cancelar';
+    const erro = document.createElement('small'); erro.className = 'mensagem-edicao-erro'; erro.setAttribute('role', 'status');
+    const fechar = () => { editor.remove(); b.querySelector('.mensagem-texto').hidden = false; };
+    cancelar.onclick = fechar;
+    editor.append(campo, salvar, cancelar, erro); b.appendChild(editor);
+    b.querySelector('.mensagem-texto').hidden = true;
+    editor.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); fechar(); }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); editor.requestSubmit(); }
+    });
+    editor.addEventListener('submit', async e => {
+      e.preventDefault(); e.stopPropagation();
+      if (salvar.disabled) return;
+      salvar.disabled = true; erro.textContent = '';
+      try {
+        const ok = await api().mensagem_editar(b.dataset.mensagemId, campo.value);
+        if (!ok) throw new Error('A mensagem já saiu da fila ou não está mais disponível.');
+        fechar();
+      } catch (x) {
+        erro.textContent = String(x.message || x);
+        salvar.disabled = !['pendente','urgente','falha'].includes(b.dataset.mensagemEstado);
+      }
+    });
+    campo.focus();
+  }
   conversa.addEventListener('click', async e => {
+    const editar = e.target.closest('.mensagem-editar');
+    if (editar) {
+      e.preventDefault(); e.stopPropagation(); abrirEditor(editar.closest('[data-mensagem-id]')); return;
+    }
+    if (e.target.closest('.mensagem-editor')) { e.stopPropagation(); return; }
     const x = e.target.closest('.mensagem-cancelar'); if (!x) return;
     e.preventDefault(); e.stopPropagation();
     const b = x.closest('[data-mensagem-id]'); if (!b) return;
@@ -53,7 +104,7 @@
     if (r || b.dataset.mensagemEstado === 'falha') { b.remove(); atividade('Mensagem cancelada'); }
   });
   conversa.addEventListener('dblclick', async e => {
-    if (e.target.closest('.mensagem-cancelar')) return;
+    if (e.target.closest('.mensagem-cancelar, .mensagem-editar, .mensagem-editor')) return;
     const b = e.target.closest('.mensagem-pendente[data-mensagem-id]');
     if (!b) return;
     e.preventDefault();

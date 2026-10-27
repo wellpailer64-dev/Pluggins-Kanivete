@@ -9,11 +9,13 @@
   const IC_PASTA = '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
   const IC_ARQ = '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>';
 
-  const trilho = document.createElement('button'); trilho.id = 'proj-trilho'; trilho.className = 'trilho';
+  const trilho = document.createElement('button'); trilho.id = 'proj-trilho';
   trilho.title = 'Projeto: arquivos e alterações'; trilho.setAttribute('aria-label', 'Projeto');
   trilho.setAttribute('aria-expanded', 'false'); trilho.setAttribute('aria-controls', 'proj-painel');
-  trilho.innerHTML = '<span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="cont" id="proj-cont" hidden></span><span class="vert">PROJETO</span>';
-  el('atv-trilho').after(trilho);
+  trilho.innerHTML = '<span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="cont" id="proj-cont" hidden></span>';
+  // no topo, ao lado do 🌐 (pedido do Pailer, 2026-10-26)
+  const bolas = document.querySelector('.janela-bolas');
+  if (bolas) bolas.parentNode.insertBefore(trilho, bolas); else el('atv-trilho').after(trilho);
   const painel = document.createElement('section'); painel.id = 'proj-painel'; painel.className = 'det';
   painel.setAttribute('aria-label', 'Projeto');
   painel.innerHTML = `<div class="pj-puxa" title="Arraste para mudar a largura"></div>
@@ -179,12 +181,12 @@
   });
 
   // largura: arrastar a borda esquerda (guardada)
-  const LARG = 'kc-projeto-largura';
-  painel.style.setProperty('--pj-w', (+localStorage.getItem(LARG) || 360) + 'px');
+  const LARG = 'kc-projeto-largura2';
+  painel.style.setProperty('--pj-w', (+localStorage.getItem(LARG) || 540) + 'px');
   painel.querySelector('.pj-puxa').addEventListener('pointerdown', e => {
     const x0 = e.clientX, w0 = painel.getBoundingClientRect().width, alvo = e.target;
     alvo.setPointerCapture(e.pointerId); painel.classList.add('puxando');
-    const mexer = ev => painel.style.setProperty('--pj-w', Math.max(260, Math.min(900, w0 + x0 - ev.clientX)) + 'px');
+    const mexer = ev => painel.style.setProperty('--pj-w', Math.max(300, Math.min(1100, w0 + x0 - ev.clientX)) + 'px');
     const soltar = () => {
       alvo.removeEventListener('pointermove', mexer); painel.classList.remove('puxando');
       localStorage.setItem(LARG, parseInt(painel.style.getPropertyValue('--pj-w')));

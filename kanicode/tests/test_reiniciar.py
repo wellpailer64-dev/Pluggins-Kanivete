@@ -13,6 +13,9 @@ class ReiniciarTest(unittest.TestCase):
         self.app = kanicode.App.__new__(kanicode.App)
         self.app._pendente = None
         self.app._alguma_ocupada = Mock(return_value=False)
+        temporizador = patch.object(kanicode.threading, 'Timer')
+        self.temporizador = temporizador.start()
+        self.addCleanup(temporizador.stop)   # não agenda o watchdog real de os._exit(0) no teste
 
     def test_botao_usa_fluxo_existente(self):
         self.app._pedir = Mock(return_value='depois:reiniciar')
@@ -48,6 +51,8 @@ class ReiniciarTest(unittest.TestCase):
         self.assertEqual(comando.count('--reaberto'), 1)
         self.assertIn('--console', comando)
         self.app.sair.assert_called_once()
+        self.assertEqual(self.temporizador.call_args.args[0], 8)
+        self.temporizador.return_value.start.assert_called_once()
 
     def test_falha_ao_abrir_nao_fecha_instancia_atual(self):
         self.app._aberta = True
@@ -56,6 +61,7 @@ class ReiniciarTest(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.app._atualizar('reiniciar')
         self.app.sair.assert_not_called()
+        self.temporizador.assert_not_called()
 
 
 if __name__ == '__main__':

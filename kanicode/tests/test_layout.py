@@ -64,6 +64,22 @@ class LayoutTest(unittest.TestCase):
         self.page.evaluate("dispatchEvent(new Event('pywebviewready'))")
         self.page.wait_for_function("document.querySelector('#lado-contas .cnt img')?.complete")
 
+    def test_navegador_ignora_alcas_mas_respeita_overlay(self):
+        self.page.set_viewport_size({"width": 1695, "height": 646})
+        self.page.evaluate("kcNavegador.abrir()")
+        self.page.wait_for_function("chamadas.some(c => c.nome === 'nav_cmd' && c.args[0] === 'cobrir')")
+        def coberto():
+            return self.page.evaluate("chamadas.filter(c => c.nome === 'nav_cmd' && c.args[0] === 'cobrir').at(-1).args[1]")
+        self.assertFalse(coberto())
+        self.page.evaluate("""() => {
+            const el = document.createElement('div'); el.id = 'overlay-teste';
+            el.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#222';
+            document.body.appendChild(el);
+        }""")
+        self.page.wait_for_function("chamadas.filter(c => c.nome === 'nav_cmd' && c.args[0] === 'cobrir').at(-1).args[1] === true")
+        self.page.evaluate("document.getElementById('overlay-teste').remove()")
+        self.page.wait_for_function("chamadas.filter(c => c.nome === 'nav_cmd' && c.args[0] === 'cobrir').at(-1).args[1] === false")
+
     def evento(self, ev):
         self.page.evaluate("ev => kcEv(ev)", ev)
 
@@ -85,7 +101,8 @@ class LayoutTest(unittest.TestCase):
 
     def test_controles_nas_posicoes_pedidas_e_fotos(self):
         p = self.page
-        self.assertEqual(p.locator('.topo button').count(), 5)   # + 🌐 navegador
+        self.assertEqual(set(p.locator('.topo button').evaluate_all('(botoes) => botoes.map(b => b.id)')),
+                         {'proj-trilho', 'nav-bt', 'reiniciar', 'recolher', 'grande', 'sair'})
         self.assertEqual(p.locator('#ferramentas-menu button').count(), 6)
         self.assertEqual(p.get_by_role('button', name='OpenCode · teste Big Pickle', exact=True, include_hidden=True).count(), 1)
         self.assertEqual(p.locator('#lado-contas img').count(), 2)
@@ -187,7 +204,8 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(p.locator('#ferramentas-menu #som, #ferramentas-menu #fixar, #ferramentas-menu #config-conexoes').count(), 0)
         p.click('#ferramentas-bt')
         self.assertTrue(p.locator('#config-menu').is_visible())
-        self.assertTrue(p.locator('#config-menu #perfil-portatil-bt').is_visible())
+        self.assertEqual(p.locator('#perfil-portatil-bt').count(), 0)
+        self.assertTrue(p.locator('#lado #perfil-bt').is_visible())   # perfil tem acesso único pela lateral
         p.click('#som')
         self.assertTrue(p.locator('#ferramentas-menu').is_visible())
         self.assertTrue(p.locator('#config-menu').is_visible())
@@ -566,6 +584,65 @@ class LayoutTest(unittest.TestCase):
         self.evento({'t':'codex_uso','cota':{'h5':.2,'sem':.1,'medido_em':1000}})
         self.assertIn('84%', self.page.locator('#codex-conta-lateral').inner_text())
         self.assertIn('62% usado', self.page.locator('.codex-janelas').inner_text())
+        self.assertEqual(self.erros, [])
+
+
+
+    def preparar_edicao_fila(self):
+        self.page.evaluate("""() => {
+          window.filaEdicao = [{id:'ed1',texto:'Pedido original',estado:'pendente',quem:'claude',minis:[]}];
+          const anterior = pywebview.api;
+          pywebview.api = new Proxy(anterior,{get(alvo,nome) {
+            if(nome==='mensagem_editar') return async(id,texto)=>{
+              chamadas.push({nome,args:[id,texto]});
+              const item=filaEdicao.find(i=>i.id===id);
+              if(!item || !['pendente','urgente','falha'].includes(item.estado)) return false;
+              if(!texto.trim()) throw new Error('Escreva a mensagem antes de salvar.');
+              item.texto=texto.trim();kcEv({t:'fila_mensagem',...item});return true;
+            };
+            if(nome==='mensagens_fila') return async()=>filaEdicao;
+            return alvo[nome];
+          }});
+          kcEv({t:'fila_mensagem',...filaEdicao[0]});
+        }""")
+
+    def test_editar_fila_salva_no_balao_sem_alterar_rascunho(self):
+        self.preparar_edicao_fila()
+        p=self.page
+        p.fill('#texto','Meu próximo pedido')
+        p.click('.mensagem-editar')
+        p.fill('.mensagem-editor textarea','Pedido corrigido\ncom detalhe')
+        p.press('.mensagem-editor textarea','Control+Enter')
+        p.wait_for_selector('.mensagem-editor',state='detached')
+        self.assertEqual(p.locator('[data-mensagem-id="ed1"] .mensagem-texto').inner_text(), 'Pedido corrigido\ncom detalhe')
+        self.assertEqual(p.input_value('#texto'), 'Meu próximo pedido')
+        self.assertEqual(p.locator('[data-mensagem-id="ed1"]').count(), 1)
+        p.evaluate('async()=>await carregar()')
+        self.assertEqual(p.locator('[data-mensagem-id="ed1"] .mensagem-texto').inner_text(), 'Pedido corrigido\ncom detalhe')
+        self.assertEqual(self.erros, [])
+
+    def test_cancelar_edicao_e_duplo_clique_nao_priorizam(self):
+        self.preparar_edicao_fila()
+        p=self.page
+        p.dblclick('.mensagem-editar')
+        p.fill('.mensagem-editor textarea','Descartar')
+        p.press('.mensagem-editor textarea','Escape')
+        self.assertEqual(p.locator('.mensagem-texto').inner_text(), 'Pedido original')
+        self.assertFalse(p.evaluate("chamadas.some(c=>['mensagem_editar','mensagem_urgente'].includes(c.nome))"))
+        self.assertEqual(self.erros, [])
+
+    def test_edicao_preserva_rascunho_ao_falhar_ou_começar_entrega(self):
+        self.preparar_edicao_fila()
+        p=self.page
+        p.click('.mensagem-editar')
+        p.fill('.mensagem-editor textarea','  ')
+        p.click('.mensagem-salvar')
+        p.wait_for_function("document.querySelector('.mensagem-edicao-erro').textContent.includes('Escreva')")
+        p.fill('.mensagem-editor textarea','Quero guardar este rascunho')
+        p.evaluate("filaEdicao[0].estado='enviando';kcEv({t:'fila_mensagem',...filaEdicao[0]})")
+        self.assertTrue(p.locator('.mensagem-salvar').is_disabled())
+        self.assertEqual(p.input_value('.mensagem-editor textarea'), 'Quero guardar este rascunho')
+        self.assertIn('já saiu',p.locator('.mensagem-edicao-erro').inner_text())
         self.assertEqual(self.erros, [])
 
 

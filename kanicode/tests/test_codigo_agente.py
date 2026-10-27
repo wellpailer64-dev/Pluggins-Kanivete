@@ -15,6 +15,8 @@ class CodigoAgenteTest(unittest.TestCase):
         self.patch = patch.object(codigo, "BASE", self.pasta / "sessoes")
         self.patch.start()
         self.addCleanup(self.patch.stop)
+        memoria = patch('perfil_cerebro.ponto_de_partida', return_value='')
+        memoria.start(); self.addCleanup(memoria.stop)
         (self.origem / "soma.py").write_bytes(b"def soma(a, b):\r\n    return a - b\r\n")
         (self.origem / "test_soma.py").write_text(
             "import unittest\nfrom soma import soma\nclass TestSoma(unittest.TestCase):\n"
@@ -86,21 +88,32 @@ class CodigoAgenteTest(unittest.TestCase):
             {"acao":"codigo_revisar","args":{}},
             {"acao":"responder","args":{"mensagem":"Cópia corrigida; testes passaram. Revise as alterações."}},
         ]
+        import kani_etapas
+        plano = {'etapas': [dict(objetivo=titulo, acao=p['acao'], args=p['args'])
+                             for titulo,p in zip(('Preparar cópia','Corrigir cópia','Testar cópia','Revisar alteração'), passos[:4])]}
+        pedido = 'Prepare cópia de soma.py e test_soma.py, depois corrija soma.py e rode test_soma.py.'
         for agente in ("kani", "pickle"):
             eventos = []
             with self.subTest(agente=agente), patch.object(kani, "notas", return_value=""), \
+                    patch.dict(kani_etapas._ULTIMA, id=None, pasta=None), \
                     patch.object(kani.ajudantes, "_kani_subir", return_value=12345), \
-                    patch.object(kani, "_chamar", side_effect=[(p, 3) for p in passos]), \
+                    patch.object(kani, "_chamar", side_effect=[(plano,3), ({"etapas":[dict(objetivo="Concluir", **passos[-1])]},3)]) as planejar, \
                     patch.object(bp.opencode_mvp, "conversar", side_effect=[(json.dumps(p), 3) for p in passos]):
                 rodar = kani.rodar if agente == "kani" else bp.rodar
-                r = rodar("Corrija a soma na cópia e rode o teste.", str(self.origem), eventos.append)
+                r = rodar(pedido, str(self.origem), eventos.append)
+                if agente == 'kani':
+                    self.assertEqual(r['status'], 'aguardando_aprovacao', r['texto'])
+                    pendente = codigo.Contexto(self.origem, agente).carregar()
+                    self.assertIsNone(pendente.meta.get('testes'))
+                    r = rodar('sim', str(self.origem), eventos.append)
+                    self.assertEqual(planejar.call_count, 2)
                 self.assertTrue(r["ok"], r["texto"])
                 ctx = codigo.Contexto(self.origem, agente).carregar()
                 self.assertEqual(ctx.revisar()["arquivos"], ["soma.py"])
                 self.assertTrue(ctx.meta["testes"]["ok"])
                 self.assertIn(b"a - b", (self.origem / "soma.py").read_bytes())
-                self.assertEqual([e["tokens"] for e in eventos if e["t"] == "agente_uso"], [3,6,9,12,15])
-
+                esperados = [3,6] if agente == 'kani' else [3,6,9,12,15]
+                self.assertEqual([e["tokens"] for e in eventos if e["t"] == "agente_uso"], esperados)
     def test_planejar_nao_libera_ferramentas_de_escrita(self):
         import bigpickle_modo as bp
         import json

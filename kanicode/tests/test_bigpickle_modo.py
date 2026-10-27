@@ -20,6 +20,11 @@ def decisao(acao, **args):
 
 
 class BigPickleModoTest(unittest.TestCase):
+    def setUp(self):
+        import perfil_cerebro
+        fonte = patch.object(perfil_cerebro, 'ponto_de_partida', return_value='')
+        fonte.start(); self.addCleanup(fonte.stop)   # respostas do contexto também são simuladas
+
     def test_consulta_resultado_e_responde_sem_carregar_modelo_local(self):
         eventos = []
         with patch.object(oc, 'conversar', side_effect=[decisao('espaco_disco'), decisao('responder', mensagem='D tem espaço.')]) as chamar, \

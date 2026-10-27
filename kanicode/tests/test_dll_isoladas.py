@@ -51,6 +51,27 @@ def problemas(fonte, nome="?"):
 
 
 class DllIsoladasTest(unittest.TestCase):
+    def test_despertador_usa_DLL_propria_sem_agendar_no_sistema(self):
+        import ctypes
+        import datetime
+        from unittest.mock import Mock, patch
+        import cenas
+        agora = datetime.datetime.now().astimezone()
+        proxima = agora + datetime.timedelta(minutes=10)
+        dll = Mock()
+        dll.CreateWaitableTimerW.return_value = 123
+        dll.SetWaitableTimer.return_value = True
+        with patch.object(ctypes, 'WinDLL', return_value=dll) as abrir, \
+             patch.object(ctypes, 'windll', Mock()), \
+             patch.object(cenas, '_timer', {'h':None, 'alvo':None}), \
+             patch.object(cenas, '_proxima', return_value=proxima):
+            cenas._armar_despertador({}, agora)
+            self.assertEqual(cenas._timer['alvo'], proxima - datetime.timedelta(seconds=40))
+            abrir.assert_called_once_with('kernel32')
+            self.assertEqual(dll.SetWaitableTimer.call_args.args[0], 123)
+            self.assertTrue(dll.SetWaitableTimer.call_args.args[-1])
+            dll.CancelWaitableTimer.assert_not_called()
+
     def test_detecta_os_jeitos_comuns(self):
         self.assertTrue(problemas("import ctypes\nctypes.windll.user32.SetWindowPos.argtypes = []"))
         self.assertTrue(problemas("import ctypes\nu32 = ctypes.windll.user32\nu32.SetWindowPos.argtypes = []"))

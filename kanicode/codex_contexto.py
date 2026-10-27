@@ -40,6 +40,17 @@ def preparar(tarefa, pasta, editar, retomar):
              "ao concluir etapas relevantes e ao mudar de abordagem. Diga o que foi constatado e o próximo passo. "
              "Se a investigação demorar, atualize em cerca de 30–60 segundos quando houver informação útil. "
              "Não exponha raciocínio privado, não invente progresso e não espere o fim para informar bloqueios.")
+    if re.search(r"whats|navegador|browser", _normalizar(tarefa)):
+        navegador = os.path.join(os.path.dirname(RAIZ), "kanibrowser")
+        modo += (
+            "\nNAVEGADOR INTERNO: use primeiro a ponte local do KaniBrowser, não o controle externo do Chrome. "
+            f'Estado: py -3.13 "{os.path.join(navegador, "kb.py")}" --onde kanicode --sem-foto estado. '
+            "Abas: troque estado por abas; conteúdo: texto --aba ID. "
+            f'WhatsApp: py -3.13 "{os.path.join(navegador, "wa.py")}" conversas --busca "nome" --porta 9333; '
+            'ler --conversa "nome" --n 20 --porta 9333. '
+            "Consulte o cabeçalho desses scripts para outras ações. Enviar exige pedido explícito. "
+            "Use --onde kanicode no kb.py e --porta 9333 no wa.py para impedir acesso à porta 9222. "
+            "Falha do controle externo não comprova falha do navegador interno; confira a ponte antes de concluir.")
     if retomar:
         return tarefa + modo + organizacao_pailer.contexto(tarefa)
     partes = [tarefa + modo,

@@ -17,7 +17,7 @@ AREAS = {
     "mensagens": ("mensagens.py", "kanicode.py", "sessao.py", "ui/mensagens.js", "ui/janela.html", "tests/test_mensagens.py"),
     "voz": ("fala.py", "voz.py", "radio.py", "kanicode.py", "ui/abas.js", "ui/cerebro.js", "ui/janela.html", "tests/test_fala_tom.py", "tests/test_fala_microfone.py", "tests/test_codex_prontidao.py", "tests/test_codex_voz.py", "tests/test_cerebro_classificacao_ui.py"),
     "claude": ("sessao.py", "continuidade.py", "mcp_equipe.py", "ui/janela.html", "tests/test_continuidade.py", "tests/test_equipe_revisao.py"),
-    "board": ("fios.py", "kanicode.py", "mcp_equipe.py", "ui/board.js", "ui/board.css", "ui/abas.js", "ui/janela.html", "tests/test_fios.py", "tests/test_board_ui.py", "tests/test_abas_ui.py"),
+    "board": ("fios.py", "colab.py", "chat_colab.py", "ui/board-colab.js", "ui/board-colab.css", "tests/test_colab.py", "tests/test_colab_ui.py", "kanicode.py", "mcp_equipe.py", "ui/board.js", "ui/board.css", "ui/abas.js", "ui/janela.html", "tests/test_fios.py", "tests/test_board_ui.py", "tests/test_abas_ui.py"),
     "kani": ("kani_modo.py", "kani_estado.py", "kani_orquestracao.py", "kani_etapas.py", "kani_codigo_etapas.py", "benchmark_kani_orquestracao.py", "kanicode.py", "ajudantes.py", "ui/kani_execucoes.js", "ui/janela.html", "tests/test_kani_*.py", "tests/test_modelo_ferramenta.py"),
     "pickle": ("bigpickle_modo.py", "pickle_agente.py", "codigo_agente.py", "ui/codigo_agente.js", "pickle_controle.py", "opencode_mvp.py", "kani_modo.py", "kanicode.py", "bolinha.py", "ui/janela.html", "ui/movel.js", "tests/test_bigpickle_*.py", "tests/test_pickle_agente.py", "tests/test_opencode_mvp.py", "tests/test_kani_historico.py"),
     "codex": ("ajudantes.py", "codex_contexto.py", "codex_processo.py", "codex_conta.py", "codex_alteracoes.py", "ui/alteracoes.js", "ui/codex_uso.js", "ui/janela.html", "tests/test_codex_*.py"),
@@ -26,7 +26,7 @@ AREAS = {
     "respostas": ("recursos_resposta.py", "ui/respostas.js", "ui/respostas_render.js", "tests/test_*respostas*.py", "tests/test_recursos_resposta.py"),
     "gpu": ("gpu.py", "ui/kani_gpu.js", "tests/test_gpu.py"),
     "contas": ("contas.py", "avatares.py", "tests/test_avatares.py"),
-    "infra": ("verificar.py", "dados_app.py", "teste_isolado.py", "modelo_ferramenta.py", "tests/test_modelo_ferramenta.py", "tests/test_verificar.py", "tests/test_ambiente_isolado.py"),
+    "infra": ("verificar.py", "regressao.py", "tests/contratos_regressao.json", "tests/simulador_regressao.py", "tests/test_regressao.py", "tests/test_regressao_carga.py", "dados_app.py", "teste_isolado.py", "modelo_ferramenta.py", "tests/test_modelo_ferramenta.py", "tests/test_verificar.py", "tests/test_ambiente_isolado.py"),
 }
 
 
@@ -141,12 +141,61 @@ def verificar(arquivos, saida):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--area", choices=[*AREAS, "todas"], required=True)
+    escolha = parser.add_mutually_exclusive_group(required=True)
+    escolha.add_argument("--area", choices=[*AREAS, "todas"])
+    escolha.add_argument("--bateria", choices=["rapida", "essencial", "completa", "carga"])
+    escolha.add_argument("--impacto", nargs="+", metavar="ARQUIVO", help="essencial + contratos afetados")
+    escolha.add_argument("--inventario", action="store_true", help="classifica sem importar ou executar testes")
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--repeticoes", type=int, default=1)
+    parser.add_argument("--reiniciar", action="store_true", help="reinicia somente depois de bateria essencial aprovada e atual")
     parser.add_argument("--arquivos", nargs="*", default=[], help="arquivos adicionais alterados, relativos ao plugin")
     parser.add_argument("--listar", action="store_true", help="só mostra a seleção, sem testar nem criar saídas")
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 13):
         parser.error("use py -3.13 verificar.py")
+    if not args.area:
+        import json
+        import regressao
+        try:
+            if args.inventario:
+                if args.reiniciar:
+                    raise ValueError('inventário não aprova reinício')
+                print(json.dumps(regressao.inventario(RAIZ), ensure_ascii=False, indent=2))
+                return 0
+            if args.reiniciar and (args.bateria not in (None, 'essencial', 'completa')):
+                raise ValueError('reinício validado exige bateria essencial + impacto')
+            selecao = regressao.selecionar(RAIZ, args.bateria or 'essencial',
+                                           (args.impacto or []) + args.arquivos, AREAS)
+            for grupo, motivos in selecao['motivos'].items():
+                print(grupo + ': ' + '; '.join(motivos))
+            if selecao['bateria'] == 'completa':
+                for item in selecao['excluidos']:
+                    print('FORA DA BATERIA SIMULADA: ' + item['arquivo'] + ' — ' + item['motivo'])
+            for lacuna in selecao['lacunas']:
+                print('INCOMPLETO: ' + lacuna)
+            if args.listar:
+                print('\n'.join(selecao['testes']))
+                return 1 if selecao['lacunas'] else 0
+            if not 1 <= args.workers <= 4 or not 1 <= args.repeticoes <= 5:
+                raise ValueError('workers: 1–4; repetições: 1–5')
+            saida = ambiente()
+            resultado = regressao.executar(RAIZ, selecao, saida, Scripts, args.workers, args.repeticoes)
+            if args.reiniciar and resultado == 0:
+                regressao.validar_liberacao(RAIZ, saida / 'resultado.json')
+                # Solicita pelo canal existente; não abre outra instância com o ambiente dos testes.
+                import socket
+                with socket.create_connection(('127.0.0.1', 47613), timeout=5) as canal:
+                    canal.sendall(b'reiniciar\n')
+                    resposta = canal.recv(4096).decode('utf-8', errors='replace').strip()
+                if not resposta:
+                    raise ValueError('KaniCode não confirmou o reinício')
+                print(resposta)
+            return resultado
+        except (ValueError, OSError) as e:
+            parser.error(str(e))
+    if args.reiniciar or args.workers != 1 or args.repeticoes != 1:
+        parser.error('opções de bateria exigem --bateria ou --impacto')
     try:
         arquivos = selecionar(args.area, args.arquivos)
     except ValueError as e:

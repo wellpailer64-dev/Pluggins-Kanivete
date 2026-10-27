@@ -57,7 +57,7 @@ class BoardUiTest(unittest.TestCase):
         p.evaluate("kcEv({t: 'inicio', aba: '2'}); kcEv({t: 'texto_novo', aba: '2'}); kcEv({t: 'texto', d: 'Escrevendo ', aba: '2'}); kcEv({t: 'texto', d: 'agora mesmo', aba: '2'})")
         p.wait_for_function("(document.querySelector(\".bd-card[data-aba='2'] .bd-aovivo\") || {}).textContent?.includes('Escrevendo agora mesmo')")
         p.evaluate("kcEv({t: 'ferr', nome: 'Bash', aba: '2'})")
-        p.wait_for_function("(document.querySelector(\".bd-card[data-aba='2'] .bd-ferr\") || {}).textContent?.includes('Bash')")
+        p.wait_for_function("(document.querySelector(\".bd-card[data-aba='2'] .bd-log\") || {}).textContent?.includes('Bash')")
         self.assertTrue(p.locator(".bd-card[data-aba='2'] .bd-aovivo").is_visible())
         b = p.evaluate("KC_BOARD.estado.cards['2']")
         self.assertGreaterEqual(b["w"], 1000)
@@ -129,9 +129,9 @@ class BoardUiTest(unittest.TestCase):
         p.evaluate("KC_BOARD.ajustar()")
         # zoom nítido: CSS zoom (o texto é redesenhado), não transform scale (imagem esticada)
         self.assertEqual(p.evaluate("document.querySelector('.bd-mundo').style.transform"), "")
-        # arrastar pelo meio (prévia) também move; clicar sem arrastar não
+        # texto fica selecionável; o cabeçalho move o cartão
         antes = p.evaluate("KC_BOARD.estado.cards['2'].y")
-        x, y = self.centro(".bd-card[data-aba='2'] .bd-previa")
+        x, y = self.centro(".bd-card[data-aba='2'] .bd-tit")
         p.mouse.move(x, y); p.mouse.down(); p.mouse.move(x, y + 60, steps=5); p.mouse.up()
         self.assertGreater(p.evaluate("KC_BOARD.estado.cards['2'].y"), antes + 30)
         self.assertEqual(p.evaluate("KC_ABAS.ativa"), "1")
@@ -153,8 +153,10 @@ class BoardUiTest(unittest.TestCase):
         p.evaluate("KC_BOARD.ajustar()")
         p.wait_for_timeout(900)   # a corda assenta
         p.screenshot(path="D:/kanivete_testes/kanicode/board.png")
-        # clicar na prévia abre aquele chat no cartão
+        # ler ou selecionar o texto mantém a aba; o botão abre a conversa para responder
         p.click(".bd-card[data-aba='2'] .bd-previa")
+        self.assertEqual(p.evaluate("KC_ABAS.ativa"), "1")
+        p.click(".bd-card[data-aba='2'] .bd-previa-dica")
         p.wait_for_function("KC_ABAS.ativa === '2' && document.querySelector(\".bd-card[data-aba='2'] .entrada\")")
         # volta às abas: o chat volta para o lugar
         p.keyboard.press("Control+b")

@@ -394,6 +394,44 @@ class App:
                 pass
         cenas.iniciar(avisar=lambda t: self._para_janela({"t": "local", "acao": "aviso", "texto": t}), falar=falar)
 
+    # ── avisos locais do WhatsApp no navegador do KaniCode ──
+    _whatsapp_trava = threading.RLock()
+
+    def _whatsapp(self):
+        with self._whatsapp_trava:
+            if not getattr(self, "_whatsapp_monitor", None):
+                from whatsapp_monitor import Monitor
+
+                def falar(texto):
+                    if self._microfone_prioritario or self._alguma_ocupada():
+                        return False
+                    f = self._fala_obj()
+                    if f.falando:
+                        return False
+                    f.novo(); f.pedaco(texto); f.terminar()
+                    self._whatsapp_fala_ger = f._ger
+                    return True
+
+                def parar():
+                    f = self._fala
+                    if f and getattr(self, "_whatsapp_fala_ger", None) == f._ger:
+                        f.parar()
+
+                self._whatsapp_monitor = Monitor(falar, parar)
+            return self._whatsapp_monitor
+
+    def whatsapp_estado(self):
+        return self._whatsapp().estado()
+
+    def whatsapp_ligar(self, ligado):
+        return self._whatsapp().ligar(bool(ligado))
+
+    def whatsapp_configurar(self, dados):
+        try:
+            return self._whatsapp().configurar(dados or {})
+        except Exception as e:
+            return {"ok": False, "erro": str(e)}
+
     # ── aba Saúde do PC (saude_pc.py lê o hardware; manutencao.py roda elevado e grava o andamento) ──
     def saude_ler(self):
         import saude_pc
@@ -741,7 +779,7 @@ class App:
         return self.abas()
 
     # ── fios entre chats (visão Board, 2026-10-25; lógica em fios.py) ──
-    def aba_previa(self, aba, n=6):
+    def aba_previa(self, aba, n=6, logs=False):
         """últimas falas de uma aba (cartão do Board que não está aberto)"""
         import fios as F
         aba = str(aba)
@@ -751,7 +789,7 @@ class App:
             h = self._na_aba(aba, self.historico)()
         except Exception:
             return []
-        return [dict(m, texto=m["texto"][:400]) for m in F.mensagens(h, int(n or 6), self._abas[aba].quem)]
+        return F.mensagens(h, max(1, min(200, int(n or 6))), self._abas[aba].quem, logs=bool(logs))
 
     def fios(self):
         import fios as F
@@ -784,12 +822,130 @@ class App:
     def _fios_contexto(self):
         import fios as F
         info = {a.id: {"nome": (a.manual and a.nome) or a.assunto or a.nome, "quem": a.quem} for a in self._abas.values()}
-        return F.contexto(self._ctx().id, self.fios(), info)
+        aba, lista = self._ctx().id, self.fios()
+        texto = F.contexto(aba, lista, info)
+        import colab
+        estados = _ler_estado().get("colabs", {})
+        for f in lista:
+            if f["modo"] == "colab" and aba in (f["de"], f["para"]) and f["id"] in estados:
+                texto += colab.contexto(aba, f, estados[f["id"]])
+        return texto
+
+    def colab_consultar(self, id):
+        if not any(f['id'] == id and f['modo'] == 'colab' for f in self.fios()):
+            raise ValueError('fio Colab não existe')
+        s = _ler_estado().get('colabs', {}).get(id)
+        if s and s.get('pasta') and any(os.path.normcase(os.path.realpath(self._abas[a].pasta or PROJETO_PADRAO)) != s['pasta']
+                                       for a in s['membros']):
+            raise ValueError('uma aba mudou de projeto; volte à pasta do Colab para continuar')
+        return s
+
+    def colab_criar(self, de, para, objetivo):
+        import colab
+        de, para = str(de), str(para)
+        if de == para or de not in self._abas or para not in self._abas:
+            raise ValueError('escolha duas abas diferentes')
+        if any(self._abas[a].ocupada() for a in (de, para)):
+            raise ValueError('aguarde os dois chats terminarem antes de ligar o Colab')
+        pastas = [os.path.normcase(os.path.realpath(self._abas[a].pasta or PROJETO_PADRAO)) for a in (de, para)]
+        if pastas[0] != pastas[1]:
+            raise ValueError('os dois chats precisam estar na mesma pasta de projeto')
+        with _ESTADO_TRAVA:
+            if any(f['modo'] == 'colab' and set((de, para)) & {f['de'], f['para']} for f in self.fios()):
+                raise ValueError('uma das abas já participa de um Colab; encerre o fio anterior primeiro')
+            s = colab.criar(de, para, objetivo)
+            s['pasta'] = pastas[0]
+            f = self.fio_criar(de, para, 'colab')
+            estados = _ler_estado().get('colabs', {})
+            estados[f['id']] = s
+            _gravar_estado(colabs=estados)
+        self._para_janela({'t': 'colab', 'id': f['id'], 'estado': s})
+        return f
+
+    def colab_atualizar(self, de, para, dados):
+        import fios, colab
+        de, para = str(de), str(para)
+        if not isinstance(dados, dict):
+            raise ValueError('o pedido Colab precisa ser um objeto JSON')
+        with _ESTADO_TRAVA:
+            f = next((f for f in self.fios() if f['modo'] == 'colab' and {de, para} == {f['de'], f['para']}), None)
+            if not f or de == para:
+                raise ValueError('não há Colab entre estas abas')
+            estados = _ler_estado().get('colabs', {})
+            if f['id'] not in estados:
+                raise ValueError('defina o objetivo pelo Colab no Board')
+            anterior = self.colab_consultar(f['id'])
+            s = colab.atualizar(anterior, de, dados)
+            if dados.get('acao') == 'executar' and self._abas[para].ocupada():
+                raise ValueError('o parceiro ainda trabalha; aguarde antes de executar')
+            if dados.get('acao', 'consultar') != 'consultar':
+                estados[f['id']] = s
+                _gravar_estado(colabs=estados)
+        self._para_janela({'t': 'colab', 'id': f['id'], 'estado': s})
+        if dados.get('acao') == 'executar':
+            try:
+                self._colab_enviar(para, 'O plano Colab foi aprovado pelos dois. Execute somente suas tarefas e arquivos. '
+                                   'Consulte o diário, publique avisos e registre concluir_tarefa com evidências ao terminar.')
+            except Exception as e:
+                with _ESTADO_TRAVA:
+                    estados = _ler_estado().get('colabs', {})
+                    s = estados[f['id']]
+                    s['fase'] = 'planejamento'
+                    colab.registrar(s, de, 'Falha ao iniciar parceiro: ' + str(e))
+                    _gravar_estado(colabs=estados)
+                self._para_janela({'t': 'colab', 'id': f['id'], 'estado': s})
+                raise ValueError('o parceiro não iniciou; corrija o impedimento e tente executar novamente') from e
+        elif anterior['fase'] != 'integracao' and s['fase'] == 'integracao':
+            self._colab_integrar(f['id'])
+        return s
+
+    def _colab_integrar(self, id, tentativas=0):
+        try:
+            s = self.colab_consultar(id)
+        except ValueError:
+            return   # fio desligado enquanto o coordenador terminava a resposta
+        if not s or s['fase'] != 'integracao':
+            return
+        coordenador = s['coordenador']
+        if self._abas[coordenador].ocupada():
+            if tentativas < 1800:
+                t = threading.Timer(1, lambda: self._colab_integrar(id, tentativas + 1))
+                t.daemon = True
+                t.start()
+            return
+        try:
+            self._colab_enviar(coordenador, 'As duas partes do Colab foram entregues. Integre e teste o conjunto; '
+                              'registre finalizar somente com evidências do resultado.')
+        except Exception as e:
+            outro = next(a for a in s['membros'] if a != coordenador)
+            self.colab_atualizar(coordenador, outro, {'acao': 'avisar', 'texto': 'Integração aguarda continuar no Board: ' + str(e)})
+
+    def _colab_enviar(self, aba, texto):
+        alvo = self._abas[str(aba)]
+        if alvo.ocupada():
+            raise ValueError('o chat está trabalhando')
+        fn, args = (self.enviar, (texto,)) if alvo.quem == 'claude' else (self.ajudante, (alvo.quem, texto))
+        if self._na_aba(str(aba), fn)(*args, _de='fio') is False:
+            raise ValueError('o chat não aceitou o pedido')
+
+    def colab_planejar(self, id):
+        s = self.colab_consultar(id)
+        if not s or s['fase'] == 'concluido':
+            raise ValueError('este Colab não tem trabalho pendente')
+        self._colab_enviar(s['coordenador'], 'Continue o Colab conforme o estado compartilhado. Objetivo do Pailer: ' +
+                          s['objetivo'] + '\nSe estiver no planejamento, negocie o plano com o parceiro antes de editar. '
+                          'Se estiver na integração, confira as duas entregas e teste o conjunto antes de finalizar.')
+        return True
 
     def fio_chamar(self, de, para, acao, texto="", n=10):
         """um chat lê ou manda no outro pelo fio (MCP "chat" do Claude, ferramenta da Kani). Devolve texto."""
         import fios as F
         de, para = str(de), str(para)
+        if acao == "colab":
+            try:
+                return json.dumps(self.colab_atualizar(de, para, json.loads(texto or '{}')), ensure_ascii=False)
+            except (ValueError, TypeError) as e:
+                return "ERRO: " + str(e)
         if para not in self._abas:
             return "ERRO: a aba " + para + " não existe (ou foi fechada)."
         fio = F.achar(self.fios(), de, para, "comando" if acao == "enviar" else "leitura")
@@ -1601,6 +1757,22 @@ class App:
         self._para_janela({"t": "local", "acao": "aviso", "texto": "Tarefa concluída! 👍"})
         return True
 
+    def _pedido_casa(self, texto):
+        """Reconhece pedidos de dispositivos sem executar ações nem consultar a rede."""
+        import unicodedata
+        t = "".join(c for c in unicodedata.normalize("NFD", (texto or "").lower())
+                    if not unicodedata.combining(c))
+        if t.lstrip().startswith("/") or re.search(
+                r"\b(codigo|python|javascript|implementar|implemente|programar|bug|funcao|roteamento)\b", t):
+            return False
+        alvo = re.search(r"\b(luz|luzes|lampada|lampadas|tomada|tomadas|alimentador|racao|"
+                         r"dispositivo|dispositivos|ar.condicionado|ventilador|cortina|cortinas)\b", t)
+        acao = re.search(r"\b(lig\w*|deslig\w*|acend\w*|acend\w*|apaga\w*|apag\w*|"
+                         r"ajust\w*|diminu\w*|aument\w*|brilho|status|estado|list\w*|"
+                         r"aliment\w*|abr\w*|fech\w*|program\w*|agend\w*)\b", t)
+        return bool(alvo and acao) or bool(re.search(
+            r"\b(alimenta|alimente|alimentar)\b.{0,25}\bgatos\b", t))
+
     def _casa_rapido(self, texto, de):
         """casa (casa.py): "apaga a cozinha", "alimenta os gatos" → executa na hora, sem IA (~0,5 s, como a Alexa)"""
         if texto.strip().startswith("/"):
@@ -1683,7 +1855,10 @@ class App:
             raise ValueError("ajudante desconhecido")
         if not texto or not texto.strip():
             return False
-        if self._casa_rapido(texto, _de):
+        casa = self._pedido_casa(texto)
+        if casa:
+            quem = "kani"
+        elif self._casa_rapido(texto, _de):
             return False
         if self._comando_conclusao(texto, _de):
             return True
@@ -1699,6 +1874,9 @@ class App:
             self._codex_parar = threading.Event()
         self._prontidao_agendar()
         passou = self._passagem_pendente(quem)   # trocou de agente: o novo recebe o que os outros fizeram nesta aba
+        fios_txt = self._fios_contexto()
+        if fios_txt:
+            passou += '\n\n' + fios_txt
 
         def evento_codex(ev):
             if ev.get("sessao"):
@@ -1740,6 +1918,9 @@ class App:
                                                 "ok": r.get("ok"), "ms": r.get("ms"), "tokens": r.get("tokens")}, ensure_ascii=False) + chr(10))
                     except Exception:
                         pass
+                    if casa and r.get("claude"):
+                        r = {**r, "claude": False, "ok": False,
+                             "texto": "Não consegui concluir o comando da Casa pela Kani. " + (r.get("texto") or "")}
                     if r.get("claude"):   # mantém o pedido e as evidências da continuação local
                         self._kani_hist = []
                         self._para_janela({"t": "ajudante_resposta", "quem": "kani", "ok": True, "tokens": r["tokens"],
@@ -1990,6 +2171,28 @@ class App:
         self._fila_tentar()
         return True
 
+    def mensagem_editar(self, id_, texto):
+        return self._na_aba(self._ctx().id, self._mensagem_editar)(id_, texto)
+
+    def _mensagem_editar(self, id_, texto):
+        fila = self._ctx().mensagens
+        with fila.trava:
+            item = next((i for i in fila.itens if i['id'] == id_), None)
+            if not item or item['estado'] not in ('pendente', 'urgente', 'falha'):
+                return False
+            if not isinstance(texto, str):
+                raise ValueError('Texto da mensagem inválido.')
+            texto = texto.strip()
+            if item['quem'] == 'pickle' and texto.startswith('/') and texto.split()[0] not in ('/clear', '/nova', '/new'):
+                raise ValueError('Big Pickle recebe texto e os comandos de nova conversa')
+            if not texto and not item.get('imagens'):
+                raise ValueError('Escreva a mensagem antes de salvar.')
+            from tarefas_agente import TarefasAgente
+            TarefasAgente(DADOS).editar_pedido(self._ctx().id, id_, texto)
+            item = fila.editar(id_, texto)
+            self._fila_evento(item)
+        return True
+
     def mensagem_cancelar(self, id_):
         return self._na_aba(self._ctx().id, self._mensagem_cancelar)(id_)
 
@@ -2052,6 +2255,8 @@ class App:
             return False
         if not imagens and self._comando_conclusao(texto, _de):
             return True
+        if not imagens and self._pedido_casa(texto):
+            return self._ajudante_iniciar("kani", texto, _de)
         # a mensagem aparece também nos outros aparelhos abertos (janela do PC × celular, movel.py)
         self._para_janela({"t": "eco_eu", "texto": texto, "de": _de, "minis": [i.get("mini") for i in imagens or [] if i.get("mini")]})
         if not imagens and self._casa_rapido(texto, _de):
@@ -2242,7 +2447,7 @@ class App:
         try:
             if o == "print":
                 return {"caminho": p.print_aba(os.path.join(DADOS, "anexos", "paginas"))}
-            if o in ("ir", "nova", "mostrar", "fechar_aba", "acao", "aparelho"):
+            if o in ("ir", "nova", "mostrar", "fechar_aba", "acao", "aparelho", "cobrir"):
                 return getattr(p, o)(a) if a is not None else getattr(p, o)()
             if o == "foco":
                 return p.foco()
@@ -2421,6 +2626,8 @@ class App:
 
     def sair(self):
         self._saindo = True
+        if getattr(self, "_whatsapp_monitor", None):
+            self._whatsapp_monitor.ligar(False)
         if self._bola and self._bola.na_doca:   # dentro do chat: sai dele e a despedida parte dali
             self._desencaixar(False)
         try:   # o chat some na hora; só a KaniBall faz a despedida (2026-10-21, pedido do Pailer)

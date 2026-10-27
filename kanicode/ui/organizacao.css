@@ -190,7 +190,15 @@ html.movel .seletor { min-height: 36px; }
 .mensagem-cancelar { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
   background: transparent; color: var(--fraco); font-size: 11px; line-height: 20px; cursor: pointer; }
 .mensagem-cancelar:hover { color: var(--texto); background: rgba(255,255,255,.1); }
-.msg.eu:has(.mensagem-cancelar) { padding-right: 26px; }
+.msg.eu:has(.mensagem-cancelar) { padding-right: 54px; }
+.mensagem-editar { position: absolute; top: 4px; right: 28px; width: 22px; height: 22px; padding: 0; border: 0;
+  border-radius: 50%; background: transparent; color: var(--fraco); cursor: pointer; }
+.mensagem-editar:hover { color: var(--texto); background: rgba(255,255,255,.1); }
+.mensagem-editor { margin-top: 4px; cursor: auto; }
+.mensagem-editor textarea { display: block; width: 100%; min-width: 0; box-sizing: border-box; resize: vertical;
+  margin-bottom: 6px; padding: 6px; color: var(--texto); background: var(--fundo); border: 1px solid var(--fraco); border-radius: 6px; font: inherit; }
+.mensagem-editor button { margin-right: 5px; }
+.mensagem-edicao-erro { display: block; margin-top: 5px; color: var(--aviso); }
 .janela-reiniciar { display:grid; place-items:center; width:16px; height:16px; padding:0; border:0; background:transparent; color:var(--fraco); opacity:.45; cursor:pointer; }
 .janela-reiniciar svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
 .janela-reiniciar:hover, .janela-reiniciar:focus-visible { opacity:1; color:var(--texto); }

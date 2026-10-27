@@ -375,7 +375,7 @@ def _armar_despertador(d, agora):
     cena foi criada em cima da hora (a tarefa do Windows acorda 2 min antes e só serve se o PC dormiu antes disso)"""
     import ctypes
     from ctypes import wintypes
-    k = ctypes.windll.kernel32
+    k = ctypes.WinDLL("kernel32")
     prox = _proxima(d, agora)
     alvo = prox - datetime.timedelta(seconds=40) if prox else None
     if alvo == _timer["alvo"]:

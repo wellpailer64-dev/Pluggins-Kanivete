@@ -18,6 +18,9 @@ def decisao(acao, tokens=3, **args):
 
 class ControlePickleTest(unittest.TestCase):
     def setUp(self):
+        import perfil_cerebro
+        fonte = patch.object(perfil_cerebro, 'ponto_de_partida', return_value='')
+        fonte.start(); self.addCleanup(fonte.stop)   # RAG externo não faz parte deste cenário
         self.base = Path(tempfile.mkdtemp(prefix="pickle_controle_", dir=r"D:\kanivete_testes"))
         p = patch.object(oc, "BASE", self.base)
         p.start()

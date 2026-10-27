@@ -14,6 +14,9 @@ import licoes
 
 class OrganizacaoTest(unittest.TestCase):
     def setUp(self):
+        import perfil_cerebro
+        fonte = patch.object(perfil_cerebro, 'ponto_de_partida', return_value='')
+        fonte.start(); self.addCleanup(fonte.stop)   # RAG externo não faz parte deste cenário
         self.tmp=tempfile.TemporaryDirectory(dir='D:/kanivete_testes'); self.addCleanup(self.tmp.cleanup)
         self.perfil=Path(self.tmp.name)/'perfil.json'
         self.perfil.write_text(json.dumps({'contexto':'Manter o padrão local. Não aprender com pastas desorganizadas.'}),encoding='utf-8')

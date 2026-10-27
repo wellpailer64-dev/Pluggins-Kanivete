@@ -365,7 +365,10 @@ def main():
                 print("ERRO: arquivo não existe:", a.arquivo); return 1
             b64 = base64.b64encode(open(a.arquivo, "rb").read()).decode()
             nome = os.path.basename(a.arquivo)
-            r = js(ANEXO % (json.dumps(norm(titulo)), json.dumps(b64), json.dumps(nome),
+            js("window.__waB64 = ''; 1")   # arquivo grande: vai em pedaços (o canal não aguenta megas numa mensagem)
+            for i in range(0, len(b64), 300_000):
+                js("window.__waB64 += '%s'; 1" % b64[i:i + 300_000])
+            r = js(ANEXO.replace("atob(%s)", "atob(window.__waB64)") % (json.dumps(norm(titulo)), json.dumps(nome),
                             json.dumps(mimetypes.guess_type(nome)[0] or "application/octet-stream"), json.dumps(a.texto.replace("\\n", "\n"))))
             if not isinstance(r, dict) or not r.get("ok"):
                 print("ERRO:", r); return 1

@@ -32,7 +32,11 @@ não garante cobertura de toda alteração. Acrescente o teste de comportamento 
 3. Liste os testes reais: `py -3.13 verificar.py --area kani --listar`.
 4. Copie a âncora exata do arquivo. Valide o patch com `tools/patch.py arquivo.patch --seco`
    na raiz do Kanivete; depois aplique pelo mesmo comando sem `--seco`.
-5. Verifique a área e inclua os arquivos alterados que não fazem parte da seleção padrão.
+5. Para novas features, rode `py -3.13 verificar.py --impacto <arquivos alterados> --workers 2`.
+   A bateria essencial roda junto; contrato ausente ou integração ainda não revisada gera resultado incompleto.
+   Consulte `ANTIRREGRESSAO.md`; comandos antigos por área continuam disponíveis para diagnóstico.
+
+Plano de evolução dos testes: [construção anti-regressão](PLANO_ANTIRREGRESSAO.md).
 
 ## Verificar com um comando
 

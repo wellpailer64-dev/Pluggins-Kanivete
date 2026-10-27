@@ -1,0 +1,716 @@
+{
+  "versao": 1,
+  "centrais": [
+    "kanicode.py",
+    "ui/janela.html",
+    "ui/abas.js",
+    "passagem.py",
+    "ajudantes.py",
+    "sessao.py"
+  ],
+  "grupos": [
+    {
+      "id": "whatsapp_monitor",
+      "comportamento": "Avisos locais do WhatsApp, filtros, desligamento e DOM sintético sem conta real",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": ["whatsapp_monitor.py", "ui/whatsapp.js", "ui/whatsapp.css", "ui/whatsapp_observar.js", "ui/whatsapp_audio.js", "ui/paineis.js"],
+      "testes": ["tests/test_whatsapp_monitor.py", "tests/test_whatsapp_ui.py"],
+      "prazo_s": 90,
+      "revisao": "Modelos e navegador reais substituídos; Chromium isolado verifica DOM, painel e restauração do player. Qualidade real da transcrição e seletores da versão atual do WhatsApp exigem conferência manual."
+    },
+    {
+      "id": "infra",
+      "comportamento": "Isolamento e verificador",
+      "essencial": true,
+      "rapido": true,
+      "arquivos": [
+        "verificar.py",
+        "regressao.py",
+        "teste_isolado.py",
+        "dados_app.py",
+        "tests/contratos_regressao.json"
+      ],
+      "testes": [
+        "tests/test_verificar.py",
+        "tests/test_ambiente_isolado.py",
+        "tests/test_regressao.py",
+        "tests/test_modelo_ferramenta.py"
+      ],
+      "prazo_s": 45
+    },
+    {
+      "id": "conversa",
+      "comportamento": "Resposta, erro e continuidade dos motores",
+      "essencial": true,
+      "rapido": true,
+      "arquivos": [
+        "ajudantes.py",
+        "codex_contexto.py",
+        "sessao.py",
+        "continuidade.py"
+      ],
+      "testes": [
+        "tests/test_codex_eventos.py",
+        "tests/test_codex_app.py",
+        "tests/test_kani_historico.py",
+        "tests/test_continuidade.py"
+      ],
+      "prazo_s": 45
+    },
+    {
+      "id": "abas",
+      "comportamento": "Histórico e eventos isolados por aba",
+      "essencial": true,
+      "rapido": false,
+      "arquivos": [
+        "ui/abas.js"
+      ],
+      "testes": [
+        "tests/test_abas.py",
+        "tests/test_abas_ui.py"
+      ],
+      "prazo_s": 90
+    },
+    {
+      "id": "mensagens",
+      "comportamento": "Fila, passagem e reinício",
+      "essencial": true,
+      "rapido": true,
+      "arquivos": [
+        "mensagens.py",
+        "ui/mensagens.js",
+        "passagem.py"
+      ],
+      "testes": [
+        "tests/test_mensagens.py",
+        "tests/test_passagem.py",
+        "tests/test_reiniciar.py"
+      ],
+      "prazo_s": 45
+    },
+    {
+      "id": "respostas",
+      "comportamento": "Renderização da conversa e recursos",
+      "essencial": true,
+      "rapido": false,
+      "arquivos": [
+        "recursos_resposta.py",
+        "ui/respostas*"
+      ],
+      "testes": [
+        "tests/test_recursos_resposta.py",
+        "tests/test_respostas_ui.py"
+      ],
+      "prazo_s": 90
+    },
+    {
+      "id": "board",
+      "comportamento": "Board e acordo Colab",
+      "essencial": true,
+      "rapido": false,
+      "arquivos": [
+        "fios.py",
+        "colab.py",
+        "chat_colab.py",
+        "ui/board*"
+      ],
+      "testes": [
+        "tests/test_fios.py",
+        "tests/test_colab.py",
+        "tests/test_board_ui.py",
+        "tests/test_colab_ui.py"
+      ],
+      "prazo_s": 90
+    },
+    {
+      "id": "processos",
+      "comportamento": "Pipes, timeout e cancelamento",
+      "essencial": true,
+      "rapido": false,
+      "arquivos": [
+        "codex_processo.py"
+      ],
+      "testes": [
+        "tests/test_codex_processo.py"
+      ],
+      "prazo_s": 45
+    },
+    {
+      "id": "ponte",
+      "comportamento": "Ponte WebView2 com motor simulado",
+      "essencial": true,
+      "rapido": false,
+      "arquivos": [
+        "tests/apoio_ponte_nativa.py",
+        "ui/diagnostico.js"
+      ],
+      "testes": [
+        "tests/test_ponte_nativa.py"
+      ],
+      "prazo_s": 90
+    },
+    {
+      "id": "carga",
+      "comportamento": "Roteiros determinísticos e carga sem modelos",
+      "essencial": true,
+      "rapido": true,
+      "arquivos": [
+        "tests/simulador_regressao.py"
+      ],
+      "testes": [
+        "tests/test_regressao_carga.py"
+      ],
+      "prazo_s": 45
+    },
+    {
+      "id": "anexos_backend",
+      "comportamento": "Anexos locais sem diálogo nativo",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "anexos_locais.py"
+      ],
+      "testes": [
+        "tests/test_anexos_locais.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "avatares",
+      "comportamento": "Perfis e miniaturas sintéticos",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "avatares.py"
+      ],
+      "testes": [
+        "tests/test_avatares.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "pickle_simulado",
+      "comportamento": "Decisões, orçamento e cliente OpenCode simulados",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "bigpickle_modo.py",
+        "pickle_controle.py",
+        "opencode_mvp.py"
+      ],
+      "testes": [
+        "tests/test_bigpickle_controle.py",
+        "tests/test_bigpickle_modo.py",
+        "tests/test_opencode_mvp.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "codex_dados",
+      "comportamento": "Diferenças de arquivos e protocolo de conta simulados",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "codex_alteracoes.py",
+        "codex_conta.py"
+      ],
+      "testes": [
+        "tests/test_codex_alteracoes.py",
+        "tests/test_codex_conta.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "voz_simulada",
+      "comportamento": "Prioridade, prontidão e leitura sem dispositivo",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "fala.py",
+        "sons_bolinha.py"
+      ],
+      "testes": [
+        "tests/test_codex_prontidao.py",
+        "tests/test_codex_voz.py",
+        "tests/test_fala_microfone.py",
+        "tests/test_fala_tom.py",
+        "tests/test_sons_chat.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "isolamento_nativo",
+      "comportamento": "Módulos não alteram assinaturas globais de DLL",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "cenas.py"
+      ],
+      "testes": [
+        "tests/test_dll_isoladas.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "fila_persistida",
+      "comportamento": "Fila gravada e retomada no disco",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "mensagens.py"
+      ],
+      "testes": [
+        "tests/test_fila_disco.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "gpu_simulada",
+      "comportamento": "Driver e leituras de GPU substituídos",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "gpu.py"
+      ],
+      "testes": [
+        "tests/test_gpu.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "habilidades",
+      "comportamento": "Catálogo e busca com itens sintéticos",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "habilidades.py"
+      ],
+      "testes": [
+        "tests/test_habilidades.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "janela_simulada",
+      "comportamento": "Tamanho e painel com janela nativa substituída",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "kanicode.py"
+      ],
+      "testes": [
+        "tests/test_janela_painel.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "kani_backend",
+      "comportamento": "Compactação, consultas e orquestração com motores simulados",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "kani_modo.py",
+        "kani_consultas.py",
+        "kani_estado.py",
+        "kani_orquestracao.py",
+        "kani_etapas.py",
+        "kani_codigo_etapas.py",
+        "kani_contrato.py"
+      ],
+      "testes": [
+        "tests/test_kani_compactar.py",
+        "tests/test_kani_consultas.py",
+        "tests/test_kani_orquestracao.py",
+        "tests/test_kani_orquestracao_integracao.py",
+        "tests/test_kani_contrato.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "organizacao",
+      "comportamento": "Preferências com fonte e registro temporários",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "organizacao_pailer.py",
+        "licoes.py"
+      ],
+      "testes": [
+        "tests/test_organizacao_pailer.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "perfil_backend",
+      "comportamento": "Perfil, conflitos, sessão e nuvem com Drive simulado",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "perfil_portatil.py",
+        "perfil_nuvem.py",
+        "perfil_acesso.py"
+      ],
+      "testes": [
+        "tests/test_perfil_portatil.py",
+        "tests/test_perfil_nuvem.py",
+        "tests/test_perfil_acesso.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "tarefas_backend",
+      "comportamento": "Listas e agenda com serviços e agendador substituídos",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "tarefas.py",
+        "tarefas_agente.py",
+        "compromissos.py"
+      ],
+      "testes": [
+        "tests/test_tarefas.py",
+        "tests/test_tarefas_agente.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "tela_pc_simulada",
+      "comportamento": "Captura e mouse substituídos; HTTP próprio em porta efêmera",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "tela_pc.py"
+      ],
+      "testes": [
+        "tests/test_tela_pc.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "cerebro_metadados",
+      "comportamento": "Classificação, projetos e referências com fontes sintéticas",
+      "essencial": false,
+      "rapido": false,
+      "arquivos": [
+        "perfil_cerebro.py"
+      ],
+      "testes": [
+        "tests/test_cerebro_classificacao.py",
+        "tests/test_cerebro_kani.py",
+        "tests/test_cerebro_pc.py",
+        "tests/test_cerebro_projetos.py"
+      ],
+      "prazo_s": 60,
+      "revisao": "Chamadas externas substituídas; dados sintéticos no D; executar com auditoria estrita."
+    },
+    {
+      "id": "anexos_interface",
+      "comportamento": "Anexos no Chromium com ponte simulada",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "ui/anexos.js"
+      ],
+      "testes": [
+        "tests/test_anexos_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "pickle_interface",
+      "comportamento": "Interface OpenCode sem cliente real",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "ui/opencode_mvp.js",
+        "ui/codigo_agente.js"
+      ],
+      "testes": [
+        "tests/test_bigpickle_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "cerebro_interface",
+      "comportamento": "Filtros e mapa com dados e API sintéticos",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "ui/cerebro.js",
+        "ui/mapa_d.js"
+      ],
+      "testes": [
+        "tests/test_cerebro_classificacao_ui.py",
+        "tests/test_cerebro_pc_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "codex_interface",
+      "comportamento": "Progresso e uso do Codex com API simulada",
+      "essencial": false,
+      "rapido": false,
+      "transversal": true,
+      "arquivos": [
+        "ui/codex_uso.js",
+        "ui/alteracoes.js"
+      ],
+      "testes": [
+        "tests/test_codex_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "conexoes_simuladas",
+      "comportamento": "OAuth e Google com HTTP remoto substituído; callbacks locais próprios",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "google_calendar.py",
+        "google_drive.py",
+        "google_drive_arquivos.py",
+        "google_gmail.py",
+        "ui/conexoes.js",
+        "ui/conexoes_drive.js",
+        "ui/conexoes_gmail.js"
+      ],
+      "testes": [
+        "tests/test_conexoes_ui.py",
+        "tests/test_google_calendar.py",
+        "tests/test_google_drive.py",
+        "tests/test_google_drive_arquivos.py",
+        "tests/test_google_gmail.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "orquestracao_interface",
+      "comportamento": "Aprovação e retomada no Chromium isolado",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "ui/kani_execucoes.js"
+      ],
+      "testes": [
+        "tests/test_kani_orquestracao_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "layout_transversal",
+      "comportamento": "Layout, reinício e fala da KaniBall com ponte simulada",
+      "essencial": false,
+      "rapido": false,
+      "transversal": true,
+      "arquivos": [
+        "ui/janela.html",
+        "ui/organizacao.css",
+        "ui/kaniball.js"
+      ],
+      "testes": [
+        "tests/test_layout.py",
+        "tests/test_kaniball_fala_ui.py",
+        "tests/test_reiniciar_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "perfil_interface",
+      "comportamento": "Acesso e perfil no Chromium com fonte substituída",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "ui/perfil_usuario.js",
+        "ui/perfil_portatil.js"
+      ],
+      "testes": [
+        "tests/test_perfil_acesso_ui.py",
+        "tests/test_perfil_nuvem_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "saude_interface",
+      "comportamento": "Saúde e manutenção com relatório e execução substituídos",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "ui/saude.js"
+      ],
+      "testes": [
+        "tests/test_saude_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "tarefas_interface",
+      "comportamento": "Painéis de tarefas com ponte simulada",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "ui/tarefas.js"
+      ],
+      "testes": [
+        "tests/test_tarefas_agente_ui.py",
+        "tests/test_tarefas_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "movel_simulado",
+      "comportamento": "Protocolo e viewport móvel em página própria",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "tela_movel.py",
+        "movel.py",
+        "ui/movel.js"
+      ],
+      "testes": [
+        "tests/test_tela_movel.py",
+        "tests/test_tela_movel_ui.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "canal_local",
+      "comportamento": "Servidor de controle próprio e operações substituídas",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "kanicode.py"
+      ],
+      "testes": [
+        "tests/test_canal_previa.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "codigo_copia",
+      "comportamento": "Código e revisão em cópia sintética, sem Git ou modelos",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "codigo_agente.py",
+        "codigo_testes.py"
+      ],
+      "testes": [
+        "tests/test_codigo_agente.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "mapa_sintetico",
+      "comportamento": "Índice e notificações nativas somente na árvore temporária",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "mapa_d.py",
+        "mapa_d_monitor.py"
+      ],
+      "testes": [
+        "tests/test_mapa_d.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "progresso_interface",
+      "comportamento": "Sinais e faixas com operações e canal substituídos",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "progresso.py",
+        "ui/progresso.js"
+      ],
+      "testes": [
+        "tests/test_progresso.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    },
+    {
+      "id": "video_sintetico",
+      "comportamento": "FFmpeg sintético e HTTP local com Range, sem downloads externos",
+      "essencial": false,
+      "rapido": false,
+      "transversal": false,
+      "arquivos": [
+        "videos_resposta.py"
+      ],
+      "testes": [
+        "tests/test_videos_resposta.py"
+      ],
+      "prazo_s": 120,
+      "revisao": "Fixture local e ponte/serviço remoto substituído; executar com auditoria estrita."
+    }
+  ],
+  "classificacoes": {
+    "tests/test_voz_manual.py": {
+      "tipo": "manual",
+      "motivo": "Exige validação de voz fora da bateria simulada."
+    },
+    "tests/test_cerebro_motor.py": {
+      "tipo": "real",
+      "motivo": "Inclui embeddings de modelo real e cache de modelo compartilhado; avaliar separadamente, sem simular a qualidade semântica."
+    },
+    "tests/test_codex_comando.py": {
+      "tipo": "real",
+      "motivo": "Inclui parser do Codex CLI instalado (--help); depende da versão real do cliente, sem consumir cota."
+    },
+    "tests/test_equipe_revisao.py": {
+      "tipo": "real",
+      "motivo": "Integração Git em repositório de fixture; inclui commits locais. Fora da bateria sem commits."
+    },
+    "tests/test_pickle_agente.py": {
+      "tipo": "real",
+      "motivo": "Integração Git/worktree com commits de fixture. Não executar no fluxo sem commits."
+    },
+    "tests/test_projeto_ui.py": {
+      "tipo": "real",
+      "motivo": "Interface ligada a Git real em repositório sintético; cria commit de fixture, fora da bateria sem commits."
+    }
+  }
+}

@@ -94,6 +94,84 @@ class MensagensTest(unittest.TestCase):
         self.app.mensagem_enviar('1','Primeira',[imagem])
         self.assertEqual([i[1] for i in self.enviadas], ['Primeira','Segunda'])
 
+
+    def test_editar_preserva_ordem_anexos_e_sincroniza_pedido(self):
+        imagem = {'dados':'base64','mini':'data:image/png;base64,AA=='}
+        self.app.mensagem_enviar('1','Primeira',[imagem])
+        self.app.mensagem_enviar('2','Segunda')
+        self.assertTrue(self.app.mensagem_editar('1','  Primeira corrigida\ncom detalhe  '))
+        fila = self.app._ctx().mensagens
+        self.assertEqual([i['id'] for i in fila.itens], ['1','2'])
+        self.assertEqual(fila.itens[0]['imagens'], [imagem])
+        self.assertEqual(fila.itens[0]['texto'], 'Primeira corrigida\ncom detalhe')
+        from tarefas_agente import TarefasAgente
+        tarefa = TarefasAgente(self.base).registrar('1','1','Ignorado','claude',self.base)
+        self.assertEqual(tarefa['texto'], 'Primeira corrigida\ncom detalhe')
+        self.assertEqual(self.enviadas, [])
+        self.terminar()
+        self.esperar(lambda: bool(self.enviadas))
+        self.assertEqual(self.enviadas[0][1:], ('Primeira corrigida\ncom detalhe', [imagem]))
+
+    def test_editar_recusa_mensagem_em_entrega(self):
+        self.app.mensagem_enviar('1','Original')
+        fila = self.app._ctx().mensagens
+        item = fila.proxima()
+        self.assertFalse(self.app.mensagem_editar('1','Alterada'))
+        self.assertEqual(item['texto'], 'Original')
+        fila.concluir(item, True)
+        self.assertFalse(self.app.mensagem_editar('1','Alterada'))
+        self.assertFalse(self.app.mensagem_editar('inexistente','Alterada'))
+
+    def test_editar_preserva_pausa_prioridade_e_erro(self):
+        self.app.mensagem_enviar('1','Original')
+        fila = self.app._ctx().mensagens
+        fila.urgente('1')
+        fila.pausada = True
+        self.assertTrue(self.app.mensagem_editar('1','Corrigida'))
+        self.assertTrue(fila.pausada)
+        self.assertEqual(fila.itens[0]['estado'], 'urgente')
+        fila.itens[0].update(estado='falha',erro='Falha anterior')
+        self.assertTrue(self.app.mensagem_editar('1','Outra correção'))
+        self.assertEqual(fila.itens[0]['erro'], 'Falha anterior')
+        self.assertTrue(fila.pausada)
+
+    def test_edicao_persiste_e_volta_pausada(self):
+        from mensagens import Fila
+        arquivo = str(Path(self.base) / 'fila_edicao.json')
+        fila = Fila(arquivo)
+        fila.adicionar({'id':'1','texto':'Antes','quem':'claude','pasta':self.base,'imagens':[]})
+        fila.editar('1','Depois')
+        restaurada = Fila(arquivo, restaurar=True)
+        self.assertEqual(restaurada.listar()[0]['texto'], 'Depois')
+        self.assertTrue(restaurada.pausada)
+
+    def test_editar_vazio_so_com_anexo_e_pickle_valida_comando(self):
+        self.app.mensagem_enviar('1','Original')
+        with self.assertRaises(ValueError): self.app.mensagem_editar('1','   ')
+        with self.assertRaises(ValueError): self.app.mensagem_editar('1',None)
+        self.assertEqual(self.app.mensagens_fila()[0]['texto'], 'Original')
+        self.app.mensagem_enviar('2','Legenda',[{'dados':'imagem'}])
+        self.assertTrue(self.app.mensagem_editar('2',''))
+        self.app.mensagem_enviar('3','Pedido',quem='pickle')
+        with self.assertRaises(ValueError): self.app.mensagem_editar('3','/model outro')
+
+    def test_editar_nao_toca_outra_aba(self):
+        self.app.mensagem_enviar('1','Da aba um')
+        self.app.aba_nova()
+        self.assertFalse(self.app.mensagem_editar('1','Mudança indevida'))
+        self.app.aba_ativar('1')
+        self.assertEqual(self.app.mensagens_fila()[0]['texto'], 'Da aba um')
+
+    def test_editar_comando_nao_deixa_pedido_antigo_no_agente(self):
+        from tarefas_agente import TarefasAgente
+        self.app.mensagem_enviar('1','Pedido original')
+        self.app.mensagem_editar('1','/clear')
+        tarefa = TarefasAgente(self.base).registrar('1','1','Ignorado','claude',self.base)
+        self.assertEqual(tarefa['estado'], 'cancelada')
+        self.app.mensagem_editar('1','Pedido revisado')
+        tarefa = TarefasAgente(self.base).obter(tarefa['id'])
+        self.assertEqual((tarefa['texto'],tarefa['estado']), ('Pedido revisado','pendente'))
+
     def test_cancelar_tira_da_fila_sem_entregar(self):
         self.app.mensagem_enviar('1','Fica')
         self.app.mensagem_enviar('2','Cancelada')

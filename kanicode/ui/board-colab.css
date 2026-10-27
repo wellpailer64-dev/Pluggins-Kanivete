@@ -1,0 +1,16 @@
+.bd-colab { width: min(740px, 88vw); max-height: 85vh; overflow-y: auto; color: var(--texto); background: var(--painel); border: 1px solid var(--borda); border-radius: 12px; padding: 20px; }
+.bd-colab::backdrop { background: #0009; }
+.bd-colab header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.bd-colab label { display: block; margin: 10px 0; font-size: 12px; }
+.bd-colab select, .bd-colab textarea { display: block; box-sizing: border-box; width: 100%; margin-top: 5px; padding: 8px; background: var(--fundo); color: var(--texto); border: 1px solid var(--borda); border-radius: 6px; }
+.bd-colab button { padding: 7px 12px; border: 1px solid var(--borda); border-radius: 6px; background: var(--fundo); color: var(--texto); cursor: pointer; }
+.bd-colab button:disabled { opacity: .5; cursor: wait; }
+.bd-colab article { padding: 10px; margin-top: 8px; border: 1px solid var(--borda); border-radius: 6px; }
+.bd-colab pre, .colab-contrato, .colab-diario { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.colab-diario { max-height: 240px; overflow: auto; }
+.colab-erro { color: #ff9797; }
+.bd-previa { cursor: text; user-select: text; }
+.bd-fala { flex-shrink: 0; }
+.bd-previa-dica { background: var(--painel); cursor: pointer; }
+.bd-log { margin: 7px 0; padding: 7px; background: #0003; border-left: 2px solid var(--borda); white-space: pre-wrap; font-family: var(--mono); font-size: 11px; }
+.bd-fios path.linha.colab { stroke: #8fcfff; }

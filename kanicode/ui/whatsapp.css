@@ -1,0 +1,13 @@
+.atv.whatsapp-visivel > .det:not(#whatsapp-painel), .atv:not(.whatsapp-visivel) > #whatsapp-painel { display: none; }
+.atv.aberto #whatsapp-painel { width: 360px; }
+#whatsapp-trilho.ligado { color: #6ae59a; }
+#whatsapp-painel .wa-corpo { padding: 14px; overflow-y: auto; flex: 1; min-height: 0; width: 360px; box-sizing: border-box; font-size: 12px; }
+#whatsapp-painel p { line-height: 1.5; }
+#whatsapp-painel .wa-nota { color: var(--fraco); font-size: 11px; }
+#whatsapp-painel label { display: block; margin: 14px 0 6px; }
+#whatsapp-painel textarea { box-sizing: border-box; width: 100%; padding: 8px; background: var(--fundo, #171d1a); color: inherit; border: 1px solid var(--borda); border-radius: 7px; resize: vertical; }
+#whatsapp-painel button { cursor: pointer; }
+#whatsapp-painel .wa-acao { padding: 8px 12px; border: 1px solid var(--borda); border-radius: 7px; background: #203b2b; color: inherit; }
+#whatsapp-painel #wa-erro { color: var(--erro); }
+#whatsapp-painel article { padding: 10px 0; border-bottom: 1px solid var(--borda); overflow-wrap: anywhere; }
+#whatsapp-painel article p { white-space: pre-wrap; }

@@ -13,7 +13,7 @@ import kanicode
 
 class RecursosRespostaTest(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.temp = tempfile.TemporaryDirectory(dir="D:/kanivete_testes")
         self.addCleanup(self.temp.cleanup)
         self.pasta = Path(self.temp.name)
         self.arquivo = self.pasta/'print com espaços.png'

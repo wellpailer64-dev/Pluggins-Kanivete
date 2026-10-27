@@ -101,6 +101,18 @@ class Fila:
             self._salvar()
             return item, not repetir
 
+    def editar(self, id_, texto):
+        """Muda só o texto, antes da entrega; preserva prioridade, anexos e pausa."""
+        with self.trava:
+            item = next((i for i in self.itens if i['id'] == id_), None)
+            if not item or item['estado'] not in ('pendente', 'urgente', 'falha'):
+                return None
+            if not isinstance(texto, str) or (not texto.strip() and not item.get('imagens')):
+                raise ValueError('Escreva a mensagem antes de salvar.')
+            item['texto'] = texto.strip()
+            self._salvar()
+            return item
+
     def cancelar(self, id_):
         """tira da fila uma mensagem que ainda não foi entregue (o ✕ da bolha)"""
         with self.trava:

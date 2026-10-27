@@ -27,6 +27,30 @@ class TarefasAgente(Tarefas):
             itens.append(item); self._salvar(itens)
             return item
 
+    def editar_pedido(self, aba, mensagem_id, texto):
+        """A edição da fila também corrige a cópia usada no contexto do agente."""
+        id = hashlib.sha256(f'{aba}:{mensagem_id}'.encode()).hexdigest()[:24]
+        with self._lock():
+            itens = self._ler()
+            item = next((i for i in itens if i['id'] == id), None)
+            if not item: return
+            item.update(texto=texto, titulo=(texto.strip().splitlines() or ['Pedido com anexo'])[0][:300])
+            if texto.startswith('/'):
+                item.update(estado='cancelada', motivo='Pedido substituído por um comando na fila.')
+            elif item.get('motivo') == 'Pedido substituído por um comando na fila.':
+                item.update(estado='pendente', motivo='')
+            self._salvar(itens)
+
+    def listar(self):
+        """Finalizadas (concluídas ou canceladas) somem 24 h depois, para a lista não acumular."""
+        with self._lock():
+            itens = self._ler()
+            corte = (dt.datetime.now() - dt.timedelta(hours=24)).isoformat()
+            resto = [i for i in itens if i.get('estado') not in ('concluida','cancelada')
+                     or str(i.get('atualizado') or i.get('criado') or '') >= corte]
+            if len(resto) != len(itens): self._salvar(resto)
+            return resto
+
     def obter(self, id):
         with self._lock():
             item = next((i for i in self._ler() if i['id'] == id), None)

@@ -13,7 +13,7 @@ import kanicode
 
 class KaniHistoricoTest(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.temp = tempfile.TemporaryDirectory(dir="D:/kanivete_testes")
         self.addCleanup(self.temp.cleanup)
         self.pasta = self.temp.name
         for nome, valor in (("DADOS", self.pasta), ("ESTADO", str(Path(self.pasta)/"estado.json"))):
@@ -42,6 +42,30 @@ class KaniHistoricoTest(unittest.TestCase):
         with patch.object(kani_modo, "rodar", side_effect=rodar):
             self.app.ajudante("kani", texto, _de=de)
             self.assertTrue(self.fim.wait(5))
+
+    def test_casa_reconhece_comando_sem_confundir_codigo(self):
+        for texto in ("Acenda a luz da cozinha", "Diminua o brilho das lâmpadas",
+                      "Qual o estado das tomadas?", "Alimenta os gatos"):
+            with self.subTest(texto=texto):
+                self.assertTrue(self.app._pedido_casa(texto))
+        for texto in ("Implemente ligar luzes em Python", "Corrija o código do alimentador",
+                      "Como funciona a automação da Casa?", "/listar luzes", "Oi Kani"):
+            with self.subTest(texto=texto):
+                self.assertFalse(self.app._pedido_casa(texto))
+
+    def test_casa_na_conversa_claude_encaminha_sem_trocar_modelo(self):
+        with patch.object(self.app, "_ajudante_iniciar", return_value=True) as iniciar:
+            self.assertTrue(self.app.enviar("Acenda a luz da cozinha", _de="movel-x"))
+        iniciar.assert_called_once_with("kani", "Acenda a luz da cozinha", "movel-x")
+
+    def test_casa_no_codex_roda_na_kani(self):
+        with patch.object(kani_modo, "rodar", return_value={
+                "ok": True, "texto": "Conferido", "claude": False, "tokens": 0, "ms": 1}) as rodar, \
+                patch.object(self.app, "_casa_rapido", side_effect=AssertionError("atalho indevido")):
+            self.app.ajudante("codex", "Diminua o brilho das lâmpadas")
+            self.assertTrue(self.fim.wait(5))
+        rodar.assert_called_once()
+        self.assertTrue(any(e.get("quem") == "kani" for e in self.janela))
 
     def test_trocar_para_o_claude_mantem_a_conversa(self):
         self.pedir("Oi Kani", de="movel-x")

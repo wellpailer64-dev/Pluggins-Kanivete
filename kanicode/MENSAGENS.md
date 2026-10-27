@@ -25,6 +25,13 @@ Anexos de imagem não vão para o disco. Fechar a aba descarta a fila dela.
 As APIs diretas enviar/ajudante continuam disponíveis para integrações; a fila da
 interface usa mensagem_enviar, mensagem_urgente e mensagens_fila.
 
+O lápis na mensagem pendente abre a edição no próprio balão. Salvar (ou Ctrl+Enter)
+altera só o texto, mantendo a posição, agente, pasta e anexos. Cancelar ou Esc descarta
+a edição. O campo de nova mensagem não é usado. A alteração também atualiza o pedido
+no painel Agente e persiste ao reiniciar. Editar não retoma uma fila pausada.
+Se a mensagem já começou a ser entregue, a edição é recusada e o rascunho continua
+no editor para copiar; nenhuma segunda entrega é criada.
+
 Verificação: `py -3.13 verificar.py --area mensagens`. Interface: teste de Enter,
 duplo clique, recarga e bolha única em `tests/test_layout.py`. Motores simulados,
 sem gastar tokens nem controlar o app do usuário.

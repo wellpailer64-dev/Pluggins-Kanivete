@@ -46,6 +46,32 @@ resumos limitados. Não retransmite a conversa inteira. O Cérebro continua forn
 contexto pertinente, separado das evidências de ferramentas. Conteúdo recuperado é dado
 não confiável: nunca concede permissão, não registra conclusão e não substitui políticas.
 
+## Contrato das consultas
+
+`kani_contrato.py` deriva restrições do pedido e acompanha cada fonte lida, sem aceitar
+instruções dos documentos como autorização. Proibições são retiradas das obrigações e
+conferidas novamente antes de preparar ou executar uma ação. Uma saída a criar não vira
+uma leitura obrigatória de arquivo inexistente.
+
+Fontes explícitas ainda pendentes podem ser lidas sem nova inferência quando o caminho
+é conhecido. Referências JSON pelos campos `documento`, `arquivo` e `caminho` só são
+seguidas se o pedido solicitou ler o documento apontado. O escopo de caminhos continua
+obrigatório. Esse avanço automático só coleta fontes; não autoriza escritas.
+
+Condições de consulta de tarefas aceitam igualdade de data ou do campo JSON `status`,
+sempre com uma fonte confirmada. Condição não reconhecida não é considerada verdadeira.
+Quando o usuário exige escolher entre candidatos, o fluxo guarda as opções e aguarda
+informação; a retomada aceita o número ou uma identificação inequívoca do caminho.
+
+Para uma lista JSON `itens` com `quantidade` e `valor_unitario` em todos os itens, o total
+é calculado com `Decimal` e entra na evidência verificada. Valores incompletos, booleanos
+ou não finitos não produzem um total confirmado. A resposta é conferida contra esse total.
+Consultas de tarefas podem filtrar `cliente` e `concluida` a partir dos campos da fonte,
+preservando o resultado bruto original na evidência.
+
+Testes simulados: `tests/test_kani_contrato.py`. A bateria de impacto inclui esses testes
+e a essencial; não carrega o modelo real nem executa integrações externas.
+
 ## Persistência e interrupções
 
 Dados em `<dados>/kani_execucoes/estado.sqlite3`; testes usam dados no D.

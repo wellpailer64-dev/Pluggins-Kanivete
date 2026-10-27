@@ -174,7 +174,8 @@ class Painel:
         self.topo = {}        # windowId → altura da barra do Chrome (px reais) a esconder
         self.borda = {}       # windowId → (esquerda, direita, baixo): borda da janela do Chrome em volta da página
         self.aberto = False
-        self.mexido = 0.0     # última vez que o Pailer trocou de aba (a Kani não puxa a vista logo em seguida)
+        self.coberto = False  # algo do HTML (visualizador de imagem, menu, janela) por cima da área: a moldura some
+        self.mexido = 0.0    # última vez que o Pailer trocou de aba (a Kani não puxa a vista logo em seguida)
         self._gancho = None
         self.moldura = None
         self.modo = "auto"    # auto | computador | tablet | celular
@@ -194,6 +195,17 @@ class Painel:
             self._posicionar()
         return True
 
+    def cobrir(self, sim=True):
+        """o HTML avisa que algo cobre a área (a moldura é janela do Windows: ficava por cima de tudo, 2026-10-26)"""
+        sim = bool(sim)
+        if sim != self.coberto:
+            self.coberto = sim
+            if self.aberto:
+                self._posicionar()
+                if not sim:
+                    self._reajustar()
+        return True
+
     def _tela(self):
         """área em pixels reais de tela: origem e tamanho da área útil do KaniCode medidos por monitor"""
         x, y, w, h, larg = self.ret
@@ -208,7 +220,7 @@ class Painel:
     def _posicionar(self):
         if not self.janelas:
             return
-        visivel = self.aberto and u32.IsWindowVisible(self.dono) and not u32.IsIconic(self.dono)
+        visivel = self.aberto and not self.coberto and u32.IsWindowVisible(self.dono) and not u32.IsIconic(self.dono)
         X, Y, W, H = self._tela()
         ap = APARELHOS.get(self.modo)
         if ap and ap["mobile"]:

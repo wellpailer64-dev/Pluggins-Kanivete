@@ -128,6 +128,17 @@ class ContextoCodexTest(unittest.TestCase):
         self.assertTrue(seguinte.startswith("Continue"))
         self.assertIn("MODO ATUAL: execução", seguinte)
 
+    def test_navegador_interno_orienta_inicio_e_retomada(self):
+        for sessao in (None, "sessao"):
+            for pedido in ("Leia o WhatsApp", "Corrija nosso browser interno"):
+                with self.subTest(sessao=sessao, pedido=pedido):
+                    texto = codex_contexto.preparar(pedido, str(Path.cwd()), True, sessao)
+                    self.assertIn("kb.py", texto)
+                    self.assertIn("wa.py", texto)
+                    self.assertIn("--onde kanicode", texto)
+                    self.assertIn("--porta 9333", texto)
+                    self.assertIn("Falha do controle externo não comprova", texto)
+
     def test_troca_de_modo_e_explicita_em_cada_turno(self):
         plano = codex_contexto.preparar("Analise", str(Path.cwd()), False, "sessao")
         build = codex_contexto.preparar("Agora implemente", str(Path.cwd()), True, "sessao")
@@ -155,7 +166,7 @@ class ContextoCodexTest(unittest.TestCase):
             mapa_codigo.arquivo("../README.md")
 
     def test_cota_na_cauda_e_sem_emprestar_cota_de_outra_sessao(self):
-        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as d:
+        with tempfile.TemporaryDirectory(dir="D:/kanivete_testes") as d:
             pasta = Path(d)/"sessions/2026/10/21"
             pasta.mkdir(parents=True)
             p = pasta/"rollout-sessao-123.jsonl"

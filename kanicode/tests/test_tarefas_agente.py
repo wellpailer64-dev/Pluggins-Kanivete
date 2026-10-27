@@ -29,6 +29,18 @@ class TarefasAgenteTest(unittest.TestCase):
         self.assertNotIn('texto',self.repo.resumo()[0])
         self.assertNotEqual(self.pedido('2')['id'],a['id'])
 
+    def test_finalizadas_somem_depois_de_24h(self):
+        velha=self.pedido(id='m1'); nova=self.pedido(id='m2'); aberta=self.pedido(id='m3')
+        self.repo.estado(velha['id'],'concluida','ok'); self.repo.estado(nova['id'],'cancelada','x')
+        self.repo.estado(aberta['id'],'falha','caiu')
+        dados=json.loads((self.base/'tarefas_agente.json').read_text(encoding='utf-8'))
+        for i in dados:
+            if i['id'] in (velha['id'],aberta['id']): i['atualizado']='2020-01-01T00:00:00'
+        (self.base/'tarefas_agente.json').write_text(json.dumps(dados),encoding='utf-8')
+        ids={i['id'] for i in self.repo.listar()}
+        self.assertEqual(ids,{nova['id'],aberta['id']})
+        self.assertEqual(len(json.loads((self.base/'tarefas_agente.json').read_text(encoding='utf-8'))),2)
+
     def test_fim_sem_erro_nao_prova_conclusao_e_adiamento_nao_e_sobrescrito(self):
         a=self.pedido()
         self.repo.estado(a['id'],'em_andamento',automatico=True)

@@ -9,7 +9,7 @@ import re
 import time
 import uuid
 
-MODOS = ("leitura", "comando")
+MODOS = ("leitura", "comando", "colab")
 LIMITE_ENVIOS, JANELA_S = 10, 900      # no máximo 10 pedidos por fio a cada 15 min (dois chats não ficam conversando sem fim)
 MARCA = "[Pedido do chat"
 APP = None   # a App do kanicode.py (definida ao abrir)
@@ -45,7 +45,9 @@ def criar(lista, de, para, modo="leitura"):
 def achar(lista, de, para, precisa="leitura"):
     """o fio de→para que permite a ação (comando também permite ler)"""
     for f in lista:
-        if f["de"] == str(de) and f["para"] == str(para) and (precisa == "leitura" or f["modo"] == "comando"):
+        direto = f["de"] == str(de) and f["para"] == str(para)
+        reverso = f["modo"] == "colab" and f["para"] == str(de) and f["de"] == str(para)
+        if (direto or reverso) and (precisa == "leitura" or f["modo"] in ("comando", "colab")):
             return f
     return None
 
@@ -57,7 +59,7 @@ def pode_enviar(historico_envios, fio_id, agora=None):
     return len(recentes) < LIMITE_ENVIOS
 
 
-def mensagens(eventos, n=8, quem_aba="claude"):
+def mensagens(eventos, n=8, quem_aba="claude", logs=False):
     """eventos do histórico de uma aba → últimas falas [{quem, texto}] (para a prévia do Board e para ler)"""
     falas = []
     for ev in eventos or []:
@@ -69,6 +71,14 @@ def mensagens(eventos, n=8, quem_aba="claude"):
             falas.append({"quem": "claude", "texto": str(ev["texto"])})
         elif t == "ajudante_resposta" and ev.get("texto"):
             falas.append({"quem": ev.get("quem") or quem_aba, "texto": str(ev["texto"])})
+        elif logs and t in ("codex_progresso", "pickle_progresso", "ferr", "ferr_fim", "ajudante"):
+            import json
+            texto = str(ev.get("texto") or ev.get("nome") or ("Concluído" if ev.get("ok") else "Ferramenta"))
+            for campo in ("entrada", "saida"):
+                valor = ev.get(campo)
+                if valor:
+                    texto += "\n" + (valor if isinstance(valor, str) else json.dumps(valor, ensure_ascii=False))
+            falas.append({"quem": "log", "texto": texto})
     return falas[-n:] if n else falas
 
 
@@ -91,13 +101,14 @@ def pedido(nome_de, aba_de, texto, marca):
 
 def contexto(aba, lista, abas_info):
     """bloco que vai junto do pedido do chat que manda: com quem ele está ligado e como usar"""
-    meus = [f for f in lista if f["de"] == str(aba)]
+    meus = [dict(f, para=f["de"]) if f["modo"] == "colab" and f["para"] == str(aba) else f
+            for f in lista if f["de"] == str(aba) or (f["modo"] == "colab" and f["para"] == str(aba))]
     if not meus:
         return ""
     linhas = []
     for f in meus:
         i = abas_info.get(f["para"], {})
-        poder = "pode LER e MANDAR pedidos" if f["modo"] == "comando" else "pode só LER"
+        poder = "pode LER e MANDAR pedidos" if f["modo"] in ("comando", "colab") else "pode só LER"
         linhas.append(f'- aba {f["para"]} “{i.get("nome") or "Aba " + f["para"]}” ({i.get("quem", "claude")}): {poder}')
     return ("FIOS DO KANICODE: este chat é a aba " + str(aba) + " e está ligado a:\n" + "\n".join(linhas) +
             "\nUse a ferramenta mcp__equipe__chat: {acao:\"ler\", de:\"" + str(aba) + "\", para:\"ID\", n:10} lê a conversa; "
