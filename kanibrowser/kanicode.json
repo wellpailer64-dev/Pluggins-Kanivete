@@ -2,13 +2,43 @@
   "nome": "KaniBrowser",
   "sigla": "Kb",
   "cor": "#F0A01C",
-  "descricao": "Navegador da Kani no painel 🌐 do KaniCode, ao vivo, com os logins guardados",
   "icone": "icone.png",
   "cli": "kb.py",
+  "descricao": "Navegador da Kani no painel 🌐 do KaniCode, ao vivo, com os logins do Pailer guardados.",
+  "serve": "Chrome próprio por canal privado (pipe, sem porta), com os logins guardados. Abre sozinho no painel 🌐 do KaniCode e a Kani trabalha à vista (brilho verde-limão). Lê páginas, tira foto, baixa imagens e material direto na pasta da demanda, anexa arquivos em formulários, usa o ChatGPT da conta do Pailer. Postar, enviar ou clicar em site de terceiros só com o ok do Pailer.",
   "comandos": [
-    "estado | abrir [url] | ir <url>",
-    "texto | foto p.png",
-    "baixar --demanda ID8"
+    {
+      "cmd": "estado | abrir [url] | ir <url> | nova <url> | abas",
+      "faz": "navegar"
+    },
+    {
+      "cmd": "texto | foto p.png [--inteira]",
+      "faz": "ler a página / tirar print"
+    },
+    {
+      "cmd": "imagens | baixar (--demanda ID8 | --pasta P)",
+      "faz": "achar e baixar imagens"
+    },
+    {
+      "cmd": "anexar \"<pasta ou a;b;c>\"",
+      "faz": "põe arquivos no campo de envio aberto"
+    },
+    {
+      "cmd": "js \"<código>\"",
+      "faz": "roda JS na aba da Kani"
+    },
+    {
+      "cmd": "chatgpt \"<pedido>\" [--pasta P]",
+      "faz": "conversa/imagem no ChatGPT do Pailer"
+    }
   ],
+  "chamado_por": [
+    "Claude no KaniCode: linha fixa 'Web' das instruções",
+    "Kani local: abrir_no_kanibrowser, navegar_kani, ler_kani, clicar_kani, escrever_kani, imagens_kani, baixar_arquivo, ler_site, clicar_no_site, fechar_aba_kanibrowser (kani_modo.py)",
+    "Codex: estado com --onde kanicode (codex_contexto.py)",
+    "whatsapp_monitor.py e navegador.py (painel 🌐) do KaniCode",
+    "KANIVETE: aba do KaniBrowser"
+  ],
+  "guia": "D:/01 - ALL IN CLOUD - HD PAILER/DESENVOLVIMENTOS EM PYTHON/CANIVETE DO PAILER/Instructions/agente/plugins.md",
   "prompt": false
 }

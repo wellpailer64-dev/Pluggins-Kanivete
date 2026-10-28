@@ -1,10 +1,54 @@
 {
   "nome": "Pandalab",
   "sigla": "Pl",
-  "cor": "#7AD0FF",
-  "descricao": "Sistema do Laboratório Panda: demandas, baixar material na pasta do cliente, status, comentários, criar card e entregar",
+  "cor": "#FF6B2C",
   "icone": "icone.png",
   "cli": "panda.py",
-  "comandos": ["demandas --status abertas", "demanda <id8> / baixar <id8>", "criar \"Título\" --cliente X --tipo carrossel --sim / entregar <id8> --pasta P --sim"],
-  "verificar": ["quem"]
+  "descricao": "Sistema do Laboratório Panda: demandas, material do cliente, status, comentários, card novo e entrega.",
+  "serve": "Liga o KaniCode ao sistema de demandas do Laboratório Panda (laboratoriopanda.com, Supabase) com o login do Pailer, sem abrir o site nem o KANIVETE. Lê os cards, baixa o material na pasta certa do cliente (mapa_clientes.json), muda o status, comenta, cria card e faz a entrega (Drive + entrega + fecha o card, como o botão Entregar do site).",
+  "comandos": [
+    {
+      "cmd": "demandas --status abertas [--cliente X] [--busca X]",
+      "faz": "lista os cards"
+    },
+    {
+      "cmd": "demanda <id8>",
+      "faz": "detalhe, arquivos e comentários do cliente"
+    },
+    {
+      "cmd": "baixar <id8>",
+      "faz": "baixa os anexos na pasta do cliente"
+    },
+    {
+      "cmd": "status <id8> --status in_progress|adjustment|todo --sim",
+      "faz": "move o card"
+    },
+    {
+      "cmd": "comentar <id8> --descricao \"...\" --sim",
+      "faz": "comenta no card"
+    },
+    {
+      "cmd": "criar \"Título\" --cliente X --tipo carrossel --sim",
+      "faz": "cria o card (liberado quando a entrega não tem card)"
+    },
+    {
+      "cmd": "entregar <id8> --pasta P --sim",
+      "faz": "sobe os finais e fecha o card"
+    },
+    {
+      "cmd": "clientes / quem",
+      "faz": "clientes do sistema / quem está logado"
+    }
+  ],
+  "chamado_por": [
+    "Claude no KaniCode: comando nas instruções enquanto o plugin está ligado",
+    "Kani local: ferramenta demandas_panda (kani_modo.py, kani_etapas.py) e pastas dos clientes (kani_ferramentas.py)",
+    "compromissos.py: reuniões do Pandalab viram avisos falados da Kani",
+    "KANIVETE: aba Pessoais › Pandalab (painel.js/ponte.py) e o botão 'Pegar os finais' do site"
+  ],
+  "guia": "D:/01 - ALL IN CLOUD - HD PAILER/DESENVOLVIMENTOS EM PYTHON/CANIVETE DO PAILER/Instructions/agente/plugins.md",
+  "verificar": [
+    "quem"
+  ],
+  "prompt": true
 }

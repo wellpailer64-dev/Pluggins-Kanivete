@@ -10,7 +10,7 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
 |---|---|
 | `pandalab` | Demandas do Laboratório Panda: listar, baixar na pasta certa do cliente, status, comentários, entrega |
 | `kanibrowser` | Chrome do KANIVETE por canal privado (pipe, sem porta), com os logins guardados; funciona também só com o KaniCode aberto |
-| `kanicode` | **Software independente desde 2026-10-28**, com repositório próprio (github.com/wellpailer64-dev/KaniCode, privado). A pasta continua aqui (o KANIVETE tem o botão que o abre), mas fica fora deste git |
+| `kanicode` | **Software independente desde 2026-10-28**, com repositório próprio (github.com/wellpailer64-dev/KaniCode, privado). A pasta continua aqui, fora deste git; não é mais plugin do KANIVETE (o KaniCode é que comanda o KANIVETE, pelo plugin `kanicode/plugins/kanivete`) |
 
 ## Não vão para o git (`.gitignore`)
 - `pandalab/config.json`: endereço e chave do sistema. Copie `config.exemplo.json` e preencha.
