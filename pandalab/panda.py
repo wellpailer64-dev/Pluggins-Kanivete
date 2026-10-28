@@ -8,6 +8,7 @@
   py -3.13 panda.py clientes
   py -3.13 panda.py status <id> --status todo|in_progress|adjustment [--sim]   comentar <id> --descricao "texto" [--sim]
   py -3.13 panda.py finais <id>   (o que vai na entrega)
+  py -3.13 panda.py entregar <id> [--pasta P] [--sim]   (sobe os finais ao Drive, cria a entrega e fecha o card, como o site)
   py -3.13 panda.py novo-cliente "Nome ou empresa" [--whatsapp "conversa"|--foto F] [--cor #hex] [--servico caixa_rapido|
         gerenciamento|pacote_artes] [--pasta "PASTA"] [--sim]
       cria a tag no sistema (nome, cor, foto de perfil) + CLIENTES/<PASTA> com 00 ORCAMENTO..04 NOTAS FISCAIS, a foto como
@@ -142,6 +143,18 @@ def main():
         elif a.cmd == "finais":
             r = pl.finais(a.ref)
             print(r["pasta"]); [print("  -", os.path.basename(f)) for f in r["arquivos"]]
+        elif a.cmd == "entregar":
+            d = pl.demanda(a.ref)
+            if a.pasta:
+                arqs = sorted(os.path.join(a.pasta, f) for f in os.listdir(a.pasta)
+                              if f.lower().endswith(pl.EXT_FINAIS) and os.path.isfile(os.path.join(a.pasta, f)))
+            else:
+                arqs = pl.finais(a.ref)["arquivos"]
+            print(f"entregar: '{d['title']}' ({(d.get('client') or {}).get('name')}) com {len(arqs)} arquivo(s)")
+            [print("  -", os.path.basename(f)) for f in arqs]
+            if not a.sim:
+                print("(prévia: nada foi enviado. Repita com --sim para entregar no Pandalab.)"); return 0
+            print(json.dumps(pl.entregar(a.ref, arqs), ensure_ascii=False))
         elif a.cmd in ("novo-cliente", "ligar-pasta"):
             import pastas, subprocess
             foto = a.foto

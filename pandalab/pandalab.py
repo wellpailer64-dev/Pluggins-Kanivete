@@ -315,7 +315,7 @@ def _gravar(metodo, tabela, corpo, filtro=""):
     cfg = _config()
     tok = _token() or cfg["chave"]
     req = urllib.request.Request(f"{cfg['url'].rstrip('/')}/rest/v1/{tabela}{filtro}", method=metodo,
-                                 data=json.dumps(corpo).encode(),
+                                 data=json.dumps(corpo).encode() if corpo is not None else None,
                                  headers={"apikey": cfg["chave"], "Authorization": "Bearer " + tok,
                                           "Content-Type": "application/json", "Prefer": "return=representation"})
     try:
@@ -539,3 +539,113 @@ def marcar_reuniao(cliente, data, hora, titulo=None, link=None, gerar_link=True,
                                               "google_event_id": evento, "client_tag_id": tag["id"] if tag else None,
                                               "client_name": nome, "column_id": col})
     return (r[0] if isinstance(r, list) else r)
+
+
+# ---------- entrega (como o DeliveryUploadDialog do site; liberado pelo Pailer em 2026-10-28) ----------
+def _pacote_da_entrega(cliente_id):
+    """getPackageNumberForNextDelivery do site: só cliente 'pacote_artes' tem número de pacote."""
+    if not cliente_id:
+        return None
+    c = _ler("client_tags", select="service_type", id="eq." + cliente_id)
+    if not c or c[0].get("service_type") != "pacote_artes":
+        return None
+    pacotes = _ler("client_packages", select="id,package_number,package_quantity,package_type,package_value,is_completed",
+                   client_tag_id="eq." + cliente_id, order="package_number.asc")
+    if not pacotes:
+        return 1
+    usados = {}
+    for e in _ler("deliveries", select="id,package_number", client_tag_id="eq." + cliente_id):
+        n = int(e.get("package_number") or 0)
+        if n:
+            usados[n] = usados.get(n, 0) + 1
+    for p in pacotes:
+        if not p.get("is_completed") and usados.get(p["package_number"], 0) < p["package_quantity"]:
+            return p["package_number"]
+    ult = pacotes[-1]
+    prox = (ult.get("package_number") or 1) + 1
+    agora = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if not ult.get("is_completed"):
+        _gravar("PATCH", "client_packages", {"is_completed": True, "completed_at": agora, "updated_at": agora}, "?id=eq." + ult["id"])
+    if _ler("client_packages", select="package_number", client_tag_id="eq." + cliente_id, package_number=f"eq.{prox}"):
+        return prox
+    _gravar("POST", "client_packages", {"client_tag_id": cliente_id, "package_type": ult.get("package_type"),
+                                        "package_quantity": ult["package_quantity"], "package_value": ult.get("package_value"),
+                                        "package_number": prox, "activated_at": agora, "is_completed": False,
+                                        "completed_at": None, "updated_at": agora})
+    return prox
+
+
+def _cab(t):
+    """cabeçalho como o navegador manda (Latin-1 cru; o Deno lê assim); fora do Latin-1, sem acento"""
+    try:
+        t.encode("latin-1"); return t
+    except UnicodeEncodeError:
+        import unicodedata
+        return unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
+
+
+def _subir_drive(caminho, cliente, titulo):
+    """upload-to-drive do site (x-upload-type delivery): vai para a pasta de entrega do cliente no Drive da agência."""
+    import mimetypes
+    cfg = _config()
+    tipo = mimetypes.guess_type(caminho)[0] or "application/octet-stream"
+    nome = os.path.basename(caminho)
+    req = urllib.request.Request(cfg["url"].rstrip("/") + "/functions/v1/upload-to-drive", method="POST",
+                                 data=open(caminho, "rb").read(),
+                                 headers={"apikey": cfg["chave"], "Authorization": "Bearer " + cfg["chave"], "Content-Type": tipo,
+                                          "x-file-name": _cab(nome),
+                                          "x-client-name": _cab(cliente),
+                                          "x-demand-title": _cab(titulo),
+                                          "x-upload-type": "delivery"})
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            res = json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        raise ErroPanda(f"Drive recusou {nome}: {e.code} {e.read().decode('utf-8', 'replace')[:300]}")
+    if not res.get("webViewLink"):
+        raise ErroPanda(f"Drive não devolveu o link de {nome}: {res}")
+    return {"nome": nome, "tipo": tipo, "link": res["webViewLink"]}
+
+
+def entregar(ref, arquivos):
+    """Sobe os finais para o Drive, cria a entrega (deliveries + delivery_items), põe o card em Feitas e apaga a
+    demanda — os mesmos passos do botão Entregar do site. Site/LP, Identidade visual e demanda com áudio: pelo site."""
+    d = _ler("demands", select="id,title,description,content_type,client_tag_id,audio_path,"
+             "client_tags(name,profile_image_path)", id="eq." + _achar_id(ref))
+    if not d:
+        raise ErroPanda("Demanda não encontrada.")
+    d = d[0]
+    if d["content_type"] in ("sites_lp", "identidade_visual"):
+        raise ErroPanda("Site/LP e Identidade visual: entregar pelo site (têm etapas próprias).")
+    if d.get("audio_path"):
+        raise ErroPanda("A demanda tem áudio anexado: entregar pelo site (ele apaga os áudios do armazenamento).")
+    if not arquivos:
+        raise ErroPanda("Nenhum arquivo para entregar.")
+    ct = d.get("client_tags") or {}
+    cliente, titulo = ct.get("name") or "Cliente", d.get("title") or "Demanda"
+    feitos = [_subir_drive(a, cliente, titulo) for a in arquivos]
+    ent = _ler("deliveries", select="id", demand_id="eq." + d["id"])
+    if ent:
+        eid = ent[0]["id"]
+    else:
+        eid = _gravar("POST", "deliveries", {
+            "title": titulo, "demand_id": d["id"], "content_type": d["content_type"], "client_tag_id": d.get("client_tag_id"),
+            "description": d.get("description") or None, "instagram_username": ct.get("name"),
+            "instagram_profile_image": ct.get("profile_image_path"),
+            "package_number": _pacote_da_entrega(d.get("client_tag_id"))})[0]["id"]
+    _gravar("DELETE", "delivery_revisions", None, "?delivery_id=eq." + eid)
+    for f in _ler("demand_files", select="id,file_path", demand_id="eq." + d["id"]):
+        if f.get("file_path") and not f["file_path"].startswith("http"):
+            try:
+                _http("DELETE", "/storage/v1/object/demand-files", {"prefixes": [f["file_path"]]}, token=_token())
+            except ErroPanda:
+                pass
+        _gravar("DELETE", "demand_files", None, "?id=eq." + f["id"])
+    for o in _ler("demands", select="id,position", status="eq.done", deleted_at="is.null"):
+        _gravar("PATCH", "demands", {"position": (o.get("position") or 0) + 1}, "?id=eq." + o["id"])
+    _gravar("PATCH", "demands", {"status": "done", "delivery_link": feitos[0]["link"], "needs_revision": False, "position": 0},
+            "?id=eq." + d["id"])
+    _gravar("POST", "delivery_items", [{"delivery_id": eid, "file_path": f["link"], "file_type": f["tipo"], "position": i}
+                                       for i, f in enumerate(feitos)])
+    _gravar("DELETE", "demands", None, "?id=eq." + d["id"])
+    return {"entrega": eid, "arquivos": [f["nome"] for f in feitos], "link": feitos[0]["link"]}
