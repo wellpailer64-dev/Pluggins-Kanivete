@@ -1,0 +1,10 @@
+{
+  "nome": "Pandalab",
+  "sigla": "Pl",
+  "cor": "#7AD0FF",
+  "descricao": "Sistema do Laboratório Panda: demandas, baixar material na pasta do cliente, status, comentários, criar card e entregar",
+  "icone": "icone.png",
+  "cli": "panda.py",
+  "comandos": ["demandas --status abertas", "demanda <id8> / baixar <id8>", "criar \"Título\" --cliente X --tipo carrossel --sim / entregar <id8> --pasta P --sim"],
+  "verificar": ["quem"]
+}

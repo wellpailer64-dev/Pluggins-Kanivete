@@ -9,3 +9,5 @@ client_secret*.json
 # lixo
 __pycache__/
 *.pyc
+# KaniCode: repositório próprio (github.com/wellpailer64-dev/KaniCode), mora aqui dentro
+kanicode/

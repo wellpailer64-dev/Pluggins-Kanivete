@@ -1,4 +1,0 @@
-/* Arquivos locais: nome legível e caminho original na dica. */
-.anexo.anexo-arquivo { width: 168px; padding: 8px 24px 7px 9px; display: flex; flex-direction: column; justify-content: center; gap: 3px; background: var(--fundo); }
-.anexo-tipo { color: var(--lima); font: 9px var(--mono); letter-spacing: .6px; }
-.anexo-nome { color: var(--texto); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -10,14 +10,16 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
 |---|---|
 | `pandalab` | Demandas do Laboratório Panda: listar, baixar na pasta certa do cliente, status, comentários, entrega |
 | `kanibrowser` | Chrome do KANIVETE por canal privado (pipe, sem porta), com os logins guardados; funciona também só com o KaniCode aberto |
-| `kanicode` | Conversa com o Claude (depois Codex e Kani) numa bolinha na área de trabalho e no celular (Tailscale); processo à parte, sobrevive ao KANIVETE fechar |
+| `kanicode` | **Software independente desde 2026-10-28**, com repositório próprio (github.com/wellpailer64-dev/KaniCode, privado). A pasta continua aqui (o KANIVETE tem o botão que o abre), mas fica fora deste git |
 
 ## Não vão para o git (`.gitignore`)
 - `pandalab/config.json`: endereço e chave do sistema. Copie `config.exemplo.json` e preencha.
 - `pandalab/sessao.bin`: sessão cifrada pelo Windows (só este usuário neste PC abre).
 - `pandalab/vinculos.json` e `pandalab/mapa_clientes.json`: dados de clientes e das pastas deste PC.
 
-## KaniCode (`kanicode/`)
+## KaniCode (`kanicode/`, repositório próprio — notas abaixo são históricas; ver README do KaniCode)
+Plugins do KaniCode: `kanicode.json` ao lado do `kanivete.json` (Pandalab e KaniBrowser servem aos dois).
+
 - `kanicode.py`: o app à parte (pywebview). Instância única pela porta 127.0.0.1:47613 (aceita `ping`, `mostrar`,
   `sair`, `atualizar`/`recarregar`/`reiniciar` e `evento <json>`). Estado em `D:\Kanivete\KaniCode\estado.json` (posição da bolinha em pixels reais, alfinete).
 - `bolinha.py`: a bolinha NATIVA (WinForms + janela em camadas com alfa por pixel, GDI+). Não usar WebView para ela: o

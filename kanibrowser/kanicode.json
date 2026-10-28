@@ -1,0 +1,14 @@
+{
+  "nome": "KaniBrowser",
+  "sigla": "Kb",
+  "cor": "#F0A01C",
+  "descricao": "Navegador da Kani no painel 🌐 do KaniCode, ao vivo, com os logins guardados",
+  "icone": "icone.png",
+  "cli": "kb.py",
+  "comandos": [
+    "estado | abrir [url] | ir <url>",
+    "texto | foto p.png",
+    "baixar --demanda ID8"
+  ],
+  "prompt": false
+}
