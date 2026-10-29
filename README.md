@@ -10,6 +10,7 @@ Cada plugin é uma pasta com um `kanivete.json` (nome, ícone, js/css do painel 
 |---|---|
 | `pandalab` | Demandas do Laboratório Panda: listar, baixar na pasta certa do cliente, status, comentários, entrega |
 | `kanibrowser` | Chrome do KANIVETE por canal privado (pipe, sem porta), com os logins guardados; funciona também só com o KaniCode aberto |
+| `kaniadb` | Celular Android no KaniCode pelo cabo USB (depuração ativa): tela ao vivo e controle. Som: pendente |
 | `kanicode` | **Software independente desde 2026-10-28**, com repositório próprio (github.com/wellpailer64-dev/KaniCode, privado). A pasta continua aqui, fora deste git; não é mais plugin do KANIVETE (o KaniCode é que comanda o KANIVETE, pelo plugin `kanicode/plugins/kanivete`) |
 
 ## Não vão para o git (`.gitignore`)
@@ -129,6 +130,25 @@ gerado em `build/`; APK e build fora do git; assinatura em `D:/dev/android\kanic
   depois de falar; 8 s sem fala encerra).
 - Permissões (sobrepor apps, microfone, notificações): o app pede; pelo cabo `adb shell appops set com.pandalab.kanicode
   SYSTEM_ALERT_WINDOW allow` + `pm grant … RECORD_AUDIO / POST_NOTIFICATIONS`.
+
+## KaniADB — o celular no KaniCode pelo cabo USB (vídeo contínuo, 2026-10-29) — `kaniadb/`
+`py -3.13 kaniadb/kaniadb.py estado` · `dispositivos` · `tamanho` · `tela --salvar tela.png` · `tocar X Y` ·
+`deslizar X1 Y1 X2 Y2` · `texto "..."` · `tecla voltar|home|recentes|ligar|volume+` · `audio` ·
+`servir [--porta 47615]` (página do celular, só em 127.0.0.1).
+- Usa o adb que já existe no PC (`D:\dev\android\platform-tools`, ou `KANIADB_ADB`); não instala nada e não abre porta
+  para fora deste PC. Aparelho sem autorização/offline aparece no `estado` com o motivo.
+- Motor rápido (padrão quando existe): o scrcpy 4.x já baixado (`~/Downloads/scrcpy-win64-v4.1` ou `KANIADB_SCRCPY`),
+  vídeo e toque por sockets persistentes (`scrcpy_backend.py`), atraso perto do scrcpy. Sem ele, cai no caminho abaixo.
+- `servir` captura H264 contínuo pelo `screenrecord` do Android e converte com o FFmpeg já instalado (`KANIADB_FFMPEG`
+  pode indicar o executável). `/fluxo` envia MJPEG local, limitado a 30 quadros/s, guardando somente a imagem mais recente.
+  Uma captura PNG inicial permite exibir a tela antes do primeiro quadro do vídeo. Telas estáticas podem não produzir novos
+  quadros: a última imagem é preservada enquanto o processo permanece saudável, e `/estado.video` informa a idade do quadro.
+  Não instala pacotes nem grava vídeo. O FFmpeg e o adb próprios da captura são encerrados quando a última página sai.
+- Aceita `/tocar`, `/deslizar`, `/texto` e `/tecla`; usa o serial e a resolução da conexão ativa para evitar consultas ADB
+  redundantes em cada comando. Capturas avulsas continuam em PNG. Não promete equivalência de latência com o scrcpy nativo.
+- **Som: ainda não sai.** O adb sozinho não captura áudio do Android; `audio` explica o que falta (auxiliar rodando pelo
+  shell no Android 11+, SDK 30+, ou o app do KaniCode no celular). Etapa seguinte.
+- Testes (adb falso, sem celular e sem rede): `py -3.13 -m unittest discover -s kaniadb/tests -v`.
 
 ## KaniBrowser sem o KANIVETE (2026-10-21)
 `kb.py` usa o KANIVETE (modo agente) se ele já está com o navegador aberto; senão o **KaniCode hospeda** o navegador

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KaniADB — o celular no KaniCode</title>
+<link rel="stylesheet" href="/ui/telefone.css">
+</head>
+<body>
+<header>
+  <span class="sinal" id="sinal" title="conexão"></span>
+  <strong>KaniADB</strong>
+  <span class="aparelho" id="aparelho">procurando o celular…</span>
+  <span class="fps" id="fps"></span>
+</header>
+
+<main>
+  <div class="palco" id="palco">
+    <div class="mudo" id="mudo">tela do celular aparecendo aqui</div>
+    <img id="tela" alt="tela do celular" draggable="false">
+  </div>
+
+  <aside>
+    <div class="linha">
+      <button type="button" data-tecla="voltar">voltar</button>
+      <button type="button" data-tecla="home">home</button>
+      <button type="button" data-tecla="recentes">recentes</button>
+    </div>
+    <div class="linha">
+      <button type="button" data-tecla="ligar">tela</button>
+      <button type="button" data-tecla="volume-">vol −</button>
+      <button type="button" data-tecla="volume+">vol +</button>
+    </div>
+    <form id="digitar" autocomplete="off">
+      <input id="campo" type="text" placeholder="digitar no celular" autocomplete="off">
+      <button type="submit">enviar</button>
+    </form>
+    <p class="recado" id="recado">Toque para clicar, arraste para rolar. O som ainda não sai por aqui (etapa do áudio pendente).</p>
+  </aside>
+</main>
+
+<script src="/ui/telefone.js"></script>
+</body>
+</html>

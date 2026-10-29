@@ -1,0 +1,60 @@
+{
+  "nome": "KaniADB",
+  "sigla": "Ad",
+  "cor": "#3DDC84",
+  "icone": "icone.svg",
+  "cli": "kaniadb.py",
+  "descricao": "O celular Android do Pailer no KaniCode, pelo cabo USB com a depuração ativa: tela ao vivo e controle pelo PC.",
+  "serve": "Fala com o celular pelo adb que já existe neste PC (D:/dev/android/platform-tools). Mostra o aparelho e a tela numa página local (127.0.0.1:47615, nada sai deste PC), toca, arrasta, digita e aperta teclas (voltar, home, recentes, volume, ligar). Vídeo contínuo H264 do Android, convertido pelo FFmpeg existente para a página, sem fila de capturas PNG; KANIADB_FFMPEG pode apontar o executável. Nada é instalado. O som ainda não sai: o adb sozinho não captura áudio do Android e isso é a etapa seguinte.",
+  "comandos": [
+    {
+      "cmd": "estado [--json]",
+      "faz": "adb achado, aparelho, tela, Android e o motivo quando não está pronto"
+    },
+    {
+      "cmd": "dispositivos",
+      "faz": "lista os aparelhos no adb (device, unauthorized, offline)"
+    },
+    {
+      "cmd": "tamanho",
+      "faz": "resolução usada na tela do celular"
+    },
+    {
+      "cmd": "tela [--salvar tela.png] [--largura 720]",
+      "faz": "um quadro da tela em PNG"
+    },
+    {
+      "cmd": "tocar X Y",
+      "faz": "clique em pixel do celular"
+    },
+    {
+      "cmd": "deslizar X1 Y1 X2 Y2 [--ms 300]",
+      "faz": "arrastar/rolar a tela"
+    },
+    {
+      "cmd": "texto \"...\"",
+      "faz": "digita no campo em foco (acentos são removidos)"
+    },
+    {
+      "cmd": "tecla voltar|home|recentes|ligar|volume+|volume-|KEYCODE_...",
+      "faz": "tecla do Android"
+    },
+    {
+      "cmd": "audio",
+      "faz": "diz o que falta para o som sair (etapa pendente)"
+    },
+    {
+      "cmd": "servir [--porta 47615] [--largura 720]",
+      "faz": "abre a página do celular em 127.0.0.1 (tela ao vivo e controle)"
+    }
+  ],
+  "chamado_por": [
+    "Claude no KaniCode: comando nas instruções enquanto o plugin está ligado",
+    "Codex no KaniCode: CLI local kaniadb.py e comandos deste manifesto",
+    "Pailer: py -3.13 kaniadb/kaniadb.py servir (página do celular)"
+  ],
+  "verificar": [
+    "estado"
+  ],
+  "prompt": true
+}
