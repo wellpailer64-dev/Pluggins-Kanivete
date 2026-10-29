@@ -82,8 +82,9 @@ class VideoContinuo:
         adb = [self.adb, '-s', self.serial, 'exec-out', 'screenrecord', '--output-format=h264',
                '--size', f'{self.largura}x{self.altura}', '--bit-rate', '4M', '--time-limit', '0', '-']
         ffmpeg = [self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-threads', '1', '-flags', 'low_delay',
-                  '-analyzeduration', '1', '-probesize', '32', '-fpsprobesize', '0', '-avioflags', 'direct',
-                  '-f', 'h264', '-blocksize', '1024', '-i', 'pipe:0',
+                  '-analyzeduration', '1', '-probesize', '32', '-fpsprobesize', '0',
+                  # sem -avioflags direct/-blocksize: picavam o H264 e o decodificador recusava todo quadro
+                  '-f', 'h264', '-i', 'pipe:0',
                   '-an', '-fps_mode', 'passthrough', '-c:v', 'mjpeg', '-threads', '1', '-q:v', '5', '-f', 'image2pipe',
                   '-flush_packets', '1', 'pipe:1']
         try:
