@@ -15,7 +15,7 @@ fora deste PC (servidor só em 127.0.0.1), e nenhuma porta é publicada.
   py -3.13 kaniadb.py audio
   py -3.13 kaniadb.py servir [--porta 47615] [--largura 720]    (página do celular; Ctrl+C para parar)
 """
-import argparse, base64, http.server, io, json, os, re, shutil, socketserver, subprocess, sys, threading, time
+import argparse, base64, http.server, io, json, os, re, secrets, shutil, socketserver, subprocess, sys, threading, time
 import unicodedata, urllib.parse
 
 PORTA = 47615                 # só 127.0.0.1: a página do celular não sai deste PC
@@ -420,8 +420,18 @@ class _Casa(http.server.BaseHTTPRequestHandler):
             return True
         return origem in {"http://" + h for h in self._hosts_locais()}
 
+    def _chave_ok(self):
+        """A tela do KaniCode (outra porta) mostra o vídeo com ?k=<chave aleatória> que ela mesma passou ao servir."""
+        chave = getattr(self.server, "chave", "") or ""
+        if not chave:
+            return False
+        dada = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("k", [""])[0]
+        return secrets.compare_digest(dada.encode(), chave.encode())
+
     def _site_ok(self):
-        """Sec-Fetch-Site: mesma origem (ou pedido digitado) pode; cross-site/same-site não."""
+        """Sec-Fetch-Site: mesma origem (ou pedido digitado) pode; cross-site/same-site não (salvo com a chave certa)."""
+        if self._chave_ok():
+            return True
         site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
         return not site or site in ("same-origin", "none")
 
@@ -598,11 +608,12 @@ class _Casa(http.server.BaseHTTPRequestHandler):
         return serial, tamanho(serial)
 
 
-def servir(porta=PORTA, largura=720):
+def servir(porta=PORTA, largura=720, chave=None):
     caminho_adb()   # falha cedo, com a explicação certa
     _Casa.captura = _Captura(largura)
     _Casa.video = _Transmissao(largura)
     srv = _Servidor(("127.0.0.1", porta), _Casa)
+    srv.chave = chave or os.environ.get("KANIADB_CHAVE") or ""
     print(f"KaniADB: celular em http://127.0.0.1:{porta}/   (Ctrl+C para parar)")
     try:
         srv.serve_forever()
@@ -637,6 +648,7 @@ def main(argv=None):
     ap.add_argument("--salvar", help="tela: onde gravar o PNG")
     ap.add_argument("--largura", type=int, default=720, help="tela/servir: largura do quadro (padrão 720)")
     ap.add_argument("--porta", type=int, default=PORTA)
+    ap.add_argument("--chave", help="servir: chave que libera o vídeo para a tela do KaniCode (?k=)")
     ap.add_argument("--ms", type=int, default=300, help="deslizar: duração do gesto em milissegundos")
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -706,7 +718,7 @@ def main(argv=None):
             print(json.dumps(r, ensure_ascii=False, indent=2) if a.json else r["motivo"])
             return 0 if r["pronto"] else 3
         if cmd == "servir":
-            servir(a.porta, a.largura)
+            servir(a.porta, a.largura, a.chave)
             return 0
         raise ErroADB("comando desconhecido: " + a.cmd)
     except ErroADB as e:

@@ -296,7 +296,7 @@ class HttpLocalTest(unittest.TestCase):
         casa.wfile = io.BytesIO()
         casa._headers_buffer = []
         casa.request_version = "HTTP/1.0"
-        casa.server = type("Srv", (), {"server_address": ("127.0.0.1", self.PORTA)})()
+        casa.server = type("Srv", (), {"server_address": ("127.0.0.1", self.PORTA), "chave": getattr(self, "chave", "")})()
         casa.captura = None
         respostas = []
         casa._json = lambda codigo, obj: respostas.append((codigo, obj))
@@ -311,6 +311,20 @@ class HttpLocalTest(unittest.TestCase):
         cabecalhos = {"Content-Type": "application/json", "Content-Length": str(len(corpo))}
         cabecalhos.update(kwargs.pop("cabecalhos", {}))
         return self.pedido(rota, corpo=corpo, cabecalhos=cabecalhos, **kwargs)
+
+    def test_chave_libera_video_de_outra_porta(self):
+        self.chave = "abc123"
+        try:
+            vizinho = {"Sec-Fetch-Site": "same-site"}
+            self.assertEqual(self.pedido("/nada", "GET", cabecalhos=vizinho)[0], 403)
+            self.assertEqual(self.pedido("/nada?k=errada", "GET", cabecalhos=vizinho)[0], 403)
+            self.assertEqual(self.pedido("/nada?k=abc123", "GET", cabecalhos=vizinho)[0], 404)
+            self.assertEqual(self.pedido("/nada?k=abc123", "GET", cabecalhos={**vizinho, "Host": "x.com:47615"})[0], 403)
+        finally:
+            self.chave = ""
+
+    def test_sem_chave_configurada_nada_libera(self):
+        self.assertEqual(self.pedido("/nada?k=", "GET", cabecalhos={"Sec-Fetch-Site": "same-site"})[0], 403)
 
     def test_host_externo_recusado(self):
         codigo, chamadas = self.post_valido("/tocar", {"x": 0.5, "y": 0.5},
