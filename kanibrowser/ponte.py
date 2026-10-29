@@ -8,7 +8,32 @@ import visao
 API_KANIVETE = ("estado", "abrir", "fechar_navegador", "abas", "ir", "nova", "fechar", "frente", "foto", "texto",
                 "imagens", "destinos", "baixar_imagens", "abrir_pasta", "visitar", "instagram", "baixar_link", "pesquisar", "ler_pagina",
                 "ajustar", "entrada", "escolher", "dialogo", "arquivo", "navegar", "ponto", "kani_ir", "abrir_downloads",
-                "favoritos", "favorito", "favorito_remover", "favorito_renomear", "favoritos_ordem", "chatgpt", "diagnostico_chatgpt", "js_kani", "kani_parar", "vista", "clicar_texto")
+                "favoritos", "favorito", "favorito_remover", "favorito_renomear", "favoritos_ordem", "chatgpt", "diagnostico_chatgpt", "js_kani", "kani_parar", "vista", "clicar_texto",
+                "perfis", "perfil_criar", "perfil_renomear", "perfil_usar")
+
+
+def perfis():
+    return kb.perfis()
+
+
+def perfil_criar(nome):
+    return kb.perfil_criar(nome)
+
+
+def perfil_renomear(pid, nome):
+    return kb.perfil_renomear(pid, nome)
+
+
+def perfil_usar(pid):
+    """troca a conta do navegador (fecha e reabre no perfil pid); com o painel 🌐 aberto, ele reencaixa"""
+    import sys
+    nav = sys.modules.get("navegador")
+    p = nav._painel() if nav else None
+    if p and p.aberto:
+        return p.perfil(pid)
+    kb.perfil_trocar(pid)
+    kb.abrir()
+    return kb.perfis()
 
 
 def vista(aba=None):

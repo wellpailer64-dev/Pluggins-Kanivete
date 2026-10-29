@@ -20,6 +20,108 @@ class ErroKB(Exception):
     pass
 
 
+# ---------- perfis (várias contas, como a tela "Quem está usando o Chrome?") ----------
+# cada perfil = uma pasta de dados própria do Chrome (logins separados); "principal" = a pasta antiga (PERFIL)
+PERFIS = os.path.join(RAIZ, "perfis")
+PERFIS_JSON = os.path.join(RAIZ, "perfis.json")
+
+
+def _perfis_ler():
+    try:
+        with open(PERFIS_JSON, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = {}
+    lista = [p for p in d.get("lista") or [] if isinstance(p, dict) and p.get("id")]
+    if not any(p["id"] == "principal" for p in lista):
+        lista.insert(0, {"id": "principal", "nome": "Principal"})
+    return {"atual": d.get("atual") or "principal", "lista": lista}
+
+
+def _perfis_gravar(d):
+    os.makedirs(RAIZ, exist_ok=True)
+    with open(PERFIS_JSON + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=1)
+    os.replace(PERFIS_JSON + ".tmp", PERFIS_JSON)
+
+
+def pasta_perfil(pid=None):
+    pid = pid or _perfis_ler()["atual"]
+    return PERFIL if pid == "principal" else os.path.join(PERFIS, pid)
+
+
+def _conta(pasta):
+    """e-mail e foto da conta Google logada no perfil (Local State do Chrome); foto em data URL"""
+    try:
+        with open(os.path.join(pasta, "Local State"), encoding="utf-8") as f:
+            info = ((json.load(f).get("profile") or {}).get("info_cache") or {}).get("Default") or {}
+    except (OSError, ValueError):
+        return "", ""
+    foto = ""
+    arq = info.get("gaia_picture_file_name")
+    if arq:
+        c = os.path.join(pasta, "Default", arq)
+        try:
+            with open(c, "rb") as f:
+                foto = "data:image/png;base64," + base64.b64encode(f.read()).decode()
+        except OSError:
+            pass
+    return str(info.get("user_name") or ""), foto
+
+
+def perfis():
+    """lista dos perfis {id, nome, email, foto, atual} + qual está aberto"""
+    d = _perfis_ler()
+    atual = _c.get("perfil") if ativo() else d["atual"]
+    out = []
+    for p in d["lista"]:
+        email, foto = _conta(pasta_perfil(p["id"]))
+        out.append({"id": p["id"], "nome": p.get("nome") or p["id"], "email": email, "foto": foto, "atual": p["id"] == atual})
+    return {"atual": atual, "lista": out}
+
+
+def perfil_criar(nome):
+    nome = str(nome or "").strip()[:40]
+    if not nome:
+        raise ErroKB("Dê um nome ao perfil.")
+    d = _perfis_ler()
+    base = re.sub(r"[^a-z0-9]+", "-", nome.lower()).strip("-") or "perfil"
+    pid, n = base, 2
+    while any(p["id"] == pid for p in d["lista"]) or pid == "principal":
+        pid, n = f"{base}-{n}", n + 1
+    d["lista"].append({"id": pid, "nome": nome})
+    _perfis_gravar(d)
+    return pid
+
+
+def perfil_renomear(pid, nome):
+    d = _perfis_ler()
+    for p in d["lista"]:
+        if p["id"] == pid:
+            p["nome"] = str(nome or "").strip()[:40] or p["nome"]
+    _perfis_gravar(d)
+    return True
+
+
+def perfil_trocar(pid):
+    """fecha o navegador e marca o perfil novo; quem chamou abre de novo (o painel 🌐 reencaixa as janelas)"""
+    d = _perfis_ler()
+    if not any(p["id"] == pid for p in d["lista"]):
+        raise ErroKB("Perfil não existe: " + str(pid))
+    if ativo() and _c.get("perfil") == pid:
+        return pid
+    if ativo():
+        fechar_navegador()
+        proc = _c["proc"]
+        try:
+            proc.wait(10)
+        except Exception:
+            proc.kill()
+    d["atual"] = pid
+    _perfis_gravar(d)
+    return pid
+
+
 def _chrome():
     for v in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
         for p in (("Google", "Chrome", "Application", "chrome.exe"), ("Microsoft", "Edge", "Application", "msedge.exe")):
@@ -107,7 +209,9 @@ def abrir(url=None):
         exe = _chrome()
         if not exe:
             raise ErroKB("Não achei o Google Chrome nem o Edge neste PC.")
-        os.makedirs(PERFIL, exist_ok=True)
+        pid = _perfis_ler()["atual"]
+        pasta = pasta_perfil(pid)
+        os.makedirs(pasta, exist_ok=True)
         r1, w1 = os.pipe()   # nós -> Chrome
         r2, w2 = os.pipe()   # Chrome -> nós
         h_in, h_out = msvcrt.get_osfhandle(r1), msvcrt.get_osfhandle(w2)
@@ -119,7 +223,7 @@ def abrir(url=None):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             _c["proc"] = subprocess.Popen(
-                [exe, "--remote-debugging-pipe", f"--remote-debugging-io-pipes={h_in},{h_out}", f"--user-data-dir={PERFIL}",
+                [exe, "--remote-debugging-pipe", f"--remote-debugging-io-pipes={h_in},{h_out}", f"--user-data-dir={pasta}",
                  "--no-first-run", "--no-default-browser-check", f"--window-size={fora['width']},{fora['height']}",
                  f"--window-position={fora['left']},{fora['top']}",
                  # a janela da Kani fica escondida atrás/fora da tela e precisa continuar desenhando (visão ao vivo)
@@ -131,7 +235,7 @@ def abrir(url=None):
                 startupinfo=si, close_fds=False)
         os.close(r1)
         os.close(w2)
-        _c.update(w=w1, r=r2, vivo=True, resp={}, sessoes={})
+        _c.update(w=w1, r=r2, vivo=True, resp={}, sessoes={}, perfil=pid)
         _k.update(aba=None, fazendo=[])
         if _ao_criar not in _ouvintes:
             _ouvintes.append(_ao_criar)
