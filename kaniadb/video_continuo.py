@@ -149,6 +149,17 @@ class VideoContinuo:
                 raise RuntimeError(self.erro or 'Transmissão encerrada.')
             return self.jpeg
 
+    def proximo(self, carimbo, timeout=1.0):
+        """espera um quadro mais novo que `carimbo` → (jpeg, carimbo); sem novo no prazo devolve (None, carimbo)"""
+        with self.condicao:
+            if self.carimbo <= carimbo:
+                self.condicao.wait(timeout)
+            if self.encerrado or self.erro:
+                raise RuntimeError(self.erro or 'Transmissão encerrada.')
+            if self.jpeg and self.carimbo > carimbo:
+                return self.jpeg, self.carimbo
+            return None, carimbo
+
     def controlar(self, acao, origem, **dados):
         with self.condicao:
             return self.backend.comando(acao, origem, **dados) if self.backend else None

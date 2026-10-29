@@ -348,6 +348,12 @@ class _Transmissao:
         except (OSError, RuntimeError, ValueError) as e:
             raise ErroADB('Vídeo contínuo: ' + str(e)) from e
 
+    def proximo(self, carimbo, timeout=1.0):
+        try:
+            return self._obter().proximo(carimbo, timeout)
+        except (OSError, RuntimeError, ValueError) as e:
+            raise ErroADB('Vídeo contínuo: ' + str(e)) from e
+
     def pegar(self):
         video = self._obter()
         try:
@@ -506,15 +512,20 @@ class _Casa(http.server.BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
             enviou = True
+            carimbo, ultimo_envio = 0.0, 0.0
             while True:
-                inicio = time.monotonic()
-                self.wfile.write(b"--quadro\r\nContent-Type: " + tipo + b"\r\nContent-Length: "
-                                 + str(len(imagem)).encode() + b"\r\n\r\n" + imagem + b"\r\n")
-                self.wfile.flush()
-                time.sleep(max(0, 1 / 30 - (time.monotonic() - inicio)))
-                jpeg = self.video.espiar()
+                if imagem is not None:
+                    self.wfile.write(b"--quadro\r\nContent-Type: " + tipo + b"\r\nContent-Length: "
+                                     + str(len(imagem)).encode() + b"\r\n\r\n" + imagem + b"\r\n")
+                    self.wfile.flush()
+                    ultimo_envio = time.monotonic()
+                # cada quadro sai assim que fica pronto (sem relógio de 30 qps nem repetir o mesmo)
+                jpeg, carimbo = self.video.proximo(carimbo, timeout=1.0)
+                imagem = jpeg
                 if jpeg:
-                    imagem, tipo = jpeg, b'image/jpeg'
+                    tipo = b'image/jpeg'
+                elif time.monotonic() - ultimo_envio > 5:
+                    imagem = self.video.espiar()   # tela parada: um quadro de vez em quando mantém a conexão viva
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
         except ErroADB:
