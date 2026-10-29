@@ -288,6 +288,28 @@ class _Transmissao:
         self.clientes = 0
         self.trava = threading.Lock()
         self.encerrar = None
+        self.som = None
+
+    def _som_ligar(self, serial):
+        """som do celular tocando no PC: um scrcpy só de áudio, sem janela (Android 11+; no 13+ o celular fica mudo)"""
+        if self.som and self.som.poll() is None:
+            return
+        from scrcpy_backend import localizar
+        pasta = localizar()
+        if not pasta:
+            return
+        self.som = subprocess.Popen([str(pasta / 'scrcpy.exe'), '-s', serial, '--no-video', '--no-window', '--no-control',
+                                     '--audio-buffer=40'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL, creationflags=0x08000000 if os.name == 'nt' else 0)
+
+    def _som_desligar(self):
+        if self.som and self.som.poll() is None:
+            self.som.terminate()
+            try:
+                self.som.wait(3)
+            except subprocess.TimeoutExpired:
+                self.som.kill()
+        self.som = None
 
     def entrar(self):
         with self.trava:
@@ -309,6 +331,7 @@ class _Transmissao:
             if not self.clientes and self.video:
                 self.video.fechar()
                 self.video = None
+                self._som_desligar()
 
     def _obter(self):
         with self.trava:
@@ -324,6 +347,10 @@ class _Transmissao:
                     raise ErroADB('FFmpeg não encontrado. Aponte KANIADB_FFMPEG para o executável existente.')
                 self.video = VideoContinuo(caminho_adb(), serial, largura=largura, altura=altura, ffmpeg=ffmpeg)
                 self.serial, self.resolucao = serial, tam
+                try:
+                    self._som_ligar(serial)
+                except OSError:
+                    pass   # sem som não impede a tela
             return self.video
 
     def alvo(self):
@@ -372,6 +399,7 @@ class _Transmissao:
             if self.video:
                 self.video.fechar()
                 self.video = None
+            self._som_desligar()
 
 
 def _ponto(par, tam):
