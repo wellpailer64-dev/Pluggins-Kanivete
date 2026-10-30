@@ -212,6 +212,11 @@ def _rodar(a, c):
             for x in chamar_kanicode("painel_cmd", {"o": "perfis"})["lista"]:
                 print(("> " if x["atual"] else "  ") + x["id"], "|", x["nome"], "|", x["email"])
         elif a.cmd == "perfil":
+            import time
+            for _ in range(60):   # igual aos outros comandos: o painel abre sozinho
+                if chamar_kanicode("painel", {}, 10).get("aberto"):
+                    break
+                time.sleep(.5)
             r = chamar_kanicode("painel_cmd", {"o": "perfil", "a": a.arg})
             print("perfil trocado:", a.arg, "| abas:", len(r.get("abas") or []))
         elif a.cmd == "painel":   # o painel 🌐 do KaniCode como o Pailer usa: painel estado|mostrar ID|nova URL|ir URL|fechar_aba ID|acao voltar|aparelho celular
