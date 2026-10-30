@@ -5,11 +5,23 @@
   "icone": "icone.png",
   "cli": "panda.py",
   "descricao": "Sistema do Laboratório Panda: demandas, material do cliente, status, comentários, card novo e entrega.",
-  "serve": "Liga o KaniCode ao sistema de demandas do Laboratório Panda (laboratoriopanda.com, Supabase) com o login do Pailer, sem abrir o site nem o KANIVETE. Lê os cards, baixa o material na pasta certa do cliente (mapa_clientes.json), muda o status, comenta, cria card e faz a entrega (Drive + entrega + fecha o card, como o botão Entregar do site).",
+  "serve": "Liga o KaniCode ao sistema de demandas do Laboratório Panda (laboratoriopanda.com, Supabase) com o login do Pailer, sem abrir o site nem o KANIVETE. Lê os cards, baixa o material na pasta certa do cliente (mapa_clientes.json), muda o status, comenta, cria card e faz a entrega (Drive + entrega + fecha o card, como o botão Entregar do site). Para corrigir uma entrega já existente: entregas/entrega para localizar, substituir-artes para trocar finais com retomada e conferência, operacoes-entrega para inspecionar e recuperar-entrega para desfazer. Guia local ENTREGAS.md. Anexos antigos retirados da entrega permanecem no Drive.",
   "comandos": [
     {
       "cmd": "demandas --status abertas [--cliente X] [--busca X]",
       "faz": "lista os cards"
+    },
+    {
+      "cmd": "entregas --busca X --cliente X --json",
+      "faz": "busca entregas por título, cliente ou número, inclusive concluídas"
+    },
+    {
+      "cmd": "entrega <número ou id> --json",
+      "faz": "confere os dados e anexos da entrega"
+    },
+    {
+      "cmd": "substituir-artes <entrega> --pasta P [--sim] [--operacao ID]",
+      "faz": "prévia ou troca recuperável das artes; mantém antigos no Drive"
     },
     {
       "cmd": "demanda <id8>",
@@ -38,15 +50,25 @@
     {
       "cmd": "clientes / quem",
       "faz": "clientes do sistema / quem está logado"
+    },
+    {
+      "cmd": "operacoes-entrega <entrega> --json",
+      "faz": "consulta o progresso e os registros de correção"
+    },
+    {
+      "cmd": "recuperar-entrega <entrega> --operacao ID [--sim]",
+      "faz": "restaura anexos anteriores sem apagar arquivos do Drive"
     }
   ],
   "chamado_por": [
     "Claude no KaniCode: comando nas instruções enquanto o plugin está ligado",
     "Kani local: ferramenta demandas_panda (kani_modo.py, kani_etapas.py) e pastas dos clientes (kani_ferramentas.py)",
     "compromissos.py: reuniões do Pandalab viram avisos falados da Kani",
-    "KANIVETE: aba Pessoais › Pandalab (painel.js/ponte.py) e o botão 'Pegar os finais' do site"
+    "pandalab_avisos.py (KaniCode): notificação nova vira cartão na tela e voz da Kani",
+    "KANIVETE: aba Pessoais › Pandalab (painel.js/ponte.py) e o botão 'Pegar os finais' do site",
+    "Codex no KaniCode: CLI local panda.py e comandos do manifesto; correções em ENTREGAS.md"
   ],
-  "guia": "D:/01 - ALL IN CLOUD - HD PAILER/DESENVOLVIMENTOS EM PYTHON/CANIVETE DO PAILER/Instructions/agente/plugins.md",
+  "guia": "D:\\01 - ALL IN CLOUD - HD PAILER\\DESENVOLVIMENTOS EM PYTHON\\PLUGGINS KANIVETE\\pandalab\\ENTREGAS.md",
   "verificar": [
     "quem"
   ],
