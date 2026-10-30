@@ -12,6 +12,8 @@ canal 127.0.0.1:47613 com chave); só sem o KaniCode aberto vai para o KANIVETE 
   py -3.13 kb.py baixar [--aba ID] [--max 20] [--min 250] (--demanda ID8 | --pasta P)
   py -3.13 kb.py anexar "<pasta ou a;b;c>"   (põe os arquivos no campo de envio aberto na página, ex. Fazer Entrega do Pandalab)
   py -3.13 kb.py destinos
+  py -3.13 kb.py perfis                    (contas do navegador; > = a aberta)
+  py -3.13 kb.py perfil <id|nome|e-mail>   (troca de conta: FECHA e reabre o navegador; só com motivo, e avise o Pailer)
   py -3.13 kb.py painel "estado|mostrar ID|nova URL|ir URL|fechar_aba ID|acao voltar|aparelho celular"   (abas do Pailer)
   py -3.13 kb.py js "<código JS>" | js @arquivo.js     (na aba da Kani; aceita async/Promise; volta o valor)
   py -3.13 kb.py chatgpt "<pergunta ou pedido de imagem>" [--pasta P]   (conta do Pailer; imagens salvas)
@@ -206,6 +208,12 @@ def _rodar(a, c):
         elif a.cmd == "destinos":
             for d in c("destinos"):
                 print(d["id"][:8], d["cliente"], "|", d["nome"])
+        elif a.cmd == "perfis":
+            for x in chamar_kanicode("painel_cmd", {"o": "perfis"})["lista"]:
+                print(("> " if x["atual"] else "  ") + x["id"], "|", x["nome"], "|", x["email"])
+        elif a.cmd == "perfil":
+            r = chamar_kanicode("painel_cmd", {"o": "perfil", "a": a.arg})
+            print("perfil trocado:", a.arg, "| abas:", len(r.get("abas") or []))
         elif a.cmd == "painel":   # o painel 🌐 do KaniCode como o Pailer usa: painel estado|mostrar ID|nova URL|ir URL|fechar_aba ID|acao voltar|aparelho celular
             o, _, arg = (a.arg or "estado").partition(" ")
             r = chamar_kanicode("painel_cmd", {"o": o, **({"a": arg} if arg else {})})
