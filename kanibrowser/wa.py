@@ -2,8 +2,11 @@
 
   py -3.13 wa.py ler --conversa "camila studio" [--n 20] [--transcrever]
   py -3.13 wa.py conversas [--busca termo]
-  py -3.13 wa.py arquivo --conversa "camila studio" [--nome proposta] [--pasta P]   (baixa o documento; imprime o caminho)
+  py -3.13 wa.py arquivo --conversa "camila studio" [--nome proposta] [--pasta P]   (baixa o documento, inclusive MP4 enviado como arquivo; imprime o caminho)
+  py -3.13 wa.py midia --conversa "camila studio" --tipo video --duracao 1:10 --saida a.mp4   (vídeo pela duração; --tipo foto = a última foto)
   py -3.13 wa.py enviar --conversa "CLAUDE CODE" --texto "linha 1\\nlinha 2"
+  py -3.13 wa.py enviar --conversa X --arquivo v.mp4 [--texto legenda] [--sim] [--comprimir] [--documento]   (vídeo acima de 16 MB vai como arquivo)
+      saída 0 = enviado, 1 = não enviado, 3 = incerto: olhar a conversa antes de reenviar
 
 Abre o navegador e o WhatsApp sozinho se preciso. --conversa aceita parte do nome, sem acento nem emoji ("camila studio"
 acha "Camila 🧿 Studio"); se não está na lista, usa a busca do WhatsApp. Confere o cabeçalho antes de ler/colar (nunca
@@ -21,6 +24,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 PASTA_AUD = os.path.join(os.path.splitdrive(os.path.abspath(__file__))[0] + os.sep, "Kanivete", "KaniBrowser", "wa_audios")
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "CANIVETE DO PAILER")
 PORTA = 9222
+LIMITE_VIDEO = 16 * 1024 * 1024
 
 # normalizar no JS igual ao Python: sem acento, sem emoji/símbolo, minúsculo, espaços simples
 NORM = r"""const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();"""
@@ -80,19 +84,34 @@ FOTO = """(async () => {
 ANEXO = """(async () => {
   NORMCAB
   if (norm(cab()) !== %s) return {erro: 'conversa errada: ' + cab()};
+  if (document.querySelector('[aria-label^="Enviar"][aria-label*="item"]')) return {erro: 'já há uma prévia aberta nesta aba'};
   const bin = atob(%s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
   const f = new File([u], %s, {type: %s});
   const ed = document.querySelector('#main footer [contenteditable=true]'); ed.focus();
   const dt = new DataTransfer(); dt.items.add(f);
   ed.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData: dt}));
   let s = null;
-  for (let i = 0; i < 40 && !s; i++) { await new Promise(r => setTimeout(r, 500)); s = document.querySelector('[aria-label^="Enviar"][aria-label*="item"]'); }
+  for (let i = 0; i < 240 && !s; i++) { await new Promise(r => setTimeout(r, 500)); s = document.querySelector('[aria-label^="Enviar"][aria-label*="item"]'); }
   if (!s) return {erro: 'a prévia do arquivo não abriu'};
   const leg = %s;
+  if (%s) { const como = document.querySelector('video') ? 'vídeo comprimido' : 'arquivo';   // --sim: só olha a prévia e cancela
+    for (const b of [...document.querySelectorAll('[aria-label="Fechar"],[data-icon="x-viewer"],[data-icon="close"]')].reverse()) { (b.closest('button,[role=button]') || b).click(); break; }
+    for (let i = 0; i < 20 && document.querySelector('[aria-label^="Enviar"][aria-label*="item"]'); i++) { await new Promise(r => setTimeout(r, 250));
+      const d = [...document.querySelectorAll('button,[role=button]')].find(b => b.innerText.trim() === 'Descartar'); if (d) d.click(); }
+    return {ok: 1, como, cancelou: !document.querySelector('[aria-label^="Enviar"][aria-label*="item"]')}; }
   if (leg) { const c = [...document.querySelectorAll('[contenteditable=true]')].find(e => !e.closest('#main footer'));
     if (c) { c.focus(); document.execCommand('insertText', false, leg); await new Promise(r => setTimeout(r, 300)); } }
   s.click(); return {ok: 1};
 })()""".replace("NORMCAB", NORM + CABEC)
+
+# mensagens na tela antes do envio, para não confundir com um envio antigo do mesmo arquivo
+IDS = "[...document.querySelectorAll('#main [role=row] [data-id]')].map(e => e.getAttribute('data-id'))"
+# a mensagem nova com o arquivo: o WhatsApp só marca Enviada quando o upload termina
+CONFERE = """(() => { const antes = new Set(%s), nome = %s;
+  for (const r of [...document.querySelectorAll('#main [role=row]')].reverse()) {
+    const d = r.querySelector('[data-id]'); if (!d || antes.has(d.getAttribute('data-id')) || !r.innerText.includes(nome)) continue;
+    return {achou: 1, enviada: [...r.querySelectorAll('[aria-label]')].some(e => /Enviada|Entregue|Lida/.test(e.getAttribute('aria-label')))}; }
+  return {achou: 0}; })()"""
 
 # carrega até n mensagens (rola para cima) e devolve cada uma já resumida
 # junta até n mensagens rolando para cima (a lista do WhatsApp só guarda na tela um pedaço) e volta para o fim
@@ -113,7 +132,7 @@ LER = r"""(async () => {
     const hora = (linhas.filter(s => /^\d{1,2}:\d{2}$/.test(s)).pop()) || (m ? m[1] : '');
     const o = {id: d.getAttribute('data-id'), eu, autor: m ? m[2].trim() : '', hora};
     if (play) o.audio = (linhas.find(s => /^\d+:\d{2}$/.test(s) && s !== hora)) || '?';
-    else if (r.querySelector('[data-icon^="document"]')) o.doc = ((r.querySelector('[title^="Mostrar"]') || {}).title || '').replace(/^Mostrar "?|"$/g, '');
+    else if (r.querySelector('[data-icon^="document"]')) o.doc = ((r.querySelector('[title^="Mostrar"],[title^="Baixar "]') || {}).title || '').replace(/^(Mostrar|Baixar) "?|"$/g, '');
     else if (!txt && r.querySelector('img')) o.img = 1;
     o.txt = txt || (!play && !o.doc && !o.img ? linhas.filter(s => s !== hora).join(' ').slice(0, 400) : '');
     return o;
@@ -179,18 +198,66 @@ ARQUIVO = """(async () => {
     await new Promise(r => setTimeout(r, 700)); row = achar(); }
   if (!row) return {erro: 'arquivo não achado na conversa'};
   row.scrollIntoView({block: 'center'}); await new Promise(r => setTimeout(r, 400));
-  const nome = (row.querySelector('[title^="Mostrar"]') || {}).title || '';
-  (row.querySelector('[title^="Mostrar"]') || row.querySelector('[data-icon^="document"]')).click();
-  const baixar = () => [...document.querySelectorAll('[aria-label="Baixar"],[title="Baixar"]')].pop();
+  // documento que o WhatsApp não abre em prévia (MP4 enviado como arquivo): o Baixar fica na própria mensagem
+  const direto = row.querySelector('[aria-label^="Baixar "],[title^="Baixar "]');
+  const nome = (row.querySelector('[title^="Mostrar"]') || direto || {}).title || (direto && direto.getAttribute('aria-label')) || '';
+  if (!direto) (row.querySelector('[title^="Mostrar"]') || row.querySelector('[data-icon^="document"]')).click();
+  const baixar = () => direto || [...document.querySelectorAll('[aria-label="Baixar"],[title="Baixar"]')].pop();
   for (let i = 0; i < 40 && !baixar(); i++) await new Promise(r => setTimeout(r, 250));
   if (!baixar()) return {erro: 'sem botão Baixar'};
-  window.__kvArqB = []; window.__kvArqH = null; window.__kvPega = 1; baixar().click();
-  for (let i = 0; i < 100 && !window.__kvArqB.length && !window.__kvArqH; i++) await new Promise(r => setTimeout(r, 200));
+  window.__kvArqB = []; window.__kvArqH = null; window.__kvPega = 1; (baixar().closest('button,[role=button]') || baixar()).click();
+  for (let i = 0; i < 1500 && !window.__kvArqB.length && !window.__kvArqH; i++) await new Promise(r => setTimeout(r, 200));
   window.__kvPega = 0;
   const fechar = [...document.querySelectorAll('[aria-label="Fechar"],[title="Fechar"]')].pop(); if (fechar) fechar.click();
   const blob = window.__kvArqB[0] || (window.__kvArqH && await (await fetch(window.__kvArqH)).blob()); if (!blob) return {erro: 'o download não veio'};
-  const url = await new Promise(ok => { const f = new FileReader(); f.onload = () => ok(f.result); f.readAsDataURL(blob); });
-  return {ok: 1, nome: nome.replace(/^Mostrar "?|"$/g, ''), b64: url.split(',')[1]};
+  window.__kvBlob = blob;
+  return {ok: 1, nome: nome.replace(/^(Mostrar|Baixar) "?|"$/g, ''), tam: blob.size};
+})()"""
+
+# última foto/vídeo da conversa: a lista só desenha a mensagem visível, então anda de baixo para cima; vídeo vem pelo
+# Baixar (o <video> só tem o começo do arquivo)
+MIDIA = r"""(async () => {
+  const tipo = %s, dur = %s, z = ms => new Promise(r => setTimeout(r, ms));
+  if (!window.__kvArq) { window.__kvArq = 1; const o = URL.createObjectURL; window.__kvArqB = [];
+    URL.createObjectURL = function (b) { const u = o.apply(this, arguments); if (window.__kvPega) window.__kvArqB.push(b); return u; };
+    const oc = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () { if (window.__kvPega && this.href.startsWith('blob:')) { window.__kvArqH = this.href; return; } return oc.apply(this, arguments); };
+    const od = HTMLAnchorElement.prototype.dispatchEvent;
+    HTMLAnchorElement.prototype.dispatchEvent = function (e) { if (window.__kvPega && this.href.startsWith('blob:')) { window.__kvArqH = this.href; return true; } return od.apply(this, arguments); }; }
+  const caixa = () => { for (let e = document.querySelector('#main [role=row]'); e; e = e.parentElement) if (e.scrollHeight > e.clientHeight + 50 && getComputedStyle(e).overflowY !== 'visible') return e; };
+  const c0 = caixa(); if (c0) { c0.scrollTop = c0.scrollHeight; await z(800); }
+  const vale = r => { const v = r.querySelector('[data-testid="video-content"]');
+    if (tipo === 'video') return v && (!dur || r.innerText.split(String.fromCharCode(10)).map(s => s.trim()).includes(dur));
+    return !v && !r.querySelector('button[aria-label*="mensagem de voz"]') && [...r.querySelectorAll('img')].some(i => i.width > 120); };
+  let row = null; const vistos = new Set();
+  for (let volta = 0; volta < 10 && !row; volta++) {
+    for (const r of [...document.querySelectorAll('#main [role=row]')].reverse()) {
+      const id = (r.querySelector('[data-id]') || {getAttribute() {}}).getAttribute('data-id'); if (!id || vistos.has(id)) continue; vistos.add(id);
+      r.scrollIntoView({block: 'center'}); await z(250); if (vale(r)) { row = r; break; } }
+    if (!row) { const c = caixa(); if (!c || c.scrollTop === 0) break; c.scrollTop -= c.clientHeight; await z(600); } }
+  if (!row) return {erro: tipo + ' não achado nas últimas mensagens'};
+  await z(600);
+  const fechar = () => { const f = [...document.querySelectorAll('[aria-label="Fechar"],[title="Fechar"]')].pop(); if (f) (f.closest('button,[role=button]') || f).click(); };
+  const b64 = async b => { const d = await new Promise(ok => { const f = new FileReader(); f.onload = () => ok(f.result); f.readAsDataURL(b); }); return d.split(',')[1]; };
+  if (tipo === 'foto') {
+    [...row.querySelectorAll('img')].filter(i => i.width > 120).pop().click();
+    const grande = () => [...document.querySelectorAll('img')].filter(x => x.src.startsWith('blob:') && !x.closest('#main') && !x.closest('#side')).sort((a, b) => b.naturalWidth - a.naturalWidth)[0];
+    for (let i = 0; i < 40 && !grande(); i++) await z(250);
+    await z(1500); const im = grande(); if (!im) { fechar(); return {erro: 'visualizador não abriu'}; }
+    const b = await (await fetch(im.src)).blob(); fechar();
+    return {ok: 1, tipo: b.type, w: im.naturalWidth, h: im.naturalHeight, b64: await b64(b)};
+  }
+  row.querySelector('[data-testid="video-content"]').click();
+  const baixar = () => [...document.querySelectorAll('[aria-label="Baixar"],[title="Baixar"]')].pop();
+  for (let i = 0; i < 40 && !baixar(); i++) await z(250);
+  if (!baixar()) { fechar(); return {erro: 'sem botão Baixar'}; }
+  window.__kvArqB = []; window.__kvArqH = null; window.__kvPega = 1; baixar().click();
+  const eVideo = () => window.__kvArqB.find(x => !x.type.startsWith('image'));   // a miniatura também vira blob: não é o vídeo
+  for (let i = 0; i < 1500 && !eVideo() && !window.__kvArqH; i++) await z(200);
+  window.__kvPega = 0; const b = eVideo() || (window.__kvArqH && await (await fetch(window.__kvArqH)).blob()); fechar();
+  if (!b) return {erro: 'o download não veio'};
+  window.__kvBlob = b;
+  return {ok: 1, tipo: b.type, tam: b.size};
 })()"""
 
 ENVIAR = """(async () => {
@@ -295,10 +362,21 @@ def texto_audio(mid):
     return t
 
 
+def gravar_blob(destino, tam):
+    """Traz window.__kvBlob em pedaços (o canal não aguenta dezenas de megas numa mensagem) e confere o tamanho."""
+    pedaco = 3 * 1024 * 1024
+    with open(destino, "wb") as f:
+        for i in range(0, tam, pedaco):
+            f.write(base64.b64decode(js("new Promise(ok => { const f = new FileReader(); f.onload = () => ok(f.result.split(',')[1]); "
+                                        "f.readAsDataURL(window.__kvBlob.slice(%d, %d)); })" % (i, i + pedaco))))
+    if os.path.getsize(destino) != tam:
+        raise RuntimeError(f"arquivo incompleto: {os.path.getsize(destino)} de {tam} bytes")
+
+
 def main():
     global PORTA
     ap = argparse.ArgumentParser()
-    ap.add_argument("acao", choices=["ler", "enviar", "conversas", "arquivo", "foto"])
+    ap.add_argument("acao", choices=["ler", "enviar", "conversas", "arquivo", "foto", "midia"])
     ap.add_argument("--conversa", default="")
     ap.add_argument("--texto", default="")
     ap.add_argument("--busca", default="")
@@ -308,6 +386,11 @@ def main():
     ap.add_argument("--pasta", default=os.path.join(os.path.dirname(PASTA_AUD), "wa_arquivos"))
     ap.add_argument("--saida", default="", help="foto: onde salvar o .jpg")
     ap.add_argument("--arquivo", default="", help="enviar: arquivo a anexar como documento")
+    ap.add_argument("--documento", action="store_true", help="enviar: como arquivo, mesmo vídeo pequeno")
+    ap.add_argument("--comprimir", action="store_true", help="enviar: vídeo acima de 16 MB como vídeo comum, comprimido")
+    ap.add_argument("--sim", action="store_true", help="enviar --arquivo: abre a prévia, diz como iria e cancela")
+    ap.add_argument("--tipo", choices=["foto", "video"], default="foto", help="midia: a última foto ou vídeo da conversa")
+    ap.add_argument("--duracao", default="", help="midia: duração do vídeo, ex. 0:30")
     ap.add_argument("--porta", type=int, default=9222)
     a = ap.parse_args()
     PORTA = a.porta
@@ -347,8 +430,21 @@ def main():
                 print("ERRO:", r); return 1
             os.makedirs(a.pasta, exist_ok=True)
             destino = os.path.join(a.pasta, re.sub(r'[<>:"/\\|?*]', "_", r["nome"] or "arquivo"))
-            open(destino, "wb").write(base64.b64decode(r["b64"]))
+            gravar_blob(destino, r["tam"])
             print(destino)
+            return 0
+        if a.acao == "midia":
+            r = js(MIDIA % (json.dumps(a.tipo), json.dumps(a.duracao)))
+            if not isinstance(r, dict) or not r.get("ok"):
+                print("ERRO:", r); return 1
+            ext = ".mp4" if a.tipo == "video" else ".png" if "png" in r["tipo"] else ".jpg"
+            saida = a.saida or os.path.join(a.pasta, re.sub(r'[<>:"/\\|?*]', "_", titulo) + "_" + a.tipo + "_" + time.strftime("%Y%m%d_%H%M%S") + ext)
+            os.makedirs(os.path.dirname(saida) or ".", exist_ok=True)
+            if "tam" in r:
+                gravar_blob(saida, r["tam"])
+            else:
+                open(saida, "wb").write(base64.b64decode(r["b64"]))
+            print(saida, f"({os.path.getsize(saida)} bytes" + (f", {r['w']}x{r['h']})" if r.get("w") else ")"))
             return 0
         if a.acao == "foto":
             r = js(FOTO)
@@ -365,18 +461,30 @@ def main():
                 print("ERRO: arquivo não existe:", a.arquivo); return 1
             b64 = base64.b64encode(open(a.arquivo, "rb").read()).decode()
             nome = os.path.basename(a.arquivo)
+            tam = os.path.getsize(a.arquivo)
+            tipo = mimetypes.guess_type(nome)[0] or "application/octet-stream"
+            if a.documento or (tipo.startswith("video/") and tam > LIMITE_VIDEO and not a.comprimir):
+                tipo = "application/octet-stream"   # vídeo grande como arquivo: o WhatsApp não comprime
+            antes = js(IDS)
             js("window.__waB64 = ''; 1")   # arquivo grande: vai em pedaços (o canal não aguenta megas numa mensagem)
             for i in range(0, len(b64), 300_000):
                 js("window.__waB64 += '%s'; 1" % b64[i:i + 300_000])
             r = js(ANEXO.replace("atob(%s)", "atob(window.__waB64)") % (json.dumps(norm(titulo)), json.dumps(nome),
-                            json.dumps(mimetypes.guess_type(nome)[0] or "application/octet-stream"), json.dumps(a.texto.replace("\\n", "\n"))))
+                            json.dumps(tipo), json.dumps(a.texto.replace("\\n", "\n")), "true" if a.sim else "false"))
+            js("window.__waB64 = ''; 1")
             if not isinstance(r, dict) or not r.get("ok"):
-                print("ERRO:", r); return 1
-            time.sleep(4)
-            ult = js(LER % (1, json.dumps(titulo), "true")).get("fim") or []
-            ok = any(m.get("doc") and nome[:20] in m["doc"] for m in ult)
-            print(("enviado: " if ok else "ENVIADO? confira: ") + nome)
-            return 0 if ok else 1
+                print("NÃO ENVIADO:", r); return 1
+            if a.sim:
+                print(f"simulação, nada enviado: {nome}, {tam / 1e6:.0f} MB, iria como {r['como']}, para {titulo}" + ("" if r["cancelou"] else " — PRÉVIA CONTINUA ABERTA"))
+                return 0 if r["cancelou"] else 3
+            r = {}
+            for _ in range(int(min(600, max(30, tam / 1e6 * 2)) / 3)):   # upload de 200 MB leva minutos
+                time.sleep(3)
+                r = js(CONFERE % (json.dumps(antes), json.dumps(nome)))
+                if r.get("enviada"):
+                    print("enviado:", nome); return 0
+            print(f"INCERTO, não reenvie sem olhar a conversa ({'upload não terminou' if r.get('achou') else 'mensagem não apareceu'}): {nome}")
+            return 3
         if a.acao != "enviar" or not a.texto.strip():
             print("ERRO: enviar precisa de --texto"); return 1
         texto = a.texto.replace("\\n", "\n")
