@@ -463,8 +463,9 @@ def main():
             nome = os.path.basename(a.arquivo)
             tam = os.path.getsize(a.arquivo)
             tipo = mimetypes.guess_type(nome)[0] or "application/octet-stream"
-            if a.documento or (tipo.startswith("video/") and tam > LIMITE_VIDEO and not a.comprimir):
-                tipo = "application/octet-stream"   # vídeo grande como arquivo: o WhatsApp não comprime
+            # só foto e vídeo: sem o tipo real o WhatsApp não comprime; PDF e afins precisam do tipo, senão chegam como .bin no celular
+            if (a.documento and tipo.startswith(("video/", "image/"))) or (tipo.startswith("video/") and tam > LIMITE_VIDEO and not a.comprimir):
+                tipo = "application/octet-stream"
             antes = js(IDS)
             js("window.__waB64 = ''; 1")   # arquivo grande: vai em pedaços (o canal não aguenta megas numa mensagem)
             for i in range(0, len(b64), 300_000):
