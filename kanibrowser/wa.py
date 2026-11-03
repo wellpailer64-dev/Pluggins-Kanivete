@@ -89,7 +89,19 @@ ANEXO = """(async () => {
   const f = new File([u], %s, {type: %s});
   const ed = document.querySelector('#main footer [contenteditable=true]'); ed.focus();
   const dt = new DataTransfer(); dt.items.add(f);
-  ed.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData: dt}));
+  if (%s) {   // como documento: pelo item "Documento" do clipe, com o tipo real (octet-stream chega como .bin no celular)
+    const esp = ms => new Promise(r => setTimeout(r, ms));
+    const clipe = [...document.querySelectorAll('#main footer button, #main footer [role=button]')].find(x => /anexar|attach/i.test(x.getAttribute('aria-label') || ''));
+    if (!clipe) return {erro: 'botão de anexar não encontrado'};
+    const item = () => [...document.querySelectorAll('[role=menuitem]')].find(m => /^(Documento|Document)$/.test(m.innerText.trim()));
+    for (let i = 0; i < 2 && !item(); i++) { clipe.click(); await esp(900); }
+    if (!item()) return {erro: 'item Documento não apareceu no menu'};
+    const orig = HTMLInputElement.prototype.click; let inp = null;   // segura o input: nada de janela nativa de abrir arquivo
+    HTMLInputElement.prototype.click = function () { if (this.type === 'file') { inp = this; return; } return orig.call(this); };
+    try { item().click(); await esp(800); } finally { HTMLInputElement.prototype.click = orig; }
+    if (!inp) return {erro: 'input de documento não apareceu'};
+    inp.files = dt.files; inp.dispatchEvent(new Event('change', {bubbles: true}));
+  } else ed.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData: dt}));
   let s = null;
   for (let i = 0; i < 240 && !s; i++) { await new Promise(r => setTimeout(r, 500)); s = document.querySelector('[aria-label^="Enviar"][aria-label*="item"]'); }
   if (!s) return {erro: 'a prévia do arquivo não abriu'};
@@ -463,15 +475,15 @@ def main():
             nome = os.path.basename(a.arquivo)
             tam = os.path.getsize(a.arquivo)
             tipo = mimetypes.guess_type(nome)[0] or "application/octet-stream"
-            # só foto e vídeo: sem o tipo real o WhatsApp não comprime; PDF e afins precisam do tipo, senão chegam como .bin no celular
-            if (a.documento and tipo.startswith(("video/", "image/"))) or (tipo.startswith("video/") and tam > LIMITE_VIDEO and not a.comprimir):
-                tipo = "application/octet-stream"
+            # foto/vídeo como arquivo: vai pelo item "Documento" do clipe COM o tipo real. Antes trocava o tipo para
+            # octet-stream e o celular recebia .bin que não abre (Pailer, 2026-11-03: "não quero que esse erro se repita")
+            como_doc = (a.documento and tipo.startswith(("video/", "image/"))) or (tipo.startswith("video/") and tam > LIMITE_VIDEO and not a.comprimir)
             antes = js(IDS)
             js("window.__waB64 = ''; 1")   # arquivo grande: vai em pedaços (o canal não aguenta megas numa mensagem)
             for i in range(0, len(b64), 300_000):
                 js("window.__waB64 += '%s'; 1" % b64[i:i + 300_000])
             r = js(ANEXO.replace("atob(%s)", "atob(window.__waB64)") % (json.dumps(norm(titulo)), json.dumps(nome),
-                            json.dumps(tipo), json.dumps(a.texto.replace("\\n", "\n")), "true" if a.sim else "false"))
+                            json.dumps(tipo), "true" if como_doc else "false", json.dumps(a.texto.replace("\\n", "\n")), "true" if a.sim else "false"))
             js("window.__waB64 = ''; 1")
             if not isinstance(r, dict) or not r.get("ok"):
                 print("NÃO ENVIADO:", r); return 1
