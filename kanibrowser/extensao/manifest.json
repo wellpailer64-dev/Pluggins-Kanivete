@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "KaniCode · Olhos do navegador",
+  "version": "0.2.0",
+  "description": "Leitura estruturada, mídias e entrada direta para a ponte privada do KaniBrowser.",
+  "permissions": ["scripting", "tabs", "downloads", "clipboardWrite"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {"service_worker": "motor.js"},
+  "action": {"default_title": "KaniCode · Olhos do navegador"}
+}

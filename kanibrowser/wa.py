@@ -25,6 +25,7 @@ PASTA_AUD = os.path.join(os.path.splitdrive(os.path.abspath(__file__))[0] + os.s
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "CANIVETE DO PAILER")
 PORTA = 9222
 LIMITE_VIDEO = 16 * 1024 * 1024
+MARCA_KANI = "🟢 *KANI*:"   # o que a Kani manda no grupo KaniCode começa com isto: o ouvinte (wa_comando.py) não trata como pedido
 
 # normalizar no JS igual ao Python: sem acento, sem emoji/símbolo, minúsculo, espaços simples
 NORM = r"""const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();"""
@@ -305,6 +306,8 @@ def js(codigo):
 
 def garantir_whatsapp():
     """KaniBrowser aberto e a aba da Kani no WhatsApp carregado"""
+    # O Ir reutiliza a aba já aberta antes de criar/navegar na aba do agente.
+    chamar(PORTA, "ir", {"url": "https://web.whatsapp.com"})
     try:
         host = js("location.host")
     except RuntimeError as e:
@@ -394,6 +397,8 @@ def main():
     ap.add_argument("--busca", default="")
     ap.add_argument("--n", type=int, default=15)
     ap.add_argument("--transcrever", action="store_true")
+    ap.add_argument("--json", action="store_true", help="ler: mensagens estruturadas com ID estável")
+    ap.add_argument("--audio-id", default="", help="ler: transcrever somente este ID na conversa conferida")
     ap.add_argument("--nome", default="", help="arquivo: parte do nome do documento (vazio = o último)")
     ap.add_argument("--pasta", default=os.path.join(os.path.dirname(PASTA_AUD), "wa_arquivos"))
     ap.add_argument("--saida", default="", help="foto: onde salvar o .jpg")
@@ -416,12 +421,26 @@ def main():
             print("ERRO: falta --conversa"); return 1
         titulo = abrir(a.conversa)
         if a.acao == "ler":
-            print(f"== {titulo}")
+            if a.audio_id:
+                # Confere que o ID pertence à conversa aberta antes de tocar o áudio.
+                ids = js("[...document.querySelectorAll('#main [data-id]')].map(e=>e.getAttribute('data-id'))")
+                if a.audio_id not in ids:
+                    raise RuntimeError("Áudio não está carregado na conversa conferida.")
+                texto = texto_audio(a.audio_id).strip()
+                if not texto or texto.startswith("(não transcrevi:") or texto == "(sem fala)":
+                    raise RuntimeError("Não foi possível reconhecer fala neste áudio.")
+                print(json.dumps({"id": a.audio_id, "texto": texto}, ensure_ascii=False))
+                return 0
+            if not a.json:
+                print(f"== {titulo}")
             r = {"mais": 1}; primeiro = "true"
             for _ in range(200):
                 r = js(LER % (a.n, json.dumps(titulo), primeiro)); primeiro = "false"
                 if not r.get("mais"):
                     break
+            if a.json:
+                print(json.dumps({"conversa": titulo, "mensagens": r.get("fim") or []}, ensure_ascii=False))
+                return 0
             for m in r.get("fim") or []:
                 if "sis" in m:
                     print("  ·", m["sis"].replace("\n", " ")); continue
@@ -501,10 +520,15 @@ def main():
         if a.acao != "enviar" or not a.texto.strip():
             print("ERRO: enviar precisa de --texto"); return 1
         texto = a.texto.replace("\\n", "\n")
+        if "kanicode" in norm(titulo) and texto.startswith("[KANI]"):
+            texto = MARCA_KANI + " " + texto[len("[KANI]"):].lstrip(" :")
+        if "kanicode" in norm(titulo) and not texto.startswith((MARCA_KANI, "🟢 KANI:", "[KANI]")):   # grupo KaniCode: o que eu mando leva o [KANI] para não virar pedido
+            texto = MARCA_KANI + " " + texto
         r = js(ENVIAR % (json.dumps(norm(titulo)), json.dumps(texto)))
         if not isinstance(r, dict) or not r.get("ok"):
             print("ERRO:", r); return 1
-        primeira = texto.splitlines()[0][:40]
+        corpo = texto[len(MARCA_KANI):].strip() if texto.startswith(MARCA_KANI) else texto   # emoji vira imagem e *negrito* some na leitura
+        primeira = corpo.splitlines()[0][:40]
         ok = primeira in (r.get("ultima") or "")
         print(("enviado: " if ok else "ENVIADO? confira — última: ") + (r.get("ultima") or "").replace("\n", " | ")[-200:])
         return 0 if ok else 1

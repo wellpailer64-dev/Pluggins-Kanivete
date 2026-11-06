@@ -626,6 +626,15 @@ class _Casa(http.server.BaseHTTPRequestHandler):
             if rota == "/texto":
                 serial, _ = self._alvo()
                 return self._json(200, texto(dados.get("texto") or "", serial=serial))
+            if rota == "/tela-fisica":
+                acesa = dados.get("acesa")
+                if not isinstance(acesa, bool):
+                    return self._json(400, {"erro": "acesa deve ser true ou false."})
+                self._alvo()
+                direto = self.video.comando("tela_fisica", acesa=acesa) if self.video else None
+                if direto is None:
+                    raise ErroADB("Apagar só o painel requer o espelhamento por scrcpy.")
+                return self._json(200, direto)
             if rota == "/tecla":
                 serial, _ = self._alvo()
                 nome = str(dados.get('tecla') or '')

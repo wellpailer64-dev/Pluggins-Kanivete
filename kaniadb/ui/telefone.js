@@ -60,6 +60,9 @@ async function atualizarEstado() {
       modoVideo = e.video.erro ? 'vídeo interrompido' : !e.video.quadros ? 'iniciando vídeo' :
         e.video.idade_ms > 2000 ? 'imagem estática' : 'vídeo contínuo';
     }
+    document.querySelectorAll('[data-tela-fisica]').forEach(b => {
+      b.disabled = !e.pronto || !controleDireto;
+    });
     if (e.pronto) {
       const tam = a.tela || {};
       sinal.className = 'sinal ok';
@@ -181,6 +184,20 @@ document.querySelectorAll('[data-tecla]').forEach((b) => {
       mostrarRecado('');
     } catch (erro) {
       mostrarRecado(erro.message);
+    }
+  });
+});
+
+document.querySelectorAll('[data-tela-fisica]').forEach(b => {
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await pedir('/tela-fisica', { acesa: b.dataset.telaFisica === 'acender' });
+      mostrarRecado('');
+    } catch (erro) {
+      mostrarRecado(erro.message);
+    } finally {
+      b.disabled = !disponivel || !controleDireto;
     }
   });
 });

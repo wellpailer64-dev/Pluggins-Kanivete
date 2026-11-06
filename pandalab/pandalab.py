@@ -2,12 +2,14 @@
 
 Etapa 1 = SÓ LEITURA: login, demandas, detalhe, comentários do cliente, arquivos (baixar).
 Conversa direto com o Supabase do sistema Pandalab, com o login do Pailer (as regras de acesso do banco valem).
-A sessão fica em sessao.bin cifrada pelo Windows (DPAPI: só este usuário neste PC abre); a senha nunca é guardada.
+A sessão fica em sessao.bin cifrada pelo Windows (DPAPI: só este usuário neste PC abre). O login do Pailer, a pedido dele
+(2026-11-03), fica em login.bin, também cifrado e fora do git (*.bin): renova a sessão vencida sozinho, para entregar no painel.
 """
 import base64, ctypes, ctypes.wintypes as wt, json, os, re, time, urllib.error, urllib.parse, urllib.request
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 SESSAO = os.path.join(PASTA, "sessao.bin")
+LOGIN_SALVO = os.path.join(PASTA, "login.bin")
 CONFIG = os.path.join(PASTA, "config.json")
 ENV_SISTEMA = r"D:\01 - ALL IN CLOUD - HD PAILER\01 - PANDA LAB\00 - Sistema Pandalab\.env"
 DOWNLOADS = r"D:\Kanivete\Pandalab"
@@ -63,8 +65,31 @@ def _salvar_sessao(s):
         f.write(_dpapi(json.dumps(s).encode(), True))
 
 
+def guardar_login(identificador, senha):
+    with open(LOGIN_SALVO, "wb") as f:
+        f.write(_dpapi(json.dumps({"u": identificador, "s": senha}).encode(), True))
+
+
+def login_salvo():
+    """(usuário, senha) guardados neste PC ou None"""
+    try:
+        with open(LOGIN_SALVO, "rb") as f:
+            d = json.loads(_dpapi(f.read(), False))
+        return d["u"], d["s"]
+    except (OSError, ValueError, KeyError, ErroPanda):
+        return None
+
+
+def _relogar():
+    salvo = login_salvo()
+    if not salvo:
+        return False
+    login(*salvo)
+    return True
+
+
 def _ler_sessao():
-    if not os.path.exists(SESSAO):
+    if not os.path.exists(SESSAO) and not _relogar():
         raise ErroPanda("Sem login. Rode: panda.py login")
     with open(SESSAO, "rb") as f:
         return json.loads(_dpapi(f.read(), False))
@@ -122,6 +147,8 @@ def _token():
     try:
         r = _http("POST", "/auth/v1/token?grant_type=refresh_token", {"refresh_token": s["refresh"]})
     except ErroPanda:
+        if _relogar():
+            return _ler_sessao().get("access")
         raise ErroPanda("A sessão do Pandalab venceu. Rode: panda.py login")
     s.update(refresh=r["refresh_token"], access=r["access_token"], expira=time.time() + int(r.get("expires_in", 3600)) - 60)
     _salvar_sessao(s)
@@ -247,6 +274,7 @@ def baixar(ref, pasta=None, mes=None):
     os.makedirs(raiz, exist_ok=True)
     destino_pasta = pastas.pasta_material(d, raiz) if not pasta else raiz
     os.makedirs(destino_pasta, exist_ok=True)
+    antes = set(os.listdir(destino_pasta))
     feitos = []
     for a in d["arquivos"]:
         caminho = a["file_path"]
@@ -254,14 +282,15 @@ def baixar(ref, pasta=None, mes=None):
         if m:
             if not _drive().baixar(m.group(1), destino_pasta, url=caminho):
                 raise ErroPanda(f"O Drive não liberou '{a['file_name']}' (arquivo privado?): {caminho}")
-            feitos.append(os.path.join(destino_pasta, a["file_name"]))
-            continue
+            continue   # o Drive decide o nome; a lista real sai da pasta no fim
         destino = os.path.join(destino_pasta, _limpo(a["file_name"]))
         dados = _http("GET", caminho, cru=True) if caminho.startswith("http") else \
             _http("GET", _url_assinada("demand-files", caminho), cru=True)
         with open(destino, "wb") as f:
             f.write(dados)
-        feitos.append(destino)
+    # arquivo já baixado antes não aparece como novo: sem novidade, lista a pasta
+    feitos = [os.path.join(destino_pasta, n) for n in sorted(os.listdir(destino_pasta)) if n not in antes] or \
+             [os.path.join(destino_pasta, n) for n in sorted(os.listdir(destino_pasta))]
     with open(os.path.join(raiz, "demanda.json"), "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=1)
     pastas.briefing(d, raiz)
@@ -277,14 +306,41 @@ def _multipart(campos):
     return ("".join(partes) + f"--{limite}--\r\n").encode("utf-8"), "multipart/form-data; boundary=" + limite
 
 
-def criar(titulo, cliente_id, tipo="estatico", descricao="", responsavel_id=None):
-    """Cria a demanda pelo mesmo caminho do site (função receive-demand), em nome do funcionário logado.
-    Arquivos ainda não: anexar pelo site (o site sobe para o Drive do cliente)."""
-    if tipo not in TIPOS:
-        raise ErroPanda(f"Tipo inválido: {tipo}. Use: {', '.join(TIPOS)}")
+def _sem_acento(t):
+    import unicodedata
+    return unicodedata.normalize("NFKD", t or "").encode("ascii", "ignore").decode().lower().strip()
+
+
+def tipo_personalizado(cliente_id, nome):
+    """tipo próprio do cliente (ex.: Enquete do Dia), ou None; aceita parte do nome se só um bater"""
+    ts = _ler("client_creative_types", select="id,name,base_content_type", client_tag_id="eq." + cliente_id)
+    n = _sem_acento(nome)
+    achados = [t for t in ts if _sem_acento(t["name"]) == n] or [t for t in ts if n in _sem_acento(t["name"])]
+    return achados[0] if len(achados) == 1 else None
+
+
+def achar_funcionario(nome):
+    n = nome.lower()
+    fs = [f for f in _ler("employee_tags", select="id,name") if n in f["name"].lower()]
+    if len(fs) != 1:
+        raise ErroPanda(f"Responsável '{nome}' achou {len(fs)}: {', '.join(f['name'] for f in fs) or '-'}")
+    return fs[0]
+
+
+def criar(titulo, cliente_id, tipo="estatico", descricao="", responsavel_id=None, arquivos=(), cliente_nome="", tipo_custom=None):
+    """Cria a demanda como o site: sobe os arquivos ao Drive, chama receive-demand e grava o tipo personalizado."""
+    if tipo not in TIPOS and tipo not in ("estrategia", "identidade_visual"):
+        raise ErroPanda(f"Tipo inválido: {tipo}. Use: {', '.join(TIPOS)} ou um tipo personalizado do cliente")
+    for c in arquivos:
+        if not os.path.isfile(c):
+            raise ErroPanda(f"Arquivo não existe: {c}")
+    dados = []
+    for c in arquivos:
+        f = _subir_drive(c, cliente_nome or "Cliente", titulo, "demand")
+        dados.append({"name": f["nome"], "path": f["link"], "size": os.path.getsize(c)})
     s = _ler_sessao()
     campos = {"title": titulo, "description": descricao, "contentType": tipo, "clientTagId": cliente_id,
-              "fileData": "[]", "audioData": "[]"}
+              "fileData": json.dumps(dados, ensure_ascii=False), "audioData": "[]"}
     if (s.get("funcionario") or {}).get("tagId"):
         campos["createdByEmployeeId"] = s["funcionario"]["tagId"]
     if responsavel_id:
@@ -296,9 +352,13 @@ def criar(titulo, cliente_id, tipo="estatico", descricao="", responsavel_id=None
                                           "Content-Type": ctipo})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            return json.loads(r.read() or b"{}")
+            res = json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         raise ErroPanda(f"Pandalab recusou: {e.code} {e.read().decode('utf-8', 'replace')[:300]}")
+    if tipo_custom and res.get("demandId"):   # a função do servidor não conhece esse campo (igual ao site)
+        _gravar("PATCH", "demands", {"custom_creative_type_id": tipo_custom["id"], "custom_creative_type_name": tipo_custom["name"]},
+                "?id=eq." + res["demandId"])
+    return res
 
 
 def achar_cliente(nome):
@@ -584,7 +644,7 @@ def _cab(t):
         return unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
 
 
-def _subir_drive(caminho, cliente, titulo):
+def _subir_drive(caminho, cliente, titulo, envio="delivery"):
     """upload-to-drive do site (x-upload-type delivery): vai para a pasta de entrega do cliente no Drive da agência."""
     import mimetypes
     cfg = _config()
@@ -596,7 +656,7 @@ def _subir_drive(caminho, cliente, titulo):
                                           "x-file-name": _cab(nome),
                                           "x-client-name": _cab(cliente),
                                           "x-demand-title": _cab(titulo),
-                                          "x-upload-type": "delivery"})
+                                          "x-upload-type": envio})
     try:
         with urllib.request.urlopen(req, timeout=300) as r:
             res = json.loads(r.read() or b"{}")
@@ -623,16 +683,25 @@ def entregar(ref, arquivos):
         raise ErroPanda("Nenhum arquivo para entregar.")
     ct = d.get("client_tags") or {}
     cliente, titulo = ct.get("name") or "Cliente", d.get("title") or "Demanda"
-    feitos = [_subir_drive(a, cliente, titulo) for a in arquivos]
     ent = _ler("deliveries", select="id", demand_id="eq." + d["id"])
     if ent:
         eid = ent[0]["id"]
     else:
-        eid = _gravar("POST", "deliveries", {
+        corpo = {
             "title": titulo, "demand_id": d["id"], "content_type": d["content_type"], "client_tag_id": d.get("client_tag_id"),
             "description": d.get("description") or None, "instagram_username": ct.get("name"),
             "instagram_profile_image": ct.get("profile_image_path"),
-            "package_number": _pacote_da_entrega(d.get("client_tag_id"))})[0]["id"]
+            "package_number": _pacote_da_entrega(d.get("client_tag_id"))}
+        # o contador do short_id (delivery_short_id_seq) anda atrás de números já usados: cada recusa gasta um
+        # número, então repete só a gravação até cair num livre (2026-11-05). A entrega nasce ANTES do upload
+        # para uma recusa não deixar fotos repetidas no Drive.
+        for tent in range(60):
+            try:
+                eid = _gravar("POST", "deliveries", corpo)[0]["id"]; break
+            except ErroPanda as e:
+                if "deliveries_short_id_key" not in str(e) or tent == 59:
+                    raise
+    feitos = [_subir_drive(a, cliente, titulo) for a in arquivos]
     _gravar("DELETE", "delivery_revisions", None, "?delivery_id=eq." + eid)
     for f in _ler("demand_files", select="id,file_path", demand_id="eq." + d["id"]):
         if f.get("file_path") and not f["file_path"].startswith("http"):

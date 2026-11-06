@@ -37,6 +37,15 @@ class ScrcpyTest(unittest.TestCase):
         self.assertEqual(up[1], 1)
         self.assertEqual(up[7], 0)
 
+    def test_tela_fisica_usa_comando_proprio_sem_tecla_power(self):
+        b = self.criar()
+        self.assertEqual(b.comando('tela_fisica', {}, acesa=False), {'tela_acesa_solicitada': False})
+        b.comando('tela_fisica', {}, acesa=True)
+        self.assertEqual([c.args[0] for c in b.controle.sendall.call_args_list], [b'\x0a\x00', b'\x0a\x01'])
+        with self.assertRaises(ValueError):
+            b.comando('tela_fisica', {}, acesa='false')
+        self.assertEqual(b.controle.sendall.call_count, 2)
+
     def test_tecla_usa_socket_persistente(self):
         b = self.criar()
         b.comando('tecla', {}, codigo='KEYCODE_BACK')

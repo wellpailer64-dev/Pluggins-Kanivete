@@ -1,11 +1,18 @@
-"""Linha de comando do plugin Pandalab (para o Claude e para o Pailer). Só leitura nesta etapa.
+"""Linha de comando do plugin Pandalab (para o Claude e para o Pailer). Consultas e operações explícitas com prévia.
 
   py -3.13 panda.py login                 (abre janelinha: e-mail ou @usuario + senha)
   py -3.13 panda.py quem | sair
   py -3.13 panda.py demandas [--status abertas|todo|in_progress|adjustment|done] [--cliente X] [--busca X] [--json]
   py -3.13 panda.py demanda <id ou começo do id> [--json]
   py -3.13 panda.py baixar <id> [--pasta P]
+  py -3.13 panda.py entregas [--busca X] [--cliente X] [--json]
+  py -3.13 panda.py entrega <número, id ou título> [--json]
+  py -3.13 panda.py substituir-artes <entrega> --pasta P [--sim] [--operacao ID] [--repetir-incerto]
+  py -3.13 panda.py operacoes-entrega <entrega> [--json]
+  py -3.13 panda.py recuperar-entrega <entrega> --operacao ID [--sim]  (restaura os anexos anteriores)
+  Antigos retirados da entrega continuam no Drive; guia: ENTREGAS.md.
   py -3.13 panda.py clientes
+py -3.13 panda.py criar "Título" --cliente X [--tipo "Enquete do Dia"] [--responsavel pailer] [--descricao "..."] [--arquivo "a.jpg;b.jpg"] [--sim]
   py -3.13 panda.py status <id> --status todo|in_progress|adjustment [--sim]   comentar <id> --descricao "texto" [--sim]
   py -3.13 panda.py finais <id>   (o que vai na entrega)
   py -3.13 panda.py entregar <id> [--pasta P] [--sim]   (sobe os finais ao Drive, cria a entrega e fecha o card, como o site)
@@ -57,13 +64,16 @@ def _linha(d):
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Plugin PandaLab: consultas, entregas e correções.",
+                                 epilog=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd")
     ap.add_argument("ref", nargs="?")
     ap.add_argument("--status"); ap.add_argument("--cliente"); ap.add_argument("--busca")
     ap.add_argument("--pasta"); ap.add_argument("--json", action="store_true")
+    ap.add_argument("--operacao", help="ID do registro para retomar ou recuperar a troca")
+    ap.add_argument("--repetir-incerto", action="store_true", help="autoriza repetir upload sem confirmação; pode criar cópia no Drive")
     ap.add_argument("--mes", help="AAAA-MM do mês da pauta (padrão: mês de hoje)")
-    ap.add_argument("--tipo", default="estatico"); ap.add_argument("--descricao")
+    ap.add_argument("--responsavel"); ap.add_argument("--arquivo", help="criar: arquivos separados por ;"); ap.add_argument("--tipo", default="estatico"); ap.add_argument("--descricao")
     ap.add_argument("--sim", action="store_true", help="confirma a escrita no Pandalab")
     ap.add_argument("--foto"); ap.add_argument("--whatsapp"); ap.add_argument("--cor"); ap.add_argument("--nome")
     ap.add_argument("--servico", default="caixa_rapido")
@@ -74,14 +84,33 @@ def main():
     a = ap.parse_args()
     try:
         if a.cmd == "login":
-            u, s = _janela_login()
+            u, s = pl.login_salvo() or _janela_login()
             if not u or not s:
                 print("Login cancelado."); return 1
             print("Entrou como", pl.login(u, s))
+            pl.guardar_login(u, s)
         elif a.cmd == "sair":
             pl.sair(); print("Sessão apagada.")
         elif a.cmd == "quem":
             print(json.dumps(pl.quem(), ensure_ascii=False))
+        elif a.cmd in ("entregas", "entrega", "substituir-artes", "operacoes-entrega", "recuperar-entrega"):
+            import pandalab_entregas as pe
+            if a.cmd == "entregas":
+                resultado = pe.entregas(a.busca, a.cliente)
+            elif a.cmd == "entrega":
+                resultado = pe.entrega(a.ref)
+            elif a.cmd == "operacoes-entrega":
+                resultado = [{**{k: o.get(k) for k in ("id", "criada", "fase", "erro", "incerto")},
+                              "enviados": len(o["uploads"]), "total": len(o["arquivos"]),
+                              "registro": str(pe.OPERACOES / (o["id"] + ".json"))}
+                             for o in pe.operacoes(a.ref)]
+            elif a.cmd == "recuperar-entrega":
+                resultado = pe.recuperar(a.ref, a.operacao, sim=a.sim)
+            else:
+                resultado = pe.substituir(a.ref, a.pasta, sim=a.sim, operacao=a.operacao,
+                                          repetir_incerto=a.repetir_incerto,
+                                          progresso=(lambda t: print(t, file=sys.stderr, flush=True)))
+            print(json.dumps(resultado, ensure_ascii=False, indent=None if a.json else 2))
         elif a.cmd == "demandas":
             rows = pl.demandas(a.status, a.cliente, a.busca)
             if a.json:
@@ -126,12 +155,17 @@ def main():
                 print(f"  {st:<15} {c['name']:<28} {prod}")
         elif a.cmd == "criar":
             if not a.ref or not a.cliente:
-                print('Uso: panda.py criar "Título" --cliente Nome [--tipo carrossel] [--descricao "..."] [--sim]'); return 1
+                print('Uso: panda.py criar "Título" --cliente Nome [--tipo carrossel|"Enquete do Dia"] [--responsavel X] [--arquivo "a;b"] [--descricao "..."] [--sim]'); return 1
             c = pl.achar_cliente(a.cliente)
-            print(f"Nova demanda: '{a.ref}' | {c['name']} | {a.tipo} | {len(a.descricao or '')} letras de descrição")
+            custom = pl.tipo_personalizado(c["id"], a.tipo)
+            base = custom["base_content_type"] if custom else a.tipo
+            resp = pl.achar_funcionario(a.responsavel) if a.responsavel else None
+            arqs = [x for x in (a.arquivo or "").split(";") if x]
+            print(f"Nova demanda: '{a.ref}' | {c['name']} | {custom['name'] if custom else a.tipo} | responsável: {resp['name'] if resp else '-'} | "
+                  f"{len(arqs)} arquivo(s) | {len(a.descricao or '')} letras de descrição")
             if not a.sim:
                 print("(prévia: nada foi criado. Repita com --sim para criar no Pandalab.)"); return 0
-            r = pl.criar(a.ref, c["id"], a.tipo, a.descricao or "")
+            r = pl.criar(a.ref, c["id"], base, a.descricao or "", resp["id"] if resp else None, arqs, c["name"], custom)
             print("Criada:", json.dumps(r, ensure_ascii=False))
         elif a.cmd in ("status", "comentar"):
             d = pl.demanda(a.ref)
@@ -236,8 +270,8 @@ def main():
                 print(c["id"][:8], c["name"])
         else:
             print(__doc__); return 1
-    except pl.ErroPanda as e:
-        print("ERRO:", e); return 1
+    except (pl.ErroPanda, OSError, ValueError) as e:
+        print(json.dumps({"ok": False, "erro": str(e)}, ensure_ascii=False) if a.json else "ERRO: " + str(e)); return 1
     return 0
 
 

@@ -8,8 +8,20 @@
   "serve": "Chrome próprio por canal privado (pipe, sem porta), com os logins guardados. Abre sozinho no painel 🌐 do KaniCode e a Kani trabalha à vista (brilho verde-limão). Lê páginas, tira foto, baixa imagens e material direto na pasta da demanda, anexa arquivos em formulários, usa o ChatGPT da conta do Pailer. Postar, enviar ou clicar em site de terceiros só com o ok do Pailer.",
   "comandos": [
     {
+      "cmd": "--onde kanicode extensao estado; extensao panorama|ler|mapa|midias|api|digitar|selecionar|marcar|clicar|tecla|aguardar|copiar|baixar|download --dados JSON",
+      "faz": "confira a extensão Olhos carregada e prefira seus recursos; guia EXTENSAO.md"
+    },
+    {
+      "cmd": "--onde kanicode scripts listar; scripts rodar --nome N",
+      "faz": "consulte e reutilize automações; no WhatsApp use whatsapp_contexto para conversa, rascunho e leitura conferida; guia EXTENSAO.md"
+    },
+    {
       "cmd": "estado | abrir [url] | ir <url> | nova <url> | abas",
-      "faz": "navegar"
+      "faz": "antes de abrir, liste abas e reutilize a do assunto; ir sem --aba seleciona o endereço existente para a Kani, nova evita duplicar a mesma URL; páginas diferentes do mesmo site são distintas"
+    },
+    {
+      "cmd": "--onde kanicode frente --aba ID; texto --aba ID; fechar --aba ID",
+      "faz": "mostrar, inspecionar e fechar abas; pode fechar duplicadas ou concluídas, preservando rascunhos, envios/downloads e abas em uso pelo Pailer ou outra tarefa; não abrir outro WhatsApp"
     },
     {
       "cmd": "texto | foto p.png [--inteira]",
@@ -28,6 +40,14 @@
       "faz": "roda JS na aba da Kani"
     },
     {
+      "cmd": "extensao estado|instalar|gerenciar|panorama|ler|mapa|midias|api|digitar|selecionar|marcar|clicar|tecla|aguardar|copiar|baixar|download [--dados JSON|@arquivo]",
+      "faz": "extensão local: olhos estruturados, API da origem, entrada e downloads; guia EXTENSAO.md"
+    },
+    {
+      "cmd": "scripts listar|rodar [--nome N] [--dados JSON|@arquivo] [--permitir-alteracao]",
+      "faz": "biblioteca de automações locais com origens declaradas, na aba da Kani"
+    },
+    {
       "cmd": "chatgpt \"<pedido>\" [--pasta P]",
       "faz": "conversa/imagem no ChatGPT do Pailer"
     }
@@ -40,5 +60,5 @@
     "KANIVETE: aba do KaniBrowser"
   ],
   "guia": "D:/01 - ALL IN CLOUD - HD PAILER/DESENVOLVIMENTOS EM PYTHON/CANIVETE DO PAILER/Instructions/agente/plugins.md",
-  "prompt": false
+  "prompt": true
 }

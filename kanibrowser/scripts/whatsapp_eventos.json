@@ -1,0 +1,5 @@
+{
+  "descricao": "Observa mensagens do grupo KaniCode por MutationObserver e entrega eventos acumulados; não clica, não envia e não toca áudio.",
+  "origens": ["https://web.whatsapp.com"],
+  "altera_pagina": false
+}

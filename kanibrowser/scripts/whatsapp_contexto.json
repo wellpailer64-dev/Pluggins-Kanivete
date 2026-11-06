@@ -1,0 +1,5 @@
+{
+  "descricao": "WhatsApp: conversa aberta, busca, rascunho e últimas mensagens carregadas. Leitura exige conversa exata e n; não envia nem rola.",
+  "origens": ["https://web.whatsapp.com"],
+  "altera_pagina": false
+}

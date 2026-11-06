@@ -224,6 +224,7 @@ def abrir(url=None):
             warnings.simplefilter("ignore")
             _c["proc"] = subprocess.Popen(
                 [exe, "--remote-debugging-pipe", f"--remote-debugging-io-pipes={h_in},{h_out}", f"--user-data-dir={pasta}",
+                 "--enable-unsafe-extension-debugging",
                  "--no-first-run", "--no-default-browser-check", f"--window-size={fora['width']},{fora['height']}",
                  f"--window-position={fora['left']},{fora['top']}",
                  # a janela da Kani fica escondida atrás/fora da tela e precisa continuar desenhando (visão ao vivo)
@@ -241,6 +242,12 @@ def abrir(url=None):
             _ouvintes.append(_ao_criar)
         threading.Thread(target=_ler, daemon=True).start()
         _cmd("Browser.getVersion", timeout=20)
+        _c.pop("extensao_id", None)
+        try:
+            import extensoes
+            extensoes.instalar()
+        except Exception as e:
+            _c["extensao_erro"] = str(e)
         _cmd("Target.setDiscoverTargets", {"discover": True})
         os.makedirs(SAIDA, exist_ok=True)
         _cmd("Browser.setDownloadBehavior", {"behavior": "allow", "downloadPath": SAIDA, "eventsEnabled": True})
@@ -299,7 +306,32 @@ def _cdp(aba, metodo, params=None, timeout=30):
     return _cmd(metodo, params, s, timeout)
 
 
+def _chave_url(url):
+    """Compara endereços sem juntar páginas, buscas ou rotas diferentes do mesmo site."""
+    p = urllib.parse.urlsplit(_url(url))
+    host = p.netloc.lower()
+    if (p.scheme.lower() == "https" and host.endswith(":443")) or (p.scheme.lower() == "http" and host.endswith(":80")):
+        host = host.rsplit(":", 1)[0]
+    return p.scheme.lower(), host, p.path or "/", p.query, p.fragment
+
+
+def _aba_existente(url):
+    chave = _chave_url(url)
+    candidatas = [t for t in abas() if _chave_url(t["url"]) == chave]
+    return next((t for t in candidatas if t["id"] == _k["aba"]), candidatas[0] if candidatas else None)
+
+
 def nova(url):
+    """Reutiliza o endereço já aberto; cria uma aba só quando ele não existe."""
+    with _k_trava:
+        existente = _aba_existente(url)
+        if existente:
+            frente(existente["id"])
+            return {**existente, "reutilizada": True}
+        return _nova(url)
+
+
+def _nova(url):
     """aba nova na janela do Pailer (nunca na da Kani)"""
     if not ativo():
         abrir(_url(url))
@@ -331,6 +363,14 @@ def _url(url):
 
 def ir(url, aba=None):
     url = _url(url)
+    if not aba:
+        with _k_trava:
+            existente = _aba_existente(url)
+            if existente:
+                # A próxima leitura, extensão ou script usa esta mesma aba, sem recarregar nem perder rascunho.
+                _k["aba"] = existente["id"]
+                frente(existente["id"])
+                return url
     if not aba:
         _nota("Abrindo " + (urllib.parse.urlparse(url).netloc or url))
     _cdp(aba, "Page.navigate", {"url": url})
@@ -432,15 +472,17 @@ def _nota(texto):
 
 
 @contextmanager
-def trabalho(texto):
+def trabalho(texto, registrar=True):
     """um trabalho do agente na aba da Kani: aparece no painel ("Kani: pesquisando…") e no histórico"""
     with _k_trava:
-        _nota(texto)
-        _k["fazendo"].append(texto)
+        if registrar:
+            _nota(texto)
+            _k["fazendo"].append(texto)
         try:
             yield aba_kani()
         finally:
-            _k["fazendo"].remove(texto)
+            if registrar:
+                _k["fazendo"].remove(texto)
 
 
 def _enviar(metodo, params, sessao):

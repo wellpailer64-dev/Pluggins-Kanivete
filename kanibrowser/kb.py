@@ -8,6 +8,9 @@ canal 127.0.0.1:47613 com chave); só sem o KaniCode aberto vai para o KANIVETE 
   aparece: tudo é transmitido para dentro do Kanivete (visao.py).
   py -3.13 kb.py estado | abrir [url] | abas | ir <url> [--aba ID] | nova <url> | frente [--aba ID] | fechar --aba ID
   py -3.13 kb.py texto [--aba ID]          foto <arquivo.png> [--aba ID] [--inteira]
+  Antes de abrir: abas; reutilize com frente --aba ID. ir URL sem --aba seleciona o endereço já aberto para a Kani;
+  nova URL também evita a mesma URL duplicada. Mesmo site com páginas, buscas ou rotas diferentes permanece separado.
+  Pode fechar --aba ID quando duplicada ou concluída; preserve rascunhos, envios/downloads e tarefas em andamento.
   py -3.13 kb.py imagens [--aba ID] [--min 250]
   py -3.13 kb.py baixar [--aba ID] [--max 20] [--min 250] (--demanda ID8 | --pasta P)
   py -3.13 kb.py anexar "<pasta ou a;b;c>"   (põe os arquivos no campo de envio aberto na página, ex. Fazer Entrega do Pandalab)
@@ -16,6 +19,8 @@ canal 127.0.0.1:47613 com chave); só sem o KaniCode aberto vai para o KANIVETE 
   py -3.13 kb.py perfil <id|nome|e-mail>   (troca de conta: FECHA e reabre o navegador; só com motivo, e avise o Pailer)
   py -3.13 kb.py painel "estado|mostrar ID|nova URL|ir URL|fechar_aba ID|acao voltar|aparelho celular"   (abas do Pailer)
   py -3.13 kb.py js "<código JS>" | js @arquivo.js     (na aba da Kani; aceita async/Promise; volta o valor)
+  py -3.13 kb.py --onde kanicode extensao estado|instalar|gerenciar|ler|mapa|panorama|midias|digitar|selecionar|marcar|clicar|tecla|aguardar|copiar|baixar|download|api [--dados JSON|@arquivo]
+  py -3.13 kb.py --onde kanicode scripts listar|rodar [--nome N] [--dados JSON|@arquivo] [--permitir-alteracao]
   py -3.13 kb.py chatgpt "<pergunta ou pedido de imagem>" [--pasta P]   (conta do Pailer; imagens salvas)
   py -3.13 kb.py instagram <@perfil>      link <url> (--demanda ID8 | --pasta P)      pesquisar "<termo>" [--max 3]
 """
@@ -122,6 +127,8 @@ def main():
     ap.add_argument("--porta", default="9222")
     ap.add_argument("--onde", default="auto", choices=("auto", "kanivete", "kanicode"))
     ap.add_argument("--sem-foto", action="store_true")
+    ap.add_argument("--dados"); ap.add_argument("--nome")
+    ap.add_argument("--permitir-alteracao", action="store_true")
     a = ap.parse_args()
     c = lambda f, **k: chamar(a.porta, f, {x: y for x, y in k.items() if y is not None}, onde=a.onde)
     r = _rodar(a, c)
@@ -164,12 +171,38 @@ def _anexar(alvo, c, exts=(".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".m
 
 def _rodar(a, c):
     try:
-        if a.cmd in ("abrir", "abas", "estado"):
+        if a.cmd in ("extensao", "scripts"):
+            if a.aba:
+                raise ValueError("Extensão e scripts usam a aba da Kani; navegue com `kb.py ir URL`.")
+            raw = a.dados or "{}"
+            if raw.startswith("@"):
+                with open(raw[1:], encoding="utf-8-sig") as arquivo:
+                    dados = json.load(arquivo)
+            else:
+                dados = json.loads(raw)
+            if not isinstance(dados, dict):
+                raise ValueError("--dados exige um objeto JSON.")
+            if a.cmd == "extensao":
+                r = c("extensao", acao=a.arg or "estado", dados=dados)
+            else:
+                r = c("scripts_browser", acao=a.arg or "listar", nome=a.nome, dados=dados, permitir_alteracao=a.permitir_alteracao)
+            print(json.dumps(r, ensure_ascii=False, indent=2))
+        elif a.cmd in ("abrir", "abas", "estado"):
             r = c("abrir", url=a.arg) if a.cmd == "abrir" else c(a.cmd)
             for t in (r["abas"] if a.cmd == "estado" else r):
                 print(t["id"][:8], t["titulo"][:60], t["url"][:90])
             if a.cmd == "estado":
                 print("aberto:", r["aberto"])
+                ext = r.get("extensao")
+                if ext:
+                    print("Extensão Olhos:", "carregada" if ext["carregada"] else "não carregada")
+                    if ext.get("erro"):
+                        print("Detalhe:", ext["erro"])
+                    print("Recursos (kb.py --onde kanicode):", ext["comandos"])
+                    print("Guia:", ext["guia"])
+                else:
+                    print("Extensão Olhos: sessão sem descoberta; reinicie o KaniCode para aplicar a atualização.")
+                    print("Após reiniciar: kb.py --onde kanicode extensao estado; scripts listar. Guia: EXTENSAO.md")
         elif a.cmd == "ir":
             print(c("ir", url=a.arg, aba=a.aba))
         elif a.cmd == "nova":
@@ -200,6 +233,8 @@ def _rodar(a, c):
             r = c("chatgpt", pergunta=a.arg, pasta=a.pasta)
             print(r["texto"]); [print("imagem:", i) for i in r["imagens"]]
         elif a.cmd == "js":
+            if a.aba:   # js_kani só conhece a aba da Kani: --aba rodaria em outro site sem avisar
+                raise SystemExit("js roda sempre na aba da Kani; use `kb.py ir URL` antes, sem --aba")
             cod = open(a.arg[1:], encoding="utf-8").read() if a.arg.startswith("@") else a.arg
             r = c("js_kani", codigo=cod)
             print(r if isinstance(r, str) else json.dumps(r, ensure_ascii=False))

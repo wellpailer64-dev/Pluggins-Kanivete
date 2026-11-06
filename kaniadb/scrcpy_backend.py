@@ -75,7 +75,7 @@ class Scrcpy:
             self.porta = int(self._adb('forward', 'tcp:0', 'localabstract:scrcpy_' + self.id.zfill(8)).strip())
             opcoes = ['scid=' + self.id, 'tunnel_forward=true', 'audio=false', 'control=true',
                       'send_device_meta=false', 'send_stream_meta=true', 'send_frame_meta=true',
-                      'clipboard_autosync=false', 'cleanup=false', 'power_on=true',
+                      'clipboard_autosync=false', 'cleanup=true', 'power_on=true',
                       'max_size=' + str(max(self.largura, self.altura)), 'max_fps=60', 'video_bit_rate=4000000']
             self.proc = subprocess.Popen([self.adb, '-s', self.serial, 'shell', 'CLASSPATH=' + self.remoto,
                     'app_process', '/', 'com.genymobile.scrcpy.Server', versao[1].decode(), *opcoes],
@@ -141,6 +141,13 @@ class Scrcpy:
         with self.trava:
             if not self.controle or self.encerrado:
                 raise RuntimeError('Canal de controle do scrcpy indisponível.')
+            if acao == 'tela_fisica':
+                acesa = dados.get('acesa')
+                if not isinstance(acesa, bool):
+                    raise ValueError('Informe se a tela deve ficar acesa.')
+                # SET_DISPLAY_POWER do scrcpy 4.x: não bloqueia nem suspende o Android.
+                self.controle.sendall(struct.pack('>BB', 10, int(acesa)))
+                return {'tela_acesa_solicitada': acesa}
             if acao == 'tecla':
                 codigos = {'HOME': 3, 'BACK': 4, 'APP_SWITCH': 187, 'POWER': 26, 'VOLUME_UP': 24,
                            'VOLUME_DOWN': 25, 'VOLUME_MUTE': 164, 'ENTER': 66, 'SPACE': 62, 'DEL': 67,

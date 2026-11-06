@@ -1,0 +1,5 @@
+{
+  "descricao": "Extrai links HTTP/HTTPS únicos com o texto visível da página.",
+  "origens": ["http://*", "https://*"],
+  "altera_pagina": false
+}

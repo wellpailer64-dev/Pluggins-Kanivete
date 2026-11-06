@@ -9,7 +9,17 @@ API_KANIVETE = ("estado", "abrir", "fechar_navegador", "abas", "ir", "nova", "fe
                 "imagens", "destinos", "baixar_imagens", "abrir_pasta", "visitar", "instagram", "baixar_link", "pesquisar", "ler_pagina",
                 "ajustar", "entrada", "escolher", "dialogo", "arquivo", "navegar", "ponto", "kani_ir", "abrir_downloads",
                 "favoritos", "favorito", "favorito_remover", "favorito_renomear", "favoritos_ordem", "chatgpt", "diagnostico_chatgpt", "js_kani", "kani_parar", "vista", "clicar_texto",
-                "perfis", "perfil_criar", "perfil_renomear", "perfil_usar")
+                "perfis", "perfil_criar", "perfil_renomear", "perfil_usar", "extensao", "scripts_browser")
+
+
+def extensao(acao="estado", dados=None):
+    import extensoes
+    return extensoes.comando(acao, dados)
+
+
+def scripts_browser(acao="listar", nome=None, dados=None, permitir_alteracao=False):
+    import scripts_browser as biblioteca
+    return biblioteca.comando(acao, nome, dados, permitir_alteracao)
 
 
 def perfis():
@@ -115,7 +125,10 @@ def favoritos_ordem(urls):
 
 def estado(vistas=()):
     """tudo que o painel mostra: abas do Pailer, aba da Kani, o que ela faz, e das abas à vista endereço/avisos"""
-    return visao.estado(vistas)
+    import extensoes
+    r = visao.estado(vistas)
+    r["extensao"] = extensoes.descoberta()
+    return r
 
 
 def ajustar(aba, w, h, dpr=1.0):
